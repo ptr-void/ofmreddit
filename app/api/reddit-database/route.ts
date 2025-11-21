@@ -49,7 +49,7 @@ async function fetchSheetData(spreadsheetId: string, gid: string | null, apiKey:
   }
 
   const dataUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(
-    sheetName
+    sheetName,
   )}?key=${apiKey}`
   const dataResponse = await fetch(dataUrl)
   if (!dataResponse.ok) {
@@ -68,7 +68,7 @@ async function fetchSheetData(spreadsheetId: string, gid: string | null, apiKey:
   const rows = values.length > 1 ? values.slice(1) : []
 
   const titleResponse = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=properties.title&key=${apiKey}`
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=properties.title&key=${apiKey}`,
   )
   const titleData = await titleResponse.json()
 

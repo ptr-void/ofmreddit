@@ -56,9 +56,7 @@ ${JSON.stringify(profile, null, 2)}
       contents: [{ role: "user", parts: [{ text: prompt }] }],
     })
 
-    const text =
-      result?.response?.candidates?.[0]?.content?.parts?.[0]?.text ??
-      ""
+    const text = result?.response?.candidates?.[0]?.content?.parts?.[0]?.text ?? ""
 
     const cleaned = text
       .trim()

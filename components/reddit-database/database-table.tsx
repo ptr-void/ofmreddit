@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useMemo } from "react"
+import { useMemo } from "react"
 import { SortIcon } from "@/components/reddit-database/icons"
 
 type SortDirection = "asc" | "desc" | null
@@ -65,11 +65,7 @@ export default function DatabaseTable({ headers, rows, sortState, onSort }: Prop
               const direction = active ? sortState.direction : null
               return (
                 <th key={i} className="px-4 py-3 text-xs font-semibold text-muted-foreground">
-                  <button
-                    type="button"
-                    onClick={() => onSort(i)}
-                    className="group inline-flex items-center gap-1"
-                  >
+                  <button type="button" onClick={() => onSort(i)} className="group inline-flex items-center gap-1">
                     <span className="whitespace-nowrap">{h}</span>
                     <SortIcon direction={direction} />
                   </button>

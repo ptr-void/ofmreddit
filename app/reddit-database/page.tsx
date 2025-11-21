@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { RefreshIcon, WarningIcon } from "@/components/reddit-database/icons"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select2"
 import CreatorProfile, { type CreatorProfileValues } from "@/components/reddit-database/creator-profile"
@@ -85,11 +85,7 @@ export default function RedditDatabasePage() {
     nicheColumnIndexRef.current = nicheIndex
     if (nicheIndex !== -1) {
       const uniques = Array.from(
-        new Set(
-          data.rows
-            .map((row) => row[nicheIndex])
-            .filter((v): v is string => Boolean(v && v.trim().length > 0)),
-        ),
+        new Set(data.rows.map((row) => row[nicheIndex]).filter((v): v is string => Boolean(v && v.trim().length > 0))),
       ).sort((a, b) => a.localeCompare(b))
       setNicheOptions(uniques)
     } else {
@@ -97,46 +93,43 @@ export default function RedditDatabasePage() {
     }
   }
 
-  const loadSheet = useCallback(
-    async (resetFilters: boolean) => {
-      setLoading(true)
-      if (resetFilters) {
-        setSelectedNiche("all")
-        setSortState({ columnIndex: -1, direction: null })
-        setSearch("")
-        setNormalizedProfile(null)
-        setCurrentProfile(null)
+  const loadSheet = useCallback(async (resetFilters: boolean) => {
+    setLoading(true)
+    if (resetFilters) {
+      setSelectedNiche("all")
+      setSortState({ columnIndex: -1, direction: null })
+      setSearch("")
+      setNormalizedProfile(null)
+      setCurrentProfile(null)
+    }
+    setError(null)
+    try {
+      const res = await fetch("/api/reddit-database")
+      if (!res.ok) {
+        let msg = "Failed to fetch sheet data."
+        try {
+          const errJson = await res.json()
+          if (errJson && typeof errJson.error === "string") {
+            msg = errJson.error
+          }
+        } catch {}
+        throw new Error(msg)
       }
-      setError(null)
-      try {
-        const res = await fetch("/api/reddit-database")
-        if (!res.ok) {
-          let msg = "Failed to fetch sheet data."
-          try {
-            const errJson = await res.json()
-            if (errJson && typeof errJson.error === "string") {
-              msg = errJson.error
-            }
-          } catch {}
-          throw new Error(msg)
-        }
-        const data: SheetData = await res.json()
-        setRawSheetData(data)
-        setSheetData(data)
-        recomputeNicheOptions(data)
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "An unknown error occurred while fetching the sheet."
-        setError(msg)
-        setRawSheetData(null)
-        setSheetData(null)
-        setNicheOptions([])
-        nicheColumnIndexRef.current = -1
-      } finally {
-        setLoading(false)
-      }
-    },
-    [],
-  )
+      const data: SheetData = await res.json()
+      setRawSheetData(data)
+      setSheetData(data)
+      recomputeNicheOptions(data)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "An unknown error occurred while fetching the sheet."
+      setError(msg)
+      setRawSheetData(null)
+      setSheetData(null)
+      setNicheOptions([])
+      nicheColumnIndexRef.current = -1
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
     loadSheet(true)
@@ -397,9 +390,19 @@ export default function RedditDatabasePage() {
               </div>
 
               {activeTab === "database" ? (
-                <DatabaseTable headers={sheetData.headers} rows={filteredRows} sortState={sortState} onSort={handleSort} />
+                <DatabaseTable
+                  headers={sheetData.headers}
+                  rows={filteredRows}
+                  sortState={sortState}
+                  onSort={handleSort}
+                />
               ) : (
-                <AnalysisTable headers={sheetData.headers} rows={filteredRows} sortState={sortState} onSort={handleSort} />
+                <AnalysisTable
+                  headers={sheetData.headers}
+                  rows={filteredRows}
+                  sortState={sortState}
+                  onSort={handleSort}
+                />
               )}
             </section>
           ))}
