@@ -1,74 +1,216 @@
+export const runtime = "nodejs"; // ensure Node runtime on Vercel
+export const dynamic = "force-dynamic";
+
 import { NextRequest, NextResponse } from "next/server";
+import pdfParse from "pdf-parse";
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
-import { DOMParser } from "@xmldom/xmldom"
+import { pipeline } from "@xenova/transformers";
+
+// ------------------ ENV + GEMINI ------------------
 
 const API_KEY = process.env.GOOGLE_API_KEY ?? process.env.API_KEY;
 if (!API_KEY) {
-  console.warn("Missing GOOGLE_API_KEY / API_KEY env var for Gemini.");
+  console.warn("❌ Missing GOOGLE_API_KEY / API_KEY env var for Gemini.");
 }
 
 const genAI = new GoogleGenerativeAI(API_KEY || "");
-const model = genAI.getGenerativeModel({
-  model: "gemini-2.0-flash",
-  generationConfig: {
-    temperature: 1.5,
-    maxOutputTokens: 8192,
-  },
-});
+
+// ------------------ LOCAL EMBEDDING PIPELINE ------------------
+
+let embeddingPipelinePromise: Promise<any> | null = null;
+
+async function getEmbeddingPipeline() {
+  if (!embeddingPipelinePromise) {
+    console.log("🔧 Loading local embedding model (all-MiniLM-L6-v2)...");
+    embeddingPipelinePromise = pipeline(
+      "feature-extraction",
+      "Xenova/all-MiniLM-L6-v2"
+    );
+  }
+  return embeddingPipelinePromise;
+}
+
+async function embedText(text: string): Promise<number[]> {
+  const pipe = await getEmbeddingPipeline();
+  const output = await pipe(text, { pooling: "mean", normalize: true });
+  // output.data is a typed array
+  return Array.from(output.data as Float32Array);
+}
+
+// ------------------ UTILS ------------------
 
 function sanitizeText(text: string | null | undefined): string {
   if (!text) return "";
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+  return text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-async function fetchDocuments(urls: string[]): Promise<{ name: string; content: string }[]> {
-  return urls.map((url, i) => ({
-    name: `Document ${i + 1}`,
-    content: `Fetched content from ${url.substring(0, 50)}...`,
+function enforceNoJustStart(text: string): string {
+  if (/^\s*just\b/i.test(text)) {
+    text = text.replace(/^\s*just\b/i, "").trim();
+  }
+  return text || "Here I am — say something nice.";
+}
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  let dot = 0;
+  let magA = 0;
+  let magB = 0;
+  const len = Math.min(a.length, b.length);
+  for (let i = 0; i < len; i++) {
+    dot += a[i] * b[i];
+    magA += a[i] * a[i];
+    magB += b[i] * b[i];
+  }
+  if (!magA || !magB) return 0;
+  return dot / (Math.sqrt(magA) * Math.sqrt(magB));
+}
+
+function chunkText(text: string, chunkSize = 800, overlap = 200): string[] {
+  const clean = text.replace(/\s+/g, " ").trim();
+  const chunks: string[] = [];
+  let start = 0;
+
+  while (start < clean.length) {
+    const end = Math.min(start + chunkSize, clean.length);
+    chunks.push(clean.slice(start, end));
+    if (end === clean.length) break;
+    start = end - overlap;
+    if (start < 0) start = 0;
+  }
+
+  return chunks;
+}
+
+// ------------------ DOCUMENT RAG INDEX ------------------
+
+type VectorChunk = {
+  id: string;
+  docName: string;
+  sourceUrl: string;
+  text: string;
+  embedding: number[];
+};
+
+let vectorIndex: VectorChunk[] | null = null;
+let indexBuildingPromise: Promise<void> | null = null;
+
+const documentUrls = [
+  "https://res.cloudinary.com/defkzzqcs/raw/upload/v1760423100/admin-documents/I",
+  "https://res.cloudinary.com/defkzzqcs/raw/upload/v1760423139/admin-documents/IV",
+  "https://res.cloudinary.com/defkzzqcs/raw/upload/v1760423141/admin-documents/III",
+  "https://res.cloudinary.com/defkzzqcs/raw/upload/v1760435485/admin-documents/II",
+];
+
+async function buildVectorIndex() {
+  console.log("📚 Building vector index from Cloudinary PDFs...");
+
+  const chunks: VectorChunk[] = [];
+
+  for (let i = 0; i < documentUrls.length; i++) {
+    const url = documentUrls[i];
+    const docName = `Document_${i + 1}`;
+    console.log(`📥 Fetching PDF ${docName} from: ${url}`);
+
+    try {
+      const res = await fetch(url);
+      const arrayBuffer = await res.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      console.log(`📝 Extracting text from ${docName}...`);
+      const data = await pdfParse(buffer);
+      const fullText = (data.text || "").trim();
+
+      console.log(
+        `🔍 ${docName} text length: ${fullText.length}, preview:`,
+        fullText.substring(0, 300)
+      );
+
+      if (!fullText) continue;
+
+      const textChunks = chunkText(fullText, 800, 200);
+      console.log(`✂️ ${docName} split into ${textChunks.length} chunks.`);
+
+      for (let j = 0; j < textChunks.length; j++) {
+        const chunkTextValue = textChunks[j];
+        const id = `${docName}_chunk_${j + 1}`;
+
+        const embedding = await embedText(chunkTextValue);
+
+        chunks.push({
+          id,
+          docName,
+          sourceUrl: url,
+          text: chunkTextValue,
+          embedding,
+        });
+      }
+    } catch (err) {
+      console.error(`❌ Failed processing ${docName}`, err);
+    }
+  }
+
+  vectorIndex = chunks;
+  console.log(`✅ Vector index built with ${chunks.length} chunks.`);
+}
+
+async function ensureVectorIndex() {
+  if (vectorIndex) return;
+  if (!indexBuildingPromise) {
+    indexBuildingPromise = buildVectorIndex();
+  }
+  await indexBuildingPromise;
+}
+
+async function retrieveRelevantChunks(
+  query: string,
+  topK = 6
+): Promise<VectorChunk[]> {
+  await ensureVectorIndex();
+  if (!vectorIndex || vectorIndex.length === 0) {
+    console.warn("⚠️ Vector index is empty. No documents available.");
+    return [];
+  }
+
+  console.log("🔎 Embedding query for vector search...");
+  const queryEmbedding = await embedText(query);
+
+  const scored = vectorIndex.map((chunk) => ({
+    chunk,
+    score: cosineSimilarity(queryEmbedding, chunk.embedding),
   }));
+
+  scored.sort((a, b) => b.score - a.score);
+
+  const top = scored.slice(0, topK).map((s) => s.chunk);
+
+  console.log(
+    "🏆 Top chunks selected:",
+    top.map((c) => ({
+      id: c.id,
+      doc: c.docName,
+      scoreApprox: "see logs", // we’re not returning raw floats
+    }))
+  );
+
+  return top;
 }
 
-function detectAttachedFiles(body: any): { hasFiles: boolean; files: string[] } {
-  return { hasFiles: false, files: [] };
-}
-
-function verifyToken(token: string): any {
-  return token ? { valid: true } : null;
-}
+// ------------------ MAIN ROUTE ------------------
 
 export async function POST(request: NextRequest) {
   try {
+    console.log("\n=====================================");
+    console.log("🔥 NEW CAPTION REQUEST (LOCAL RAG)");
+    console.log("=====================================\n");
+
     const token = request.headers.get("authorization")?.replace("Bearer ", "");
     if (!token) {
+      console.log("❌ No token provided");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const payload = verifyToken(token);
-    if (!payload) {
-      return NextResponse.json({ error: "Invalid token" }, { status: 401 });
-    }
-
     const body = await request.json();
-
-    body.documentUrls = [
-      "https://res.cloudinary.com/defkzzqcs/raw/upload/v1760423100/admin-documents/I",
-      "https://res.cloudinary.com/defkzzqcs/raw/upload/v1760423139/admin-documents/IV",
-      "https://res.cloudinary.com/defkzzqcs/raw/upload/v1760423141/admin-documents/III",
-      "https://res.cloudinary.com/defkzzqcs/raw/upload/v1760435485/admin-documents/II",
-    ];
-
-    const documents = await fetchDocuments(body.documentUrls);
-    const fileAttachmentInfo = detectAttachedFiles(body);
-
-    console.log("FILE ATTACHMENT DETECTION:", {
-      filesAttached: fileAttachmentInfo.hasFiles,
-      attachedFiles: fileAttachmentInfo.files,
-    });
+    console.log("🟢 BODY:", body);
 
     const {
       mode,
@@ -83,6 +225,8 @@ export async function POST(request: NextRequest) {
       isInteractive,
       contentType,
       subredditName,
+      captionCount: rawCaptionCount,
+      files,
     } = body;
 
     if (!mode || !gender) {
@@ -92,252 +236,186 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const captionCount =
+      typeof rawCaptionCount === "number" && rawCaptionCount >= 1 && rawCaptionCount <= 20
+        ? rawCaptionCount
+        : 5;
+
+    const fileAttachmentInfo = {
+      hasFiles: Array.isArray(files) && files.length > 0,
+      files: Array.isArray(files) ? files : [],
+    };
+
+    console.log("📎 FILE ATTACHMENT DETECTION:", fileAttachmentInfo);
+
+    // ---------- RAG QUERY STRING ----------
+    const queryForRag = `
+Mode: ${mode}
+Gender: ${gender}
+Physical Features: ${physicalFeatures || "not specified"}
+Subreddit: ${subredditName || "not specified"}
+Subreddit Type: ${subredditType || "not specified"}
+Visual Context: ${visualContext || "not specified"}
+Caption Mood: ${captionMood || "seductive"}
+Creative Style: ${creativeStyle || "not specified"}
+Degen Scale: ${degenScale ?? "not specified"}
+`;
+
+    console.log("🧠 RAG QUERY STRING:\n", queryForRag);
+
+    // ---------- VECTOR SEARCH ----------
+    const topChunks = await retrieveRelevantChunks(queryForRag, 6);
+
+    const knowledgeBase = topChunks
+      .map(
+        (c, idx) => `
+[DOC ${idx + 1} | ${c.docName}]
+Source: ${c.sourceUrl}
+
+${c.text}
+`
+      )
+      .join("\n\n");
+
+    console.log("\n📚 KNOWLEDGE BASE PASSED TO GEMINI:\n", knowledgeBase);
+
     const clickbaitStyle = isInteractive ? "y" : "n";
 
-    const promptResult = [{ prompt_text: "Generate creative, engaging captions for Reddit posts..." }];
-    const basePrompt = promptResult[0].prompt_text;
+    // ---------- PROMPT ----------
+    const prompt = `
+You are an expert Reddit caption generator using a custom RAG system.
 
-    let captionCount = 5;
-    const patterns = [
-      /YOU MUST GENERATE EXACTLY\s+(\d+)\s+CAPTIONS/i,
-      /generate\s+(\d+)\s+captions/i,
-      /(\d+)\s+captions/i,
-      /exactly\s+(\d+)/i,
-      /must\s+(?:be|have|contain)\s+(\d+)/i,
-    ];
+You are given:
+1) A KNOWLEDGE BASE from internal documents (Project Apex guidelines, rules, examples).
+2) USER INPUT with photo context and preferences.
 
-    for (const pattern of patterns) {
-      const match = basePrompt.match(pattern);
-      if (match) {
-        const extracted = Number.parseInt(match[1], 10);
-        if (Number.isInteger(extracted) && extracted >= 1 && extracted <= 20) {
-          captionCount = extracted;
-          break;
-        }
-      }
-    }
+You MUST:
+- Generate EXACTLY ${captionCount} captions.
+- Never start any caption with the word "just".
+- Match the style, tone, and constraints implied by the KNOWLEDGE BASE.
+- Return ONLY a JSON array, nothing else.
 
-    let knowledgeBaseSection = "";
-    const documentLog: any[] = [];
+KNOWLEDGE BASE:
+${knowledgeBase || "[NO DOCUMENTS AVAILABLE - fall back to general rules]"}
 
-    const fileAttachmentStatus = fileAttachmentInfo.hasFiles
-      ? `Files are attached. List of attached files: ${fileAttachmentInfo.files.join(", ")}`
-      : "No files are attached.";
+USER INPUT:
+- Mode: ${mode}
+- Gender: ${gender}
+- Physical Features: ${physicalFeatures || "not specified"}
+- Subreddit Name: ${subredditName || "not specified"}
+- Subreddit Type: ${subredditType || "not specified"}
+- Visual Context: ${visualContext || "not specified"}
+- Content Type: ${contentType || "picture"}
+- Caption Mood: ${captionMood || "seductive"}
+- Creative Style: ${creativeStyle || "not specified"}
+- Degen Scale: ${degenScale ?? "not specified"}
+- Clickbait Style: ${clickbaitStyle}
+- Subreddit Rules: ${rules || "none specified"}
+- Files Attached: ${fileAttachmentInfo.hasFiles ? fileAttachmentInfo.files.join(", ") : "none"}
 
-    if (documents.length > 0) {
-      documents.forEach((doc, index) => {
-        documentLog.push({
-          document: doc.name,
-          contentPreview: doc.content.substring(0, 300),
-        });
+RESPONSE FORMAT (CRITICAL):
+Return ONLY a JSON array:
+[
+  { "option": "Option 1", "text": "..." },
+  { "option": "Option 2", "text": "..." }
+]
 
-        knowledgeBaseSection += `
-<document name="${doc.name}" index="${index + 1}">
-<content>
-${sanitizeText(doc.content)}
-</content>
-</document>
+Number of items in the array MUST be exactly ${captionCount}.
 `;
-      });
 
-      knowledgeBaseSection = `
-<knowledge_base>
-  <status>Successfully retrieved ${documents.length} documents</status>
-  <instruction>
-    Use the provided document content to inform caption generation. The documents contain relevant guidelines, examples, and rules from the Project Apex knowledge base. Ensure captions align with the provided content and user input. CRITICAL: Do NOT start any caption with the word "just" as per the rules in the Project Apex documents.
-  </instruction>
-${knowledgeBaseSection}
-</knowledge_base>`;
-    } else {
-      knowledgeBaseSection = `
-<knowledge_base>
-  <status>No documents retrieved</status>
-  <instruction>Generate captions based on base instructions only. CRITICAL: Do NOT start any caption with the word "just".</instruction>
-</knowledge_base>`;
-    }
+    console.log("\n📝 PROMPT SENT TO GEMINI:\n", prompt);
 
-    const fullPrompt = `<?xml version="1.0" encoding="UTF-8"?>
-<prompt>
-  <meta_instruction priority="CRITICAL">
-    YOU MUST GENERATE EXACTLY ${captionCount} CAPTIONS. NO MORE, NO LESS.
-    Count: ${captionCount}
-    CRITICAL: Do NOT start any caption with the word "just".
-  </meta_instruction>
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.0-flash",
+    });
 
-  <file_attachment_instruction>
-    Before generating captions, confirm whether files are attached and list them. Include the following statement in your response, before the captions:
-    <file_attachment_status>${sanitizeText(fileAttachmentStatus)}</file_attachment_status>
-  </file_attachment_instruction>
-
-  <base_instructions>
-${basePrompt}
-  </base_instructions>
-${knowledgeBaseSection}
-
-  <user_input>
-    <physical_features>${physicalFeatures || "not specified"}</physical_features>
-    <gender>${gender || "female"}</gender>
-    <subreddit_name>${subredditName || "not specified"}</subreddit_name>
-    <subreddit_type>${subredditType || "not specified"}</subreddit_type>
-    <visual_context>${visualContext || "not specified"}</visual_context>
-    <content_type>${contentType || "picture"}</content_type>
-    <caption_mood>${captionMood || "seductive"}</caption_mood>
-    <creative_style>${creativeStyle || "not specified"}</creative_style>
-    <degen_scale>${degenScale}</degen_scale>
-    <clickbait_style>${clickbaitStyle}</clickbait_style>
-    <subreddit_rules>${rules || "none specified"}</subreddit_rules>
-  </user_input>
-
-  <output_format priority="CRITICAL">
-    <instruction>
-      YOU MUST RETURN EXACTLY ${captionCount} CAPTION ELEMENTS.
-      Use ONLY the XML format specified below. Include the <file_attachment_status> tag before the <post> element.
-    </instruction>
-
-    <required_structure>
-      <example>
-<![CDATA[
-<?xml version="1.0" encoding="UTF-8"?>
-<caption_results>
-  <file_attachment_status>[Status of file attachments]</file_attachment_status>
-  <post id="1">
-    <caption>
-      <option>Option 1: [Brief Label]</option>
-      <text>[The actual caption text]</text>
-    </caption>
-    <caption>
-      <option>Option 2: [Brief Label]</option>
-      <text>[The actual caption text]</text>
-    </caption>
-  </post>
-</caption_results>
-]]>
-      </example>
-    </required_structure>
-  </output_format>
-</prompt>`;
-
-    console.log("FULL PROMPT SENT TO GEMINI:", fullPrompt);
-
-    let captions: { option: string; text: string }[] = [];
-    let attachmentStatus = "";
     let attempt = 0;
+    let captions: { option: string; text: string }[] = [];
     const maxAttempts = 3;
-    let maxOutputTokens = 8192;
 
     while (attempt < maxAttempts) {
       try {
+        console.log(`⚡ GEMINI ATTEMPT ${attempt + 1}...`);
+
         const result = await model.generateContent({
-          contents: [
-            {
-              role: "user",
-              parts: [{ text: fullPrompt }],
-            },
-          ],
-          systemInstruction: {
-            role: "system",
-            parts: [
-              {
-                text: "You are an expert caption generator. Always respond with valid XML format as specified. Use the provided document content to inform caption generation, acting as the retrieval system to select relevant information. Include file attachment status as instructed. CRITICAL: Do NOT start any caption with the word 'just'.",
-              },
-            ],
-          },
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
           generationConfig: {
             responseMimeType: "application/json",
             responseSchema: {
-              type: SchemaType.OBJECT,
-              properties: {
-                caption_results: {
-                  type: SchemaType.OBJECT,
-                  properties: {
-                    file_attachment_status: { type: SchemaType.STRING },
-                    post: {
-                      type: SchemaType.OBJECT,
-                      properties: {
-                        caption: {
-                          type: SchemaType.ARRAY,
-                          items: {
-                            type: SchemaType.OBJECT,
-                            properties: {
-                              option: { type: SchemaType.STRING },
-                              text: { type: SchemaType.STRING },
-                            },
-                            required: ["option", "text"],
-                          },
-                          minItems: captionCount,
-                          maxItems: captionCount,
-                        },
-                      },
-                      required: ["caption"],
-                    },
-                  },
-                  required: ["file_attachment_status", "post"],
+              type: SchemaType.ARRAY,
+              items: {
+                type: SchemaType.OBJECT,
+                properties: {
+                  option: { type: SchemaType.STRING },
+                  text: { type: SchemaType.STRING },
                 },
+                required: ["option", "text"],
               },
-              required: ["caption_results"],
+              minItems: captionCount,
+              maxItems: captionCount,
             },
-            maxOutputTokens,
-            temperature: 1.5,
+            maxOutputTokens: 2048,
+            temperature: 0.7,
           },
         });
 
-        let responseText = result.response.text().trim();
+        let raw = result.response.text();
+        console.log("\n🟣 RAW GEMINI RESPONSE:\n", raw);
 
-        console.log("GEMINI RAW RESPONSE:", responseText);
-
-        if (responseText.startsWith("```json") || responseText.startsWith("```")) {
-          responseText = responseText.replace(/^```[\w]*\s*|\s*```$/g, "").trim();
+        if (raw.startsWith("```")) {
+          raw = raw.replace(/^```[\w]*\s*|\s*```$/g, "").trim();
         }
 
-        const responseJson = JSON.parse(responseText);
-        const captionResults = responseJson.caption_results;
-
-        if (!captionResults) {
-          throw new Error("Invalid JSON structure: missing caption_results");
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) {
+          throw new Error("Model did not return a JSON array");
         }
 
-        attachmentStatus = captionResults.file_attachment_status || "";
-
-        const captionArray = captionResults.post?.caption || [];
-        if (captionArray.length !== captionCount) {
-          throw new Error(`Expected ${captionCount} captions, got ${captionArray.length}`);
-        }
-
-        const parsed: { option: string; text: string }[] = captionArray.map((cap: any) => ({
-          option: cap.option || "",
-          text: sanitizeText(cap.text || ""),
+        captions = parsed.map((c: any, idx: number) => ({
+          option: c.option || `Option ${idx + 1}`,
+          text: sanitizeText(enforceNoJustStart(c.text || "")),
         }));
 
-        captions = parsed;
-
-        break; 
-      } catch (error) {
-        console.error(`Attempt ${attempt + 1} failed:`, error);
-        if (attempt < maxAttempts - 1) {
-          maxOutputTokens = Math.floor(maxOutputTokens * 0.8);
-          attempt++;
-          continue;
+        if (captions.length !== captionCount) {
+          throw new Error(
+            `Expected ${captionCount} captions, got ${captions.length}`
+          );
         }
-        throw error;
+
+        break;
+      } catch (err) {
+        console.error(`❌ Attempt ${attempt + 1} failed:`, err);
+        attempt++;
+        if (attempt >= maxAttempts) {
+          throw err;
+        }
       }
     }
 
-    if (captions.length !== captionCount) {
-      throw new Error(`Failed to generate exactly ${captionCount} captions after ${maxAttempts} attempts`);
-    }
+    console.log("\n✅ FINAL CAPTIONS SENT TO CLIENT:\n", captions);
 
-    console.log("DOCUMENT CONTENT PREVIEWS:", documentLog);
-
-    return NextResponse.json({
-      captions,
-      fileAttachmentStatus: attachmentStatus,
-      documentLog,
-      filesAttached: fileAttachmentInfo.hasFiles,
-      attachedFiles: fileAttachmentInfo.files,
-    });
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : "Failed to generate captions";
-    console.error("ERROR:", errorMessage);
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
+    return NextResponse.json(
+      {
+        captions,
+        ragDebug: {
+          usedChunks: topChunks.map((c) => ({
+            id: c.id,
+            docName: c.docName,
+            sourceUrl: c.sourceUrl,
+            preview: c.text.substring(0, 200),
+          })),
+          prompt,
+        },
+        filesAttached: fileAttachmentInfo.hasFiles,
+        attachedFiles: fileAttachmentInfo.files,
+      },
+      { status: 200 }
+    );
+  } catch (error: any) {
+    console.error("❌ FATAL ERROR:", error);
+    return NextResponse.json(
+      { error: error.message || "Internal server error" },
+      { status: 500 }
+    );
   }
 }

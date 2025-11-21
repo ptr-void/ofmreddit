@@ -120,7 +120,7 @@ export async function sendPasswordResetEmail(email: string, token: string, name:
 
     return { success: true }
   } catch (error) {
-    console.error("[v0] Error sending password reset email:", error)
+    console.error("Error sending password reset email:", error)
     return { success: false, error }
   }
 }
