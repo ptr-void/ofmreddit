@@ -8,23 +8,23 @@ export async function GET() {
     const sheetUrl = process.env.SUBREDDIT_SHEET_URL
     const range = "Sheet3!A:Z" 
 
-    // 1. Extract ID
+    
     const sheetId = sheetUrl?.split('/d/')[1]?.split('/')[0]
 
     if (!apiKey || !sheetId) {
-      console.error("❌ MISSING ENV VARS: API Key or Sheet URL")
+      console.error("MISSING ENV VARS: API Key or Sheet URL")
       return NextResponse.json({ error: "Missing API Key or invalid Sheet URL" }, { status: 500 })
     }
 
-    console.log(`🔍 [API] Fetching Sheet3... ID: ${sheetId}`)
+    console.log(`Fetching Sheet3... ID: ${sheetId}`)
 
-    // 2. Fetch
+    
     const apiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${range}?key=${apiKey}`
     const res = await fetch(apiUrl)
     
     if (!res.ok) {
       const text = await res.text()
-      console.error(`❌ [API] GOOGLE ERROR (${res.status}):`, text)
+      console.error(`GOOGLE ERROR (${res.status}):`, text)
       return NextResponse.json({ error: text }, { status: res.status })
     }
 
@@ -32,15 +32,9 @@ export async function GET() {
     const values = data.values
 
     if (!values || values.length === 0) {
-      console.error("❌ [API] Sheet3 is EMPTY")
+      console.error("Sheet3 is EMPTY")
       return NextResponse.json({ error: "No data found in Sheet3" }, { status: 404 })
     }
-
-    // --- LOGGING THE DATA HERE ---
-    console.log("✅ [API] SUCCESS! Fetched", values.length, "rows from Sheet3.")
-    console.log("📋 [API] HEADERS:", values[0])
-    console.log("📋 [API] FIRST ROW:", values[1])
-    // -----------------------------
 
     return NextResponse.json({ 
       headers: values[0], 
@@ -48,7 +42,7 @@ export async function GET() {
     })
 
   } catch (error: any) {
-    console.error("❌ [API] CRASH:", error)
+    console.error("CRASH:", error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }

@@ -26,14 +26,10 @@ function SortIcon({ direction }: { direction: SortDirection }) {
   return <span>{direction === "asc" ? "↑" : "↓"}</span>
 }
 
-
 function findColumnIndex(headers: string[], possibleNames: string[]) {
   const lowerHeaders = headers.map(h => h.toLowerCase().trim())
   const lowerPossible = possibleNames.map(p => p.toLowerCase().trim())
-  
-  return lowerHeaders.findIndex(h => {
-    return lowerPossible.some(p => h.includes(p))
-  })
+  return lowerHeaders.findIndex(h => lowerPossible.some(p => h.includes(p)))
 }
 
 export default function AnalysisTable({ sortState, onSort }: Props) {
@@ -44,40 +40,41 @@ export default function AnalysisTable({ sortState, onSort }: Props) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [hasLoaded, setHasLoaded] = useState(false)
 
-  
   const handleFetch = async () => {
     setLoading(true)
     setErrorMsg(null)
 
     try {
-      console.log("🚀 Fetching Sheet3 Data...")
-      const res = await fetch("/api/sheet-analysis")
+      const res = await fetch("/api/reddit-scrape")
+
+      const text = await res.text() 
+      
+      
+      if (text.trim().startsWith("<")) {
+        throw new Error(`Server returned HTML error (${res.status}). Check your terminal for compile errors.`)
+      }
+
+      
+      const data = JSON.parse(text)
       
       if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || "Failed to fetch Sheet3")
+        throw new Error(data.error || "Failed to fetch Sheet3")
       }
-      
-      const data = await res.json()
-      console.log("✅ Loaded Sheet3:", data)
-      
+
       setSheetHeaders(data.headers || [])
       setSheetRows(data.rows || [])
       setHasLoaded(true)
+
     } catch (err: any) {
-      console.error("❌ Error:", err)
       setErrorMsg(err.message)
     } finally {
       setLoading(false)
     }
   }
 
-  
   const analysisRows = useMemo<AnalysisRow[]>(() => {
     if (!sheetRows.length) return []
 
-    
-    
     const idx = {
       subreddit: findColumnIndex(sheetHeaders, ["subreddit", "name"]),
       engagement: findColumnIndex(sheetHeaders, ["snapshot", "engagement"]),
@@ -87,54 +84,30 @@ export default function AnalysisTable({ sortState, onSort }: Props) {
       simp: findColumnIndex(sheetHeaders, ["simp", "intensity"])
     }
 
-    return sheetRows.map(row => {
-      
-      return {
-        subreddit: row[idx.subreddit] || "Unknown",
-        snapshotEngagementRatio: row[idx.engagement] || "NA",
-        barrierToVisibility: row[idx.btv] || "NA",
-        topSlotDiversityIndex: row[idx.tsdi] || "NA",
-        upvoteToRootCommentRatio: row[idx.ratio] || "NA",
-        simpIntensityScore: row[idx.simp] || "NA",
-      }
-    })
+    return sheetRows.map(row => ({
+      subreddit: row[idx.subreddit] || "Unknown",
+      snapshotEngagementRatio: row[idx.engagement] || "NA",
+      barrierToVisibility: row[idx.btv] || "NA",
+      topSlotDiversityIndex: row[idx.tsdi] || "NA",
+      upvoteToRootCommentRatio: row[idx.ratio] || "NA",
+      simpIntensityScore: row[idx.simp] || "NA",
+    }))
   }, [sheetRows, sheetHeaders])
 
-  
   const sortedRows = useMemo(() => {
     const { columnIndex: col, direction: dir } = sortState
     if (col === -1 || !dir) return analysisRows
 
     return [...analysisRows].sort((a, b) => {
       const getVal = (r: AnalysisRow) => {
-        
-        const vals = [
-          r.subreddit, 
-          r.snapshotEngagementRatio, 
-          r.barrierToVisibility, 
-          r.topSlotDiversityIndex, 
-          r.upvoteToRootCommentRatio, 
-          r.simpIntensityScore
-        ]
-        
-        const v = vals[col]
-        
-        if (col === 0) return v 
-        
-        const num = parseFloat(v.toString().replace(/[%$,]/g, ''))
+        const vals = [r.subreddit, r.snapshotEngagementRatio, r.barrierToVisibility, r.topSlotDiversityIndex, r.upvoteToRootCommentRatio, r.simpIntensityScore]
+        if (col === 0) return vals[col]
+        const num = parseFloat(vals[col].toString().replace(/[%$,]/g, ''))
         return isNaN(num) ? -Infinity : num
       }
-
-      const valA = getVal(a)
-      const valB = getVal(b)
-
-      if (valA < valB) return dir === "asc" ? -1 : 1
-      if (valA > valB) return dir === "asc" ? 1 : -1
-      return 0
+      return dir === "asc" ? (getVal(a) < getVal(b) ? -1 : 1) : (getVal(a) > getVal(b) ? -1 : 1)
     })
   }, [analysisRows, sortState])
-
-  
 
   if (!hasLoaded) {
     return (
@@ -154,20 +127,13 @@ export default function AnalysisTable({ sortState, onSort }: Props) {
     return (
       <div className="flex flex-col items-center justify-center py-10 text-destructive gap-2">
         <p className="font-bold">Error Loading Data</p>
-        <p className="text-sm bg-destructive/10 p-2 rounded">{errorMsg}</p>
+        <p className="text-sm bg-destructive/10 p-2 rounded max-w-lg text-center">{errorMsg}</p>
         <button onClick={() => setHasLoaded(false)} className="underline mt-2">Try Again</button>
       </div>
     )
   }
 
-  const headersFixed = [
-    "Subreddit", 
-    "Snapshot Engagement", 
-    "Barrier to Visibility", 
-    "TSDI", 
-    "Upvote/Comment Ratio", 
-    "Simp Score"
-  ]
+  const headersFixed = ["Subreddit", "Snapshot Engagement", "Barrier to Visibility", "TSDI", "Upvote/Comment Ratio", "Simp Score"]
 
   return (
     <div className="space-y-4">
@@ -186,7 +152,7 @@ export default function AnalysisTable({ sortState, onSort }: Props) {
           </thead>
           <tbody>
             {sortedRows.map((row, ri) => (
-              <tr key={ri} className="border-b border-border/60 odd:bg-background even:bg-muted/30 hover:bg-primary/5">
+              <tr key={ri} className="border-b border-border/60 odd:bg-background even:bg-muted/30">
                 <td className="px-4 py-2 font-medium">{row.subreddit}</td>
                 <td className="px-4 py-2">{row.snapshotEngagementRatio}</td>
                 <td className="px-4 py-2">{row.barrierToVisibility}</td>
@@ -197,9 +163,6 @@ export default function AnalysisTable({ sortState, onSort }: Props) {
             ))}
           </tbody>
         </table>
-      </div>
-      <div className="text-xs text-muted-foreground text-center">
-        Loaded {sheetRows.length} rows directly from Sheet3
       </div>
     </div>
   )
