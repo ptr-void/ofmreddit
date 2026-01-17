@@ -398,8 +398,6 @@ export default function RedditDatabasePage() {
                 />
               ) : (
                 <AnalysisTable
-                  headers={sheetData.headers}
-                  rows={filteredRows}
                   sortState={sortState}
                   onSort={handleSort}
                 />

@@ -1,20 +1,12 @@
 "use client"
 
-import { useMemo } from "react"
-import { SortIcon } from "@/components/reddit-database/icons"
-import { saveAnalysisData } from "@/lib/session-cache/data-analysis-cache"
-import { downloadAnalysisAsCSV } from "@/lib/excel/analysis-workbook"
+import { useMemo, useState } from "react"
+
 
 type SortDirection = "asc" | "desc" | null
-
-type SortState = {
-  columnIndex: number
-  direction: SortDirection
-}
+type SortState = { columnIndex: number; direction: SortDirection }
 
 type Props = {
-  headers: string[]
-  rows: string[][]
   sortState: SortState
   onSort: (index: number) => void
 }
@@ -28,294 +20,186 @@ type AnalysisRow = {
   simpIntensityScore: string
 }
 
-function findIndex(headers: string[], tokens: string[]): number {
-  const lowerHeaders = headers.map((h) => h.toLowerCase())
-  // First try exact match with all tokens
-  let idx = lowerHeaders.findIndex((h) => tokens.every((t) => h.includes(t)))
-  if (idx !== -1) return idx
 
-  // If not found, try matching at least one token (more lenient)
-  idx = lowerHeaders.findIndex((h) => tokens.some((t) => h.includes(t)))
-  return idx
+function SortIcon({ direction }: { direction: SortDirection }) {
+  if (!direction) return <span className="opacity-30">↕</span>
+  return <span>{direction === "asc" ? "↑" : "↓"}</span>
 }
 
-function parseNumberCell(value: string | undefined | null): number | null {
-  if (value == null) return null
-  const cleaned = value.toString().replace(/,/g, "").trim()
-  if (!cleaned) return null
-  const n = Number(cleaned)
-  if (Number.isNaN(n)) return null
-  return n
+
+function findColumnIndex(headers: string[], possibleNames: string[]) {
+  const lowerHeaders = headers.map(h => h.toLowerCase().trim())
+  const lowerPossible = possibleNames.map(p => p.toLowerCase().trim())
+  
+  return lowerHeaders.findIndex(h => {
+    return lowerPossible.some(p => h.includes(p))
+  })
 }
 
-function formatNumber(value: number | null, decimals = 2): string {
-  if (value == null || !Number.isFinite(value)) return "NA"
-  return value.toFixed(decimals)
-}
+export default function AnalysisTable({ sortState, onSort }: Props) {
+  const [sheetHeaders, setSheetHeaders] = useState<string[]>([])
+  const [sheetRows, setSheetRows] = useState<string[][]>([])
+  
+  const [loading, setLoading] = useState(false)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [hasLoaded, setHasLoaded] = useState(false)
 
-export default function AnalysisTable({ headers, rows, sortState, onSort }: Props) {
-  const analysisRows = useMemo<AnalysisRow[]>(() => {
-    if (!rows.length || !headers.length) {
-      console.log("[v0] No rows or headers available for analysis")
-      return []
-    }
+  
+  const handleFetch = async () => {
+    setLoading(true)
+    setErrorMsg(null)
 
-    console.log("[v0] Available headers:", headers)
-    console.log("[v0] Number of rows:", rows.length)
-
-    const subredditIndex = findIndex(headers, ["subreddit"])
-    const activeUsersIndex =
-      findIndex(headers, ["active", "user"]) !== -1
-        ? findIndex(headers, ["active", "user"])
-        : findIndex(headers, ["active"])
-    const subscribersIndex =
-      findIndex(headers, ["subscriber"]) !== -1 ? findIndex(headers, ["subscriber"]) : findIndex(headers, ["subs"])
-    const btvIndex =
-      findIndex(headers, ["barrier", "visibility"]) !== -1
-        ? findIndex(headers, ["barrier", "visibility"])
-        : findIndex(headers, ["btv"])
-    const tsdiIndex =
-      findIndex(headers, ["top", "slot", "diversity"]) !== -1
-        ? findIndex(headers, ["top", "slot", "diversity"])
-        : findIndex(headers, ["tsdi"])
-    const upvoteToRootRatioIndex =
-      findIndex(headers, ["upvote", "root"]) !== -1
-        ? findIndex(headers, ["upvote", "root"])
-        : findIndex(headers, ["upvote-to-root"])
-    const avgUpvotesIndex = findIndex(headers, ["avg", "upvote"])
-    const avgRootCommentsIndex = findIndex(headers, ["avg", "root", "comment"])
-    const simpScoreIndex =
-      findIndex(headers, ["simp", "intensity"]) !== -1
-        ? findIndex(headers, ["simp", "intensity"])
-        : findIndex(headers, ["simp"])
-
-    console.log("[v0] Column indices found:", {
-      subredditIndex,
-      activeUsersIndex,
-      subscribersIndex,
-      btvIndex,
-      tsdiIndex,
-      upvoteToRootRatioIndex,
-      avgUpvotesIndex,
-      avgRootCommentsIndex,
-      simpScoreIndex,
-    })
-
-    if (subredditIndex === -1) {
-      console.warn("[v0] Could not find subreddit column")
-      return []
-    }
-
-    return rows.map((row, rowIdx) => {
-      const subreddit = row[subredditIndex] ?? ""
-
-      let snapshotRatio: number | null = null
-      if (activeUsersIndex !== -1 && subscribersIndex !== -1) {
-        const active = parseNumberCell(row[activeUsersIndex])
-        const subs = parseNumberCell(row[subscribersIndex])
-        if (active != null && subs != null && subs > 0) {
-          snapshotRatio = (active / subs) * 100
-        }
-      }
-
-      let btv: number | null = null
-      if (btvIndex !== -1) {
-        btv = parseNumberCell(row[btvIndex])
-      }
-
-      let tsdi: number | null = null
-      if (tsdiIndex !== -1) {
-        tsdi = parseNumberCell(row[tsdiIndex])
-      }
-
-      let upvoteRootRatio: number | null = null
-      if (upvoteToRootRatioIndex !== -1) {
-        upvoteRootRatio = parseNumberCell(row[upvoteToRootRatioIndex])
-      } else if (avgUpvotesIndex !== -1 && avgRootCommentsIndex !== -1) {
-        const avgUpvotes = parseNumberCell(row[avgUpvotesIndex])
-        const avgRootComments = parseNumberCell(row[avgRootCommentsIndex])
-        if (avgUpvotes != null && avgRootComments != null && avgRootComments > 0) {
-          upvoteRootRatio = avgUpvotes / avgRootComments
-        }
-      }
-
-      let simpScore: number | null = null
-      if (simpScoreIndex !== -1) {
-        simpScore = parseNumberCell(row[simpScoreIndex])
-      }
-
-      if (rowIdx === 0) {
-        console.log("[v0] First row parsed:", {
-          subreddit,
-          snapshotRatio,
-          btv,
-          tsdi,
-          upvoteRootRatio,
-          simpScore,
-        })
-      }
-
-      return {
-        subreddit,
-        snapshotEngagementRatio: formatNumber(snapshotRatio, 2),
-        barrierToVisibility: formatNumber(btv, 0),
-        topSlotDiversityIndex: formatNumber(tsdi, 0),
-        upvoteToRootCommentRatio: formatNumber(upvoteRootRatio, 2),
-        simpIntensityScore: formatNumber(simpScore, 1),
-      }
-    })
-  }, [headers, rows])
-
-  const sortedRows = useMemo(() => {
-    if (!analysisRows.length) return []
-
-    const col = sortState.columnIndex
-    const dir = sortState.direction
-
-    if (col === -1 || !dir) return analysisRows
-
-    const getValue = (row: AnalysisRow): string | number => {
-      switch (col) {
-        case 0:
-          return row.subreddit.toLowerCase()
-        case 1:
-          return Number(row.snapshotEngagementRatio) || Number.NEGATIVE_INFINITY
-        case 2:
-          return Number(row.barrierToVisibility) || Number.NEGATIVE_INFINITY
-        case 3:
-          return Number(row.topSlotDiversityIndex) || Number.NEGATIVE_INFINITY
-        case 4:
-          return Number(row.upvoteToRootCommentRatio) || Number.NEGATIVE_INFINITY
-        case 5:
-          return Number(row.simpIntensityScore) || Number.NEGATIVE_INFINITY
-        default:
-          return 0
-      }
-    }
-
-    const sorted = [...analysisRows].sort((a, b) => {
-      const av = getValue(a)
-      const bv = getValue(b)
-
-      if (typeof av === "string" && typeof bv === "string") {
-        if (av < bv) return dir === "asc" ? -1 : 1
-        if (av > bv) return dir === "asc" ? 1 : -1
-        return 0
-      }
-
-      const an = typeof av === "number" ? av : Number.NEGATIVE_INFINITY
-      const bn = typeof bv === "number" ? bv : Number.NEGATIVE_INFINITY
-
-      if (an < bn) return dir === "asc" ? -1 : 1
-      if (an > bn) return dir === "asc" ? 1 : -1
-      return 0
-    })
-
-    return sorted
-  }, [analysisRows, sortState])
-
-  const handleAnalyzeAndDownload = () => {
     try {
-      saveAnalysisData({
-        headers: [
-          "Subreddit",
-          "Snapshot Engagement Ratio (%)",
-          "Barrier to Visibility (BTV)",
-          "Top Slot Diversity Index (TSDI)",
-          "Upvote to Root Comment Ratio",
-          "Simp Intensity Score",
-        ],
-        rows: sortedRows.map((row) => [
-          row.subreddit,
-          row.snapshotEngagementRatio,
-          row.barrierToVisibility,
-          row.topSlotDiversityIndex,
-          row.upvoteToRootCommentRatio,
-          row.simpIntensityScore,
-        ]),
-        timestamp: Date.now(),
-      })
-
-      const timestamp = new Date().toISOString().split("T")[0]
-      downloadAnalysisAsCSV(sortedRows, `analysis-${timestamp}.csv`)
-    } catch (err) {
-      console.error("Failed to analyze and download:", err)
+      console.log("🚀 Fetching Sheet3 Data...")
+      const res = await fetch("/api/sheet-analysis")
+      
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || "Failed to fetch Sheet3")
+      }
+      
+      const data = await res.json()
+      console.log("✅ Loaded Sheet3:", data)
+      
+      setSheetHeaders(data.headers || [])
+      setSheetRows(data.rows || [])
+      setHasLoaded(true)
+    } catch (err: any) {
+      console.error("❌ Error:", err)
+      setErrorMsg(err.message)
+    } finally {
+      setLoading(false)
     }
   }
 
-  if (!analysisRows.length) {
+  
+  const analysisRows = useMemo<AnalysisRow[]>(() => {
+    if (!sheetRows.length) return []
+
+    
+    
+    const idx = {
+      subreddit: findColumnIndex(sheetHeaders, ["subreddit", "name"]),
+      engagement: findColumnIndex(sheetHeaders, ["snapshot", "engagement"]),
+      btv: findColumnIndex(sheetHeaders, ["barrier", "btv"]),
+      tsdi: findColumnIndex(sheetHeaders, ["diversity", "tsdi"]),
+      ratio: findColumnIndex(sheetHeaders, ["upvote", "root", "ratio"]),
+      simp: findColumnIndex(sheetHeaders, ["simp", "intensity"])
+    }
+
+    return sheetRows.map(row => {
+      
+      return {
+        subreddit: row[idx.subreddit] || "Unknown",
+        snapshotEngagementRatio: row[idx.engagement] || "NA",
+        barrierToVisibility: row[idx.btv] || "NA",
+        topSlotDiversityIndex: row[idx.tsdi] || "NA",
+        upvoteToRootCommentRatio: row[idx.ratio] || "NA",
+        simpIntensityScore: row[idx.simp] || "NA",
+      }
+    })
+  }, [sheetRows, sheetHeaders])
+
+  
+  const sortedRows = useMemo(() => {
+    const { columnIndex: col, direction: dir } = sortState
+    if (col === -1 || !dir) return analysisRows
+
+    return [...analysisRows].sort((a, b) => {
+      const getVal = (r: AnalysisRow) => {
+        
+        const vals = [
+          r.subreddit, 
+          r.snapshotEngagementRatio, 
+          r.barrierToVisibility, 
+          r.topSlotDiversityIndex, 
+          r.upvoteToRootCommentRatio, 
+          r.simpIntensityScore
+        ]
+        
+        const v = vals[col]
+        
+        if (col === 0) return v 
+        
+        const num = parseFloat(v.toString().replace(/[%$,]/g, ''))
+        return isNaN(num) ? -Infinity : num
+      }
+
+      const valA = getVal(a)
+      const valB = getVal(b)
+
+      if (valA < valB) return dir === "asc" ? -1 : 1
+      if (valA > valB) return dir === "asc" ? 1 : -1
+      return 0
+    })
+  }, [analysisRows, sortState])
+
+  
+
+  if (!hasLoaded) {
     return (
-      <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
-        No analysis data available. Check the browser console for debugging information.
+      <div className="flex justify-center py-10">
+        <button 
+          onClick={handleFetch} 
+          disabled={loading}
+          className="px-6 py-3 rounded-lg bg-primary text-primary-foreground font-bold shadow-md hover:opacity-90 transition disabled:opacity-50"
+        >
+          {loading ? "Analyzing..." : "Analyze Data"}
+        </button>
+      </div>
+    )
+  }
+
+  if (errorMsg) {
+    return (
+      <div className="flex flex-col items-center justify-center py-10 text-destructive gap-2">
+        <p className="font-bold">Error Loading Data</p>
+        <p className="text-sm bg-destructive/10 p-2 rounded">{errorMsg}</p>
+        <button onClick={() => setHasLoaded(false)} className="underline mt-2">Try Again</button>
       </div>
     )
   }
 
   const headersFixed = [
-    "Subreddit",
-    "Snapshot Engagement Ratio (%)",
-    "Barrier to Visibility (BTV)",
-    "Top Slot Diversity Index (TSDI)",
-    "Upvote to Root Comment Ratio",
-    "Simp Intensity Score",
+    "Subreddit", 
+    "Snapshot Engagement", 
+    "Barrier to Visibility", 
+    "TSDI", 
+    "Upvote/Comment Ratio", 
+    "Simp Score"
   ]
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={handleAnalyzeAndDownload}
-          className="inline-flex items-center rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground shadow-sm transition hover:opacity-90"
-        >
-          <span>💾</span>
-          <span className="ml-2">Analyze & Download</span>
-        </button>
-      </div>
-
       <div className="relative w-full overflow-x-auto rounded-xl border border-border bg-card">
         <table className="min-w-[900px] w-full text-left text-xs md:text-sm">
           <thead className="border-b border-border bg-muted/60">
             <tr>
-              {headersFixed.map((h, i) => {
-                const active = sortState.columnIndex === i
-                const direction = active ? sortState.direction : null
-                return (
-                  <th key={i} className="px-4 py-3 text-xs font-semibold text-muted-foreground">
-                    <button type="button" onClick={() => onSort(i)} className="group inline-flex items-center gap-1">
-                      <span className="whitespace-nowrap">{h}</span>
-                      <SortIcon direction={direction} />
-                    </button>
-                  </th>
-                )
-              })}
+              {headersFixed.map((h, i) => (
+                <th key={i} className="px-4 py-3 font-semibold text-muted-foreground cursor-pointer hover:text-foreground" onClick={() => onSort(i)}>
+                  <div className="flex items-center gap-1">
+                    {h} <SortIcon direction={sortState.columnIndex === i ? sortState.direction : null} />
+                  </div>
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
-            {sortedRows.length === 0 && (
-              <tr>
-                <td colSpan={headersFixed.length} className="px-4 py-6 text-center text-sm text-muted-foreground">
-                  No rows match the current filter.
-                </td>
-              </tr>
-            )}
             {sortedRows.map((row, ri) => (
-              <tr
-                key={ri}
-                className="border-b border-border/60 last:border-b-0 odd:bg-background even:bg-muted/30 hover:bg-primary/5"
-              >
-                <td className="whitespace-nowrap px-4 py-2 text-xs md:text-sm">{row.subreddit}</td>
-                <td className="whitespace-nowrap px-4 py-2 text-xs md:text-sm">
-                  {row.snapshotEngagementRatio === "NA" ? "NA" : `${row.snapshotEngagementRatio}`}
-                </td>
-                <td className="whitespace-nowrap px-4 py-2 text-xs md:text-sm">{row.barrierToVisibility}</td>
-                <td className="whitespace-nowrap px-4 py-2 text-xs md:text-sm">{row.topSlotDiversityIndex}</td>
-                <td className="whitespace-nowrap px-4 py-2 text-xs md:text-sm">{row.upvoteToRootCommentRatio}</td>
-                <td className="whitespace-nowrap px-4 py-2 text-xs md:text-sm">{row.simpIntensityScore}</td>
+              <tr key={ri} className="border-b border-border/60 odd:bg-background even:bg-muted/30 hover:bg-primary/5">
+                <td className="px-4 py-2 font-medium">{row.subreddit}</td>
+                <td className="px-4 py-2">{row.snapshotEngagementRatio}</td>
+                <td className="px-4 py-2">{row.barrierToVisibility}</td>
+                <td className="px-4 py-2">{row.topSlotDiversityIndex}</td>
+                <td className="px-4 py-2">{row.upvoteToRootCommentRatio}</td>
+                <td className="px-4 py-2">{row.simpIntensityScore}</td>
               </tr>
             ))}
           </tbody>
         </table>
+      </div>
+      <div className="text-xs text-muted-foreground text-center">
+        Loaded {sheetRows.length} rows directly from Sheet3
       </div>
     </div>
   )
