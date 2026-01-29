@@ -1,3 +1,4 @@
+// app/reddit-database/page.tsx
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -13,6 +14,11 @@ type SheetData = {
   title: string
   headers: string[]
   rows: string[][]
+}
+
+type ApiResponse = {
+  mainSheet: SheetData
+  tagSheet: SheetData
 }
 
 const Switch = ({
@@ -52,6 +58,8 @@ type SortState = {
 export default function RedditDatabasePage() {
   const [rawSheetData, setRawSheetData] = useState<SheetData | null>(null)
   const [sheetData, setSheetData] = useState<SheetData | null>(null)
+  const [tagSheetData, setTagSheetData] = useState<SheetData | null>(null)
+
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(false)
@@ -64,6 +72,7 @@ export default function RedditDatabasePage() {
   const [currentProfile, setCurrentProfile] = useState<CreatorProfileValues | null>(null)
   const [cachedProfile, setCachedProfile] = useState<CreatorProfileValues | null>(null)
   const [activeTab, setActiveTab] = useState<"database" | "analysis">("database")
+
   const nicheColumnIndexRef = useRef<number>(-1)
   const intervalRef = useRef<number | null>(null)
 
@@ -115,15 +124,19 @@ export default function RedditDatabasePage() {
         } catch {}
         throw new Error(msg)
       }
-      const data: SheetData = await res.json()
-      setRawSheetData(data)
-      setSheetData(data)
-      recomputeNicheOptions(data)
+
+      const { mainSheet, tagSheet }: ApiResponse = await res.json()
+
+      setRawSheetData(mainSheet)
+      setSheetData(mainSheet)
+      setTagSheetData(tagSheet)
+      recomputeNicheOptions(mainSheet)
     } catch (err) {
       const msg = err instanceof Error ? err.message : "An unknown error occurred while fetching the sheet."
       setError(msg)
       setRawSheetData(null)
       setSheetData(null)
+      setTagSheetData(null)
       setNicheOptions([])
       nicheColumnIndexRef.current = -1
     } finally {
@@ -185,30 +198,14 @@ export default function RedditDatabasePage() {
   }
 
   const handleSaveProfile = async (profile: CreatorProfileValues) => {
-    if (!rawSheetData) {
+    if (!rawSheetData || !tagSheetData) {
       setShowCreatorProfile(false)
       return
     }
     setLoading(true)
     setError(null)
     try {
-      const normRes = await fetch("/api/reddit-database/creator-profile", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profile }),
-      })
-      if (!normRes.ok) {
-        let msg = "Failed to normalize creator profile."
-        try {
-          const errJson = await normRes.json()
-          if (errJson && typeof errJson.error === "string") {
-            msg = errJson.error
-          }
-        } catch {}
-        throw new Error(msg)
-      }
-      const normJson = await normRes.json()
-      const normalized = normJson.normalizedProfile ?? null
+      const normalized = null
       setNormalizedProfile(normalized)
       setCurrentProfile(profile)
       setCachedProfile(profile)
@@ -219,10 +216,12 @@ export default function RedditDatabasePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sheetData: rawSheetData,
+          tagSheet: tagSheetData,
           profile,
           normalizedProfile: normalized,
         }),
       })
+
       if (!tableRes.ok) {
         let msg = "Failed to apply creator profile to table."
         try {
@@ -233,6 +232,7 @@ export default function RedditDatabasePage() {
         } catch {}
         throw new Error(msg)
       }
+
       const filteredData: SheetData = await tableRes.json()
       setSheetData(filteredData)
       recomputeNicheOptions(filteredData)
@@ -397,10 +397,7 @@ export default function RedditDatabasePage() {
                   onSort={handleSort}
                 />
               ) : (
-                <AnalysisTable
-                  sortState={sortState}
-                  onSort={handleSort}
-                />
+                <AnalysisTable sortState={sortState} onSort={handleSort} />
               )}
             </section>
           ))}
