@@ -1,4 +1,3 @@
-// components/reddit-database/creator-profile.tsx
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
@@ -19,7 +18,7 @@ export type CreatorProfileValues = {
   bodyTypeOther: string
   hairColorOther: string
   ageBracketOther: string
-  excluded: {
+  include: {
     ethnicity: string[]
     bodyType: string[]
     age: string[]
@@ -98,10 +97,10 @@ function Pills({
             aria-pressed={checked}
             className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
               checked
-                ? "border-destructive/40 bg-destructive/10 text-destructive"
+                ? "border-primary/40 bg-primary/10 text-foreground"
                 : "border-border bg-background text-foreground hover:bg-accent"
             } ${disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
-            title={checked ? "Excluded" : "Included"}
+            title={checked ? "Included" : "Not selected"}
           >
             {labelize(item)}
           </button>
@@ -126,8 +125,7 @@ function SectionCard({
   onToggle: (value: string) => void
   disabled: boolean
 }) {
-  const excludedCount = countSelected(selected, items)
-  const includedCount = items.length - excludedCount
+  const selectedCount = countSelected(selected, items)
 
   return (
     <div className="rounded-xl border border-border bg-background p-4 shadow-sm">
@@ -138,11 +136,11 @@ function SectionCard({
         </div>
 
         <div className="flex items-center gap-2 text-[11px]">
-          <span className="rounded-full border border-border bg-card px-2 py-1 text-muted-foreground">
-            Included: <span className="font-semibold text-foreground">{includedCount}</span>
+          <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-1 text-foreground">
+            Selected: <span className="font-semibold">{selectedCount}</span>
           </span>
-          <span className="rounded-full border border-destructive/30 bg-destructive/10 px-2 py-1 text-destructive">
-            Excluded: <span className="font-semibold">{excludedCount}</span>
+          <span className="rounded-full border border-border bg-card px-2 py-1 text-muted-foreground">
+            Total: <span className="font-semibold text-foreground">{items.length}</span>
           </span>
         </div>
       </div>
@@ -155,33 +153,33 @@ function SectionCard({
 }
 
 export default function CreatorProfile({ onBack, onSave, initialProfile, saving }: CreatorProfileProps) {
-  const [excludedEthnicity, setExcludedEthnicity] = useState<string[]>([])
-  const [excludedBodyType, setExcludedBodyType] = useState<string[]>([])
-  const [excludedAge, setExcludedAge] = useState<string[]>([])
-  const [excludedBodyPart, setExcludedBodyPart] = useState<string[]>([])
-  const [excludedBoobSubCategory, setExcludedBoobSubCategory] = useState<string[]>([])
-  const [excludedAssSubCategory, setExcludedAssSubCategory] = useState<string[]>([])
-  const [excludedOthers, setExcludedOthers] = useState<string[]>([])
+  const [includeEthnicity, setIncludeEthnicity] = useState<string[]>([])
+  const [includeBodyType, setIncludeBodyType] = useState<string[]>([])
+  const [includeAge, setIncludeAge] = useState<string[]>([])
+  const [includeBodyPart, setIncludeBodyPart] = useState<string[]>([])
+  const [includeBoobSubCategory, setIncludeBoobSubCategory] = useState<string[]>([])
+  const [includeAssSubCategory, setIncludeAssSubCategory] = useState<string[]>([])
+  const [includeOthers, setIncludeOthers] = useState<string[]>([])
 
   useEffect(() => {
-    if (!initialProfile?.excluded) return
-    setExcludedEthnicity(initialProfile.excluded.ethnicity ?? [])
-    setExcludedBodyType(initialProfile.excluded.bodyType ?? [])
-    setExcludedAge(initialProfile.excluded.age ?? [])
-    setExcludedBodyPart(initialProfile.excluded.bodyPart ?? [])
-    setExcludedBoobSubCategory(initialProfile.excluded.boobSubCategory ?? [])
-    setExcludedAssSubCategory(initialProfile.excluded.assSubCategory ?? [])
-    setExcludedOthers(initialProfile.excluded.others ?? [])
+    if (!initialProfile?.include) return
+    setIncludeEthnicity(initialProfile.include.ethnicity ?? [])
+    setIncludeBodyType(initialProfile.include.bodyType ?? [])
+    setIncludeAge(initialProfile.include.age ?? [])
+    setIncludeBodyPart(initialProfile.include.bodyPart ?? [])
+    setIncludeBoobSubCategory(initialProfile.include.boobSubCategory ?? [])
+    setIncludeAssSubCategory(initialProfile.include.assSubCategory ?? [])
+    setIncludeOthers(initialProfile.include.others ?? [])
   }, [initialProfile])
 
   const resetProfile = () => {
-    setExcludedEthnicity([])
-    setExcludedBodyType([])
-    setExcludedAge([])
-    setExcludedBodyPart([])
-    setExcludedBoobSubCategory([])
-    setExcludedAssSubCategory([])
-    setExcludedOthers([])
+    setIncludeEthnicity([])
+    setIncludeBodyType([])
+    setIncludeAge([])
+    setIncludeBodyPart([])
+    setIncludeBoobSubCategory([])
+    setIncludeAssSubCategory([])
+    setIncludeOthers([])
   }
 
   const handleSave = () => {
@@ -201,14 +199,14 @@ export default function CreatorProfile({ onBack, onSave, initialProfile, saving 
       bodyTypeOther: "",
       hairColorOther: "",
       ageBracketOther: "",
-      excluded: {
-        ethnicity: excludedEthnicity,
-        bodyType: excludedBodyType,
-        age: excludedAge,
-        bodyPart: excludedBodyPart,
-        boobSubCategory: excludedBoobSubCategory,
-        assSubCategory: excludedAssSubCategory,
-        others: excludedOthers,
+      include: {
+        ethnicity: includeEthnicity,
+        bodyType: includeBodyType,
+        age: includeAge,
+        bodyPart: includeBodyPart,
+        boobSubCategory: includeBoobSubCategory,
+        assSubCategory: includeAssSubCategory,
+        others: includeOthers,
       },
     }
     onSave(profile)
@@ -216,14 +214,14 @@ export default function CreatorProfile({ onBack, onSave, initialProfile, saving 
 
   const isSaving = !!saving
 
-  const excludedTotal =
-    excludedEthnicity.length +
-    excludedBodyType.length +
-    excludedAge.length +
-    excludedBodyPart.length +
-    excludedBoobSubCategory.length +
-    excludedAssSubCategory.length +
-    excludedOthers.length
+  const selectedTotal =
+    includeEthnicity.length +
+    includeBodyType.length +
+    includeAge.length +
+    includeBodyPart.length +
+    includeBoobSubCategory.length +
+    includeAssSubCategory.length +
+    includeOthers.length
 
   return (
     <div className="rounded-2xl border border-border bg-card p-4 md:p-6 space-y-6">
@@ -231,13 +229,13 @@ export default function CreatorProfile({ onBack, onSave, initialProfile, saving 
         <div className="space-y-1">
           <h2 className="text-lg font-semibold text-foreground">Creator Profile</h2>
           <p className="text-xs text-muted-foreground">
-            Click tags to <span className="font-semibold text-foreground">exclude</span> subreddits that don’t apply.
+            Click tags to <span className="font-semibold text-foreground">include</span> matching subreddits.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           <span className="hidden sm:inline-flex rounded-full border border-border bg-background px-2.5 py-1 text-[11px] text-muted-foreground">
-            Excluded tags: <span className="ml-1 font-semibold text-foreground">{excludedTotal}</span>
+            Selected tags: <span className="ml-1 font-semibold text-foreground">{selectedTotal}</span>
           </span>
 
           <button
@@ -254,73 +252,73 @@ export default function CreatorProfile({ onBack, onSave, initialProfile, saving 
       <div className="rounded-xl border border-border bg-background px-4 py-3">
         <div className="text-xs font-semibold text-foreground">How it works</div>
         <div className="mt-1 text-xs text-muted-foreground">
-          Every selected tag is treated as <span className="font-semibold text-foreground">excluded</span>. Any subreddit
-          tagged with it will be hidden from the database.
+          If you select at least one tag, the database will show only subreddits tagged with any selected tag. If you
+          select nothing, it shows all subreddits.
         </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <SectionCard
           title="Ethnicity"
-          description="Exclude ethnic-focused subreddits you don’t match."
+          description="Select ethnic-focused subreddits you match."
           items={OPTIONS.ethnicity}
-          selected={excludedEthnicity}
-          onToggle={(v) => setExcludedEthnicity((prev) => toggle(prev, v))}
+          selected={includeEthnicity}
+          onToggle={(v) => setIncludeEthnicity((prev) => toggle(prev, v))}
           disabled={isSaving}
         />
 
         <SectionCard
           title="Body Type"
-          description="Exclude subreddits centered around body-type labels."
+          description="Select subreddits centered around body-type labels."
           items={OPTIONS.bodyType}
-          selected={excludedBodyType}
-          onToggle={(v) => setExcludedBodyType((prev) => toggle(prev, v))}
+          selected={includeBodyType}
+          onToggle={(v) => setIncludeBodyType((prev) => toggle(prev, v))}
           disabled={isSaving}
         />
 
         <SectionCard
           title="Age"
-          description="Exclude age-vibe categories that don’t fit."
+          description="Select age-vibe categories that fit."
           items={OPTIONS.age}
-          selected={excludedAge}
-          onToggle={(v) => setExcludedAge((prev) => toggle(prev, v))}
+          selected={includeAge}
+          onToggle={(v) => setIncludeAge((prev) => toggle(prev, v))}
           disabled={isSaving}
         />
 
         <SectionCard
           title="Body Part"
-          description="Exclude body-part niche subreddits you don’t want."
+          description="Select body-part niche subreddits you want."
           items={OPTIONS.bodyPart}
-          selected={excludedBodyPart}
-          onToggle={(v) => setExcludedBodyPart((prev) => toggle(prev, v))}
+          selected={includeBodyPart}
+          onToggle={(v) => setIncludeBodyPart((prev) => toggle(prev, v))}
           disabled={isSaving}
         />
 
         <SectionCard
           title="Boob Sub Category"
-          description="Exclude boob-specific subcategories."
+          description="Select boob-specific subcategories."
           items={OPTIONS.boobSubCategory}
-          selected={excludedBoobSubCategory}
-          onToggle={(v) => setExcludedBoobSubCategory((prev) => toggle(prev, v))}
+          selected={includeBoobSubCategory}
+          onToggle={(v) => setIncludeBoobSubCategory((prev) => toggle(prev, v))}
           disabled={isSaving}
         />
 
         <SectionCard
           title="Ass Sub Category"
-          description="Exclude ass-specific subcategories."
+          description="Select ass-specific subcategories."
           items={OPTIONS.assSubCategory}
-          selected={excludedAssSubCategory}
-          onToggle={(v) => setExcludedAssSubCategory((prev) => toggle(prev, v))}
+          selected={includeAssSubCategory}
+          onToggle={(v) => setIncludeAssSubCategory((prev) => toggle(prev, v))}
           disabled={isSaving}
         />
 
         <div className="lg:col-span-2">
           <SectionCard
             title="Others"
-            description="Exclude style/theme tags (cosplay, BDSM, alt, etc.)."
+            description="Select style/theme tags (cosplay, BDSM, alt, etc.)."
             items={OPTIONS.others}
-            selected={excludedOthers}
-            onToggle={(v) => setExcludedOthers((prev) => toggle(prev, v))}
+            selected={includeOthers}
+            onToggle={(v) => setIncludeOthers((prev) => toggle(prev, v))}
             disabled={isSaving}
           />
         </div>

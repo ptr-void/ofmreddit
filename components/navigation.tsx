@@ -128,17 +128,17 @@ export default function Navigation() {
                 >
                   Post Planner
                 </Link>
+                <Link
+                  href="/reddit-database"
+                  className={`hidden md:block px-4 py-2 rounded-lg font-medium transition-colors ${pathname === "/reddit-database"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                    }`}
+                >
+                  Subreddit Database
+                </Link>
                 {user.isAdmin ? (
                   <>
-                    <Link
-                      href="/reddit-database"
-                      className={`hidden md:block px-4 py-2 rounded-lg font-medium transition-colors ${pathname === "/reddit-database"
-                        ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                        }`}
-                    >
-                      Reddit Database
-                    </Link>
                     <Link
                       href="/caption-generator"
                       className={`hidden md:block px-4 py-2 rounded-lg font-medium transition-colors ${pathname === "/caption-generator"
@@ -227,17 +227,17 @@ export default function Navigation() {
             >
               Post Planner
             </Link>
+            <Link
+              href="/reddit-database"
+              className={`hidden md:block px-4 py-2 rounded-lg font-medium transition-colors ${pathname === "/reddit-database"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                }`}
+            >
+              Subreddit Database
+            </Link>
             {user.isAdmin ? (
               <>
-                <Link
-                  href="/reddit-database"
-                  className={`hidden md:block px-4 py-2 rounded-lg font-medium transition-colors ${pathname === "/reddit-database"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                    }`}
-                >
-                  Reddit Database
-                </Link>
                 <Link
                   href="/caption-generator"
                   onClick={() => setMobileMenuOpen(false)}
