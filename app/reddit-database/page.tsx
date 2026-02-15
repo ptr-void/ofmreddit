@@ -256,19 +256,12 @@ export default function RedditDatabasePage() {
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold tracking-tight md:text-3xl">{titleText}</h1>
+            <p className="mt-1 text-sm text-muted-foreground max-w-5xl">
+              Browse and filter curated subreddits based on niche, tags, and creator profile preferences. 
+              Use the Creator Profile button beside the auto refresh button to narrow results to only the subreddits that match your selected tags.
+              Single subreddit data is being refreshed approximately every 4 days.
+            </p>
           </div>
-          {!showCreatorProfile && (
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setShowCreatorProfile(true)}
-                disabled={loading}
-                className="inline-flex items-center rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Creator Profile
-              </button>
-            </div>
-          )}
         </div>
 
         {error && (
@@ -337,10 +330,22 @@ export default function RedditDatabasePage() {
                 </div>
 
                 <div className="flex items-end gap-4">
+                  {!showCreatorProfile && (
+                    <button
+                      type="button"
+                      onClick={() => setShowCreatorProfile(true)}
+                      disabled={loading}
+                      className="inline-flex items-center rounded-lg bg-accent border border-border mb-1 px-4 py-1.5 text-xs font-medium text-foreground shadow-sm transition hover:bg-primary disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Creator Profile
+                    </button>
+                  )}
+
                   <div className="flex flex-col gap-1 mb-1">
                     <span className="text-xs text-muted-foreground">Auto-refresh</span>
                     <Switch checked={isAutoRefreshing} onChange={(v) => setIsAutoRefreshing(v)} disabled={loading} />
                   </div>
+
                   <button
                     type="button"
                     onClick={handleRefreshClick}
@@ -390,12 +395,7 @@ export default function RedditDatabasePage() {
               </div>
 
               {activeTab === "database" ? (
-                <DatabaseTable
-                  headers={sheetData.headers}
-                  rows={filteredRows}
-                  sortState={sortState}
-                  onSort={handleSort}
-                />
+                <DatabaseTable headers={sheetData.headers} rows={filteredRows} sortState={sortState} onSort={handleSort} />
               ) : (
                 <AnalysisTable sortState={sortState} onSort={handleSort} />
               )}

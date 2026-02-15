@@ -6,7 +6,7 @@ type SheetData = {
   rows: string[][]
 }
 
-type ExcludedTags = {
+type IncludedTags = {
   ethnicity?: string[]
   bodyType?: string[]
   age?: string[]
@@ -17,7 +17,7 @@ type ExcludedTags = {
 }
 
 type CreatorProfile = {
-  excluded?: ExcludedTags
+  include?: IncludedTags
 }
 
 type RequestBody = {
@@ -39,6 +39,11 @@ function split(cell: string | undefined): string[] {
     .filter(Boolean)
 }
 
+function hasAnySelected(include: IncludedTags | undefined) {
+  if (!include) return false
+  return Object.values(include).some((arr) => Array.isArray(arr) && arr.length > 0)
+}
+
 export async function POST(req: NextRequest) {
   let body: RequestBody
   try {
@@ -52,7 +57,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing data" }, { status: 400 })
   }
 
-  const excluded = profile?.excluded ?? {}
+  const include = profile?.include ?? {}
+  const useInclude = hasAnySelected(include)
 
   const tagIndex = new Map<string, string[]>()
 
@@ -65,18 +71,21 @@ export async function POST(req: NextRequest) {
   tagSheet.headers.forEach((h, i) => headerMap.set(normalize(h), i))
 
   const filteredRows = sheetData.rows.filter((row) => {
+    if (!useInclude) return true
+
     const key = normalize(row[0])
     const tagRow = tagIndex.get(key)
-    if (!tagRow) return true
+    if (!tagRow) return false
 
-    for (const [category, values] of Object.entries(excluded)) {
+    for (const [category, values] of Object.entries(include)) {
       if (!values || values.length === 0) continue
       const idx = headerMap.get(normalize(category.replace(/([A-Z])/g, " $1")))
       if (idx === undefined) continue
       const tags = split(tagRow[idx])
-      if (values.some((v) => tags.includes(normalize(v)))) return false
+      if (values.some((v) => tags.includes(normalize(v)))) return true
     }
-    return true
+
+    return false
   })
 
   return NextResponse.json({
@@ -85,3 +94,4 @@ export async function POST(req: NextRequest) {
     rows: filteredRows,
   })
 }
+  
