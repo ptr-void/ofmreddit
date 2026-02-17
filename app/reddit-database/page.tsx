@@ -48,6 +48,15 @@ const Switch = ({
   </button>
 )
 
+const Tooltip: React.FC<{ text: React.ReactNode; children: React.ReactNode }> = ({ text, children }) => (
+  <div className="relative inline-flex items-center group">
+    {children}
+    <div className="pointer-events-none absolute top-full left-0 mt-2 w-96 bg-card text-xs text-left rounded py-3 px-4 opacity-0 group-hover:opacity-100 transition-opacity duration-200 border border-border shadow-lg z-20">
+      {text}
+    </div>
+  </div>
+)
+
 type SortDirection = "asc" | "desc" | null
 
 type SortState = {
@@ -256,11 +265,54 @@ export default function RedditDatabasePage() {
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold tracking-tight md:text-3xl">{titleText}</h1>
-            <p className="mt-1 text-sm text-muted-foreground max-w-5xl">
-              Browse and filter curated subreddits based on niche, tags, and creator profile preferences. 
-              Use the Creator Profile button beside the auto refresh button to narrow results to only the subreddits that match your selected tags.
-              Single subreddit data is being refreshed approximately every 4 days.
-            </p>
+              <p className="text-sm text-muted-foreground">
+                Browse and filter curated subreddits based on niche, tags, and creator profile preferences. 
+                Use the Creator Profile button beside the auto refresh button to narrow results to only the subreddits that match your selected tags.
+                Single subreddit data is being refreshed approximately every 4 days.
+
+                <Tooltip
+                  text={
+                    <div className="space-y-2 text-foreground">
+                      <div>
+                        <p className="font-medium">Barrier to Visibility (BTV)</p>
+                        <p>Indicates how difficult it is to get exposure in the subreddit. Higher values mean stronger competition or stricter posting dynamics.</p>
+                      </div>
+
+                      <div>
+                        <p className="font-medium">TSDI</p>
+                        <p>Top Slot Diversity Index. Measures how concentrated top-performing posts are. Lower diversity means fewer creators dominate visibility.</p>
+                      </div>
+
+                      <div>
+                        <p className="font-medium">Upvote / Comment Ratio</p>
+                        <p>Shows engagement behavior. Higher ratios suggest passive consumption, while lower ratios suggest more discussion.</p>
+                      </div>
+
+                      <div>
+                        <p className="font-medium">Minimum Post Karma</p>
+                        <p>The minimum required post karma to publish in the subreddit.</p>
+                      </div>
+
+                      <div>
+                        <p className="font-medium">Minimum Comment Karma</p>
+                        <p>The minimum required comment karma to participate.</p>
+                      </div>
+
+                      <div>
+                        <p className="font-medium">Minimum Account Age (days)</p>
+                        <p>The required account age before a user can post.</p>
+                      </div>
+                    </div>
+                  }
+                >
+                  <span
+                    aria-label="Database info"
+                    className="mt-1 ml-4 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border bg-background text-xs text-foreground shadow-sm transition hover:bg-accent cursor-default"
+                  >
+                    ?
+                  </span>
+                </Tooltip>
+              </p>
           </div>
         </div>
 
