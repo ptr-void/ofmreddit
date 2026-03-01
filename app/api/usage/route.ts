@@ -18,7 +18,7 @@ export async function POST(req: Request) {
         const feature = body?.feature
         const op = body?.op
         const meta = body?.meta
-        if (!feature || !["scraper", "post_planner", "caption_gen"].includes(feature)) {
+        if (!feature || !["scraper", "post_planner", "caption_gen", "database"].includes(feature)) {
             return NextResponse.json({ error: "Invalid feature" }, { status: 400 })
         }
 

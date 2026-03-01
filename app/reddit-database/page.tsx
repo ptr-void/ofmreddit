@@ -1,12 +1,14 @@
-// app/reddit-database/page.tsx
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { Database, BarChart3, User, Bookmark } from "lucide-react"
 import { RefreshIcon, WarningIcon } from "@/components/reddit-database/icons"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select2"
 import CreatorProfile, { type CreatorProfileValues } from "@/components/reddit-database/creator-profile"
+import SavedProfiles from "@/components/reddit-database/saved-profile"
 import DatabaseTable from "@/components/reddit-database/database-table"
 import AnalysisTable from "@/components/reddit-database/analysis-table"
+import SubscriptionTiers from "@/components/subscription/tiers"
 import { saveCreatorProfile, loadCreatorProfile } from "@/lib/session-cache/creator-profile-cache"
 import s from "@/styles/scraper.module.css"
 
@@ -36,13 +38,13 @@ const Switch = ({
     aria-checked={checked}
     onClick={() => onChange(!checked)}
     disabled={disabled}
-    className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
-      checked ? "bg-primary" : "bg-foreground"
+    className={`relative inline-flex h-6 w-10 items-center rounded-full transition-colors ${
+      checked ? "bg-primary" : "bg-accent"
     } ${disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
   >
     <span
-      className={`inline-block h-5 w-5 transform rounded-full bg-background shadow transition-transform ${
-        checked ? "translate-x-6" : "translate-x-1"
+      className={`inline-block h-4 w-4 transform rounded-full bg-foreground shadow transition-transform ${
+        checked ? "translate-x-5" : "translate-x-1"
       }`}
     />
   </button>
@@ -76,11 +78,14 @@ export default function RedditDatabasePage() {
   const [selectedNiche, setSelectedNiche] = useState<string>("all")
   const [search, setSearch] = useState<string>("")
   const [sortState, setSortState] = useState<SortState>({ columnIndex: -1, direction: null })
-  const [showCreatorProfile, setShowCreatorProfile] = useState(false)
+  
+  const [currentView, setCurrentView] = useState<"database" | "creator" | "saved">("database")
+
   const [normalizedProfile, setNormalizedProfile] = useState<any | null>(null)
   const [currentProfile, setCurrentProfile] = useState<CreatorProfileValues | null>(null)
   const [cachedProfile, setCachedProfile] = useState<CreatorProfileValues | null>(null)
   const [activeTab, setActiveTab] = useState<"database" | "analysis">("database")
+  const [showTiers, setShowTiers] = useState(false)
 
   const nicheColumnIndexRef = useRef<number>(-1)
   const intervalRef = useRef<number | null>(null)
@@ -206,9 +211,9 @@ export default function RedditDatabasePage() {
     loadSheet(false)
   }
 
-  const handleSaveProfile = async (profile: CreatorProfileValues) => {
+  const handleApplyProfile = async (profile: CreatorProfileValues) => {
     if (!rawSheetData || !tagSheetData) {
-      setShowCreatorProfile(false)
+      setCurrentView("database")
       return
     }
     setLoading(true)
@@ -248,13 +253,18 @@ export default function RedditDatabasePage() {
       setSelectedNiche("all")
       setSearch("")
       setSortState({ columnIndex: -1, direction: null })
-      setShowCreatorProfile(false)
+      setCurrentView("database")
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to apply creator profile."
       setError(msg)
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleEditSavedProfile = (profile: CreatorProfileValues) => {
+    setCachedProfile(profile)
+    setCurrentView("creator")
   }
 
   const titleText = "Subreddit Database"
@@ -265,54 +275,54 @@ export default function RedditDatabasePage() {
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold tracking-tight md:text-3xl">{titleText}</h1>
-              <p className="text-sm text-muted-foreground">
-                Browse and filter curated subreddits based on niche, tags, and creator profile preferences. 
-                Use the Creator Profile button beside the auto refresh button to narrow results to only the subreddits that match your selected tags.
-                Single subreddit data is being refreshed approximately every 4 days.
+            <p className="text-sm text-muted-foreground">
+              Browse and filter curated subreddits based on niche, tags, and creator profile preferences. 
+              Use the Creator Profile button beside the auto refresh button to narrow results to only the subreddits that match your selected tags.
+              Single subreddit data is being refreshed approximately every 4 days.
 
-                <Tooltip
-                  text={
-                    <div className="space-y-2 text-foreground">
-                      <div>
-                        <p className="font-medium">Barrier to Visibility (BTV)</p>
-                        <p>Indicates how difficult it is to get exposure in the subreddit. Higher values mean stronger competition or stricter posting dynamics.</p>
-                      </div>
-
-                      <div>
-                        <p className="font-medium">TSDI</p>
-                        <p>Top Slot Diversity Index. Measures how concentrated top-performing posts are. Lower diversity means fewer creators dominate visibility.</p>
-                      </div>
-
-                      <div>
-                        <p className="font-medium">Upvote / Comment Ratio</p>
-                        <p>Shows engagement behavior. Higher ratios suggest passive consumption, while lower ratios suggest more discussion.</p>
-                      </div>
-
-                      <div>
-                        <p className="font-medium">Minimum Post Karma</p>
-                        <p>The minimum required post karma to publish in the subreddit.</p>
-                      </div>
-
-                      <div>
-                        <p className="font-medium">Minimum Comment Karma</p>
-                        <p>The minimum required comment karma to participate.</p>
-                      </div>
-
-                      <div>
-                        <p className="font-medium">Minimum Account Age (days)</p>
-                        <p>The required account age before a user can post.</p>
-                      </div>
+              <Tooltip
+                text={
+                  <div className="space-y-2 text-foreground">
+                    <div>
+                      <p className="font-medium">Barrier to Visibility (BTV)</p>
+                      <p>Indicates how difficult it is to get exposure in the subreddit. Higher values mean stronger competition or stricter posting dynamics.</p>
                     </div>
-                  }
+
+                    <div>
+                      <p className="font-medium">TSDI</p>
+                      <p>Top Slot Diversity Index. Measures how concentrated top-performing posts are. Lower diversity means fewer creators dominate visibility.</p>
+                    </div>
+
+                    <div>
+                      <p className="font-medium">Upvote / Comment Ratio</p>
+                      <p>Shows engagement behavior. Higher ratios suggest passive consumption, while lower ratios suggest more discussion.</p>
+                    </div>
+
+                    <div>
+                      <p className="font-medium">Minimum Post Karma</p>
+                      <p>The minimum required post karma to publish in the subreddit.</p>
+                    </div>
+
+                    <div>
+                      <p className="font-medium">Minimum Comment Karma</p>
+                      <p>The minimum required comment karma to participate.</p>
+                    </div>
+
+                    <div>
+                      <p className="font-medium">Minimum Account Age (days)</p>
+                      <p>The required account age before a user can post.</p>
+                    </div>
+                  </div>
+                }
+              >
+                <span
+                  aria-label="Database info"
+                  className="mt-1 ml-4 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border bg-background text-xs text-foreground shadow-sm transition hover:bg-accent cursor-default"
                 >
-                  <span
-                    aria-label="Database info"
-                    className="mt-1 ml-4 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border bg-background text-xs text-foreground shadow-sm transition hover:bg-accent cursor-default"
-                  >
-                    ?
-                  </span>
-                </Tooltip>
-              </p>
+                  ?
+                </span>
+              </Tooltip>
+            </p>
           </div>
         </div>
 
@@ -333,14 +343,23 @@ export default function RedditDatabasePage() {
           </div>
         )}
 
-        {sheetData &&
-          (showCreatorProfile ? (
+        {sheetData && (
+          currentView === "creator" ? (
             <section className="flex flex-1 flex-col gap-4">
               <CreatorProfile
-                onBack={() => setShowCreatorProfile(false)}
-                onSave={handleSaveProfile}
+                onBack={() => setCurrentView("database")}
+                onApply={handleApplyProfile}
+                onShowTiers={() => setShowTiers(true)}
                 initialProfile={cachedProfile}
                 saving={loading}
+              />
+            </section>
+          ) : currentView === "saved" ? (
+            <section className="flex flex-1 flex-col gap-4">
+              <SavedProfiles
+                onBack={() => setCurrentView("database")}
+                onEdit={handleEditSavedProfile}
+                onApply={handleApplyProfile}
               />
             </section>
           ) : (
@@ -348,7 +367,7 @@ export default function RedditDatabasePage() {
               <div className="flex flex-wrap items-end justify-between gap-4">
                 <div className="flex flex-wrap items-end gap-4">
                   <div className="flex flex-col gap-1 w-96">
-                    <label htmlFor="search" className="text-xs font-semibold text-foreground">
+                    <label htmlFor="search" className="text-xs font-semibold text-muted-foreground">
                       Search
                     </label>
                     <input
@@ -362,7 +381,7 @@ export default function RedditDatabasePage() {
                   </div>
 
                   <div className="flex flex-col gap-1 w-40">
-                    <label htmlFor="nicheFilter" className="text-xs font-semibold text-foreground">
+                    <label htmlFor="nicheFilter" className="text-xs font-semibold text-muted-foreground">
                       Filter Niche
                     </label>
                     <Select value={selectedNiche} onValueChange={(v) => setSelectedNiche(v)}>
@@ -381,20 +400,29 @@ export default function RedditDatabasePage() {
                   </div>
                 </div>
 
-                <div className="flex items-end gap-4">
-                  {!showCreatorProfile && (
-                    <button
-                      type="button"
-                      onClick={() => setShowCreatorProfile(true)}
-                      disabled={loading}
-                      className="inline-flex items-center rounded-lg bg-accent border border-border mb-1 px-4 py-1.5 text-xs font-medium text-foreground shadow-sm transition hover:bg-primary disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      Creator Profile
-                    </button>
-                  )}
+                <div className="flex items-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentView("creator")}
+                    disabled={loading}
+                    className="mb-1 inline-flex h-10 items-center gap-2 rounded-md border border-border bg-card px-4 text-xs font-medium text-foreground shadow-sm transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <User className="h-4 w-4" />
+                    Creator Profile
+                  </button>
 
-                  <div className="flex flex-col gap-1 mb-1">
-                    <span className="text-xs text-muted-foreground">Auto-refresh</span>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentView("saved")}
+                    disabled={loading}
+                    className="mb-1 inline-flex h-10 items-center gap-2 rounded-md border border-border bg-card px-4 text-xs font-medium text-foreground shadow-sm transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Bookmark className="h-4 w-4" />
+                    Saved Profiles
+                  </button>
+
+                  <div className="mb-1 inline-flex h-10 items-center gap-3 rounded-md border border-border bg-card pl-3 pr-2 shadow-sm">
+                    <span className="text-xs font-medium text-muted-foreground">Auto-refresh</span>
                     <Switch checked={isAutoRefreshing} onChange={(v) => setIsAutoRefreshing(v)} disabled={loading} />
                   </div>
 
@@ -402,7 +430,7 @@ export default function RedditDatabasePage() {
                     type="button"
                     onClick={handleRefreshClick}
                     disabled={loading}
-                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border bg-background text-foreground shadow-sm transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
+                    className="mb-1 inline-flex h-10 w-10 items-center justify-center rounded-md border border-border bg-card text-foreground shadow-sm transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <RefreshIcon className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
                   </button>
@@ -413,33 +441,36 @@ export default function RedditDatabasePage() {
                 <button
                   type="button"
                   onClick={() => setActiveTab("database")}
-                  className={`px-3 py-2 text-xs font-medium transition ${
+                  className={`inline-flex items-center gap-2 px-3 py-2 text-xs font-medium transition ${
                     activeTab === "database"
                       ? "border-b-2 border-primary text-foreground"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
+                  <Database className="h-4 w-4" />
                   Subreddit Database
                 </button>
+
                 <button
                   type="button"
                   onClick={() => setActiveTab("analysis")}
-                  className={`px-3 py-2 text-xs font-medium transition ${
+                  className={`inline-flex items-center gap-2 px-3 py-2 text-xs font-medium transition ${
                     activeTab === "analysis"
                       ? "border-b-2 border-primary text-foreground"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
+                  <BarChart3 className="h-4 w-4" />
                   Subreddit Analysis
                 </button>
               </div>
 
-              <div className="rounded-xl border border-border bg-card px-4 py-3 text-xs text-muted-foreground">
+              <div className="px-1 text-xs text-muted-foreground">
                 {(() => {
                   const totalRows = rawSheetData?.rows.length ?? sheetData.rows.length
                   return (
                     <>
-                      Showing {filteredRows.length.toLocaleString()} of {totalRows.toLocaleString()} rows •{" "}
+                      Showing {filteredRows.length.toLocaleString()} of {totalRows.toLocaleString()} subreddits •{" "}
                       {sheetData.headers.length.toLocaleString()} columns
                     </>
                   )
@@ -449,10 +480,20 @@ export default function RedditDatabasePage() {
               {activeTab === "database" ? (
                 <DatabaseTable headers={sheetData.headers} rows={filteredRows} sortState={sortState} onSort={handleSort} />
               ) : (
-                <AnalysisTable sortState={sortState} onSort={handleSort} />
+                <AnalysisTable 
+                  sortState={sortState} 
+                  onSort={handleSort} 
+                  onShowTiers={() => setShowTiers(true)}
+                />
               )}
             </section>
-          ))}
+          )
+        )}
+
+        <SubscriptionTiers 
+          open={showTiers} 
+          onClose={() => setShowTiers(false)} 
+        />
 
         {!loading && !sheetData && !error && (
           <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">

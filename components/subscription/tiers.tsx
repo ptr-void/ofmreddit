@@ -11,7 +11,9 @@ type ApiTier = {
   weekly_scraper_limit: number | string | null
   weekly_planner_limit: number | string | null
   weekly_caption_limit: number | string | null
+  weekly_database_limit: number | string | null
   saved_username_limit: number | string | null
+  saved_profile_limit: number | string | null
 }
 
 type ApiSubscription = {
@@ -181,8 +183,16 @@ export default function SubscriptionTiers(props: Props) {
                           <span className="font-bold text-foreground text-base">{fmt(t.weekly_caption_limit)}</span>
                         </li>
                         <li className="flex items-center justify-between py-1">
+                          <span className="text-muted-foreground">Weekly Database Limit</span>
+                          <span className="font-bold text-foreground text-base">{fmt(t.weekly_database_limit)}</span>
+                        </li>
+                        <li className="flex items-center justify-between py-1">
                           <span className="text-muted-foreground">Saved Username Limit</span>
                           <span className="font-bold text-foreground text-base">{fmt(t.saved_username_limit)}</span>
+                        </li>
+                        <li className="flex items-center justify-between py-1">
+                          <span className="text-muted-foreground">Saved Profile Limit</span>
+                          <span className="font-bold text-foreground text-base">{fmt(t.saved_profile_limit)}</span>
                         </li>
                       </ul>
 
