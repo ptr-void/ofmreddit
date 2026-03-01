@@ -9,7 +9,9 @@ type ApiTier = {
   weekly_scraper_limit: number | string | null
   weekly_planner_limit: number | string | null
   weekly_caption_limit: number | string | null
+  weekly_database_limit: number | string | null
   saved_username_limit: number | string | null
+  saved_profile_limit: number | string | null
 }
 
 type UiTier = {
@@ -20,7 +22,9 @@ type UiTier = {
     weekly_scraper_limit: string
     weekly_planner_limit: string
     weekly_caption_limit: string
+    weekly_database_limit: string
     saved_username_limit: string
+    saved_profile_limit: string
   }
 }
 
@@ -28,14 +32,18 @@ const LIMIT_KEYS = [
   "weekly_scraper_limit",
   "weekly_planner_limit",
   "weekly_caption_limit",
+  "weekly_database_limit",
   "saved_username_limit",
+  "saved_profile_limit",
 ] as const
 
 const LABELS: Record<(typeof LIMIT_KEYS)[number], string> = {
   weekly_scraper_limit: "Weekly Scraper Limit",
   weekly_planner_limit: "Weekly Planner Limit",
   weekly_caption_limit: "Weekly Caption Limit",
+  weekly_database_limit: "Weekly Database Limit",
   saved_username_limit: "Saved Username Limit",
+  saved_profile_limit: "Saved Profile Limit",
 }
 
 export function SubscriptionTierTab() {
@@ -67,8 +75,12 @@ export function SubscriptionTierTab() {
               row.weekly_planner_limit == null ? "" : String(row.weekly_planner_limit),
             weekly_caption_limit:
               row.weekly_caption_limit == null ? "" : String(row.weekly_caption_limit),
+            weekly_database_limit:
+              row.weekly_database_limit == null ? "" : String(row.weekly_database_limit),
             saved_username_limit:
               row.saved_username_limit == null ? "" : String(row.saved_username_limit),
+            saved_profile_limit:
+              row.saved_profile_limit == null ? "" : String(row.saved_profile_limit),
           },
         }))
         setTiers(mapped)
@@ -98,7 +110,9 @@ export function SubscriptionTierTab() {
       weekly_scraper_limit: tier.limits.weekly_scraper_limit === "" ? 0 : Number(tier.limits.weekly_scraper_limit),
       weekly_planner_limit: tier.limits.weekly_planner_limit === "" ? 0 : Number(tier.limits.weekly_planner_limit),
       weekly_caption_limit: tier.limits.weekly_caption_limit === "" ? 0 : Number(tier.limits.weekly_caption_limit),
+      weekly_database_limit: tier.limits.weekly_database_limit === "" ? 0 : Number(tier.limits.weekly_database_limit),
       saved_username_limit: tier.limits.saved_username_limit === "" ? 0 : Number(tier.limits.saved_username_limit),
+      saved_profile_limit: tier.limits.saved_profile_limit === "" ? 0 : Number(tier.limits.saved_profile_limit),
     }
 
     const res = await fetch("/api/admin/subscription-tiers", {

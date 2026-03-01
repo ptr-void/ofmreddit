@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import { AlertCircle } from "lucide-react"
 
 type SortDirection = "asc" | "desc" | null
 type SortState = { columnIndex: number; direction: SortDirection }
@@ -8,6 +9,7 @@ type SortState = { columnIndex: number; direction: SortDirection }
 type Props = {
   sortState: SortState
   onSort: (index: number) => void
+  onShowTiers?: (open: boolean) => void 
 }
 
 type AnalysisRow = {
@@ -31,7 +33,7 @@ function findColumnIndex(headers: string[], possibleNames: string[]) {
   return lowerHeaders.findIndex((h) => lowerPossible.some((p) => h.includes(p)))
 }
 
-export default function AnalysisTable({ sortState, onSort }: Props) {
+export default function AnalysisTable({ sortState, onSort, onShowTiers }: Props) {
   const [sheetHeaders, setSheetHeaders] = useState<string[]>([])
   const [sheetRows, setSheetRows] = useState<string[][]>([])
   const [loading, setLoading] = useState(false)
@@ -41,24 +43,47 @@ export default function AnalysisTable({ sortState, onSort }: Props) {
   const handleFetch = async () => {
     setLoading(true)
     setErrorMsg(null)
+    const token = localStorage.getItem("token")
+
+    if (!token) {
+      setErrorMsg("Please log in to analyze data.")
+      setLoading(false)
+      return
+    }
 
     try {
+      const pre = await fetch("/api/usage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ feature: "database", op: "check" }),
+      })
+
+      if (!pre.ok) {
+        const j = await pre.json()
+        if (j.showTiers && onShowTiers) onShowTiers(true)
+        throw new Error(j.error || "Limit check failed")
+      }
+
       const res = await fetch("/api/reddit-scrape")
       const text = await res.text()
 
       if (text.trim().startsWith("<")) {
-        throw new Error(`Server returned HTML error (${res.status}). Check your terminal for compile errors.`)
+        throw new Error(`Server error (${res.status}). Check terminal for details.`)
       }
 
       const data = JSON.parse(text)
-
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to fetch Sheet3")
-      }
+      if (!res.ok) throw new Error(data.error || "Failed to fetch data")
 
       setSheetHeaders(data.headers || [])
       setSheetRows(data.rows || [])
       setHasLoaded(true)
+
+      await fetch("/api/usage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ feature: "database", op: "record" }),
+      })
+
     } catch (err: any) {
       setErrorMsg(err.message)
     } finally {
@@ -68,15 +93,14 @@ export default function AnalysisTable({ sortState, onSort }: Props) {
 
   const analysisRows = useMemo<AnalysisRow[]>(() => {
     if (!sheetRows.length) return []
-
     const idx = {
       subreddit: findColumnIndex(sheetHeaders, ["subreddit", "name"]),
       btv: findColumnIndex(sheetHeaders, ["barrier", "btv"]),
       tsdi: findColumnIndex(sheetHeaders, ["top slot", "diversity", "tsdi"]),
       ratio: findColumnIndex(sheetHeaders, ["upvote", "root", "comment", "ratio"]),
-      minPostKarma: findColumnIndex(sheetHeaders, ["minimum post karma", "min post karma", "post karma"]),
-      minCommentKarma: findColumnIndex(sheetHeaders, ["minimum comment karma", "min comment karma", "comment karma"]),
-      minAccountAge: findColumnIndex(sheetHeaders, ["minimum account age", "account age", "age (days)", "age days"]),
+      minPostKarma: findColumnIndex(sheetHeaders, ["minimum post karma", "min post karma"]),
+      minCommentKarma: findColumnIndex(sheetHeaders, ["minimum comment karma", "min comment karma"]),
+      minAccountAge: findColumnIndex(sheetHeaders, ["minimum account age", "age (days)"]),
     }
 
     return sheetRows.map((row) => ({
@@ -131,7 +155,7 @@ export default function AnalysisTable({ sortState, onSort }: Props) {
 
   if (!hasLoaded) {
     return (
-      <div className="flex justify-center py-10">
+      <div className="flex flex-col items-center justify-center py-10 gap-4">
         <button
           onClick={handleFetch}
           disabled={loading}
@@ -139,18 +163,11 @@ export default function AnalysisTable({ sortState, onSort }: Props) {
         >
           {loading ? "Analyzing..." : "Analyze Data"}
         </button>
-      </div>
-    )
-  }
-
-  if (errorMsg) {
-    return (
-      <div className="flex flex-col items-center justify-center py-10 text-destructive gap-2">
-        <p className="font-bold">Error Loading Data</p>
-        <p className="text-sm bg-destructive/10 p-2 rounded max-w-lg text-center">{errorMsg}</p>
-        <button onClick={() => setHasLoaded(false)} className="underline mt-2">
-          Try Again
-        </button>
+        {errorMsg && (
+          <div className="flex items-center gap-2 text-sm text-destructive text-center max-w-md">
+            <AlertCircle className="h-4 w-4 shrink-0" /> {errorMsg}
+          </div>
+        )}
       </div>
     )
   }

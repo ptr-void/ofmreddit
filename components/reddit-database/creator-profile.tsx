@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { Save, CheckCircle2, AlertCircle } from "lucide-react"
 
 export type CreatorProfileValues = {
   ethnicity: string
@@ -31,7 +32,8 @@ export type CreatorProfileValues = {
 
 type CreatorProfileProps = {
   onBack: () => void
-  onSave: (profile: CreatorProfileValues) => void
+  onApply: (profile: CreatorProfileValues) => void
+  onShowTiers?: () => void
   initialProfile?: CreatorProfileValues | null
   saving?: boolean
 }
@@ -53,10 +55,7 @@ function toggle(list: string[], value: string) {
 }
 
 function titleCase(input: string) {
-  return input
-    .split(" ")
-    .map((w) => (w.length ? w[0].toUpperCase() + w.slice(1) : w))
-    .join(" ")
+  return input.split(" ").map((w) => (w.length ? w[0].toUpperCase() + w.slice(1) : w)).join(" ")
 }
 
 function labelize(item: string) {
@@ -70,19 +69,8 @@ function countSelected(selected: string[], all: string[]) {
   return all.filter((x) => set.has(x.toLowerCase())).length
 }
 
-function Pills({
-  items,
-  selected,
-  onToggle,
-  disabled,
-}: {
-  items: string[]
-  selected: string[]
-  onToggle: (value: string) => void
-  disabled: boolean
-}) {
+function Pills({ items, selected, onToggle, disabled }: { items: string[], selected: string[], onToggle: (v: string) => void, disabled: boolean }) {
   const set = useMemo(() => new Set(selected.map((v) => v.toLowerCase())), [selected])
-
   return (
     <div className="flex flex-wrap gap-2">
       {items.map((item) => {
@@ -94,13 +82,7 @@ function Pills({
             type="button"
             onClick={() => onToggle(item)}
             disabled={disabled}
-            aria-pressed={checked}
-            className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
-              checked
-                ? "border-primary/40 bg-primary/10 text-foreground"
-                : "border-border bg-background text-foreground hover:bg-accent"
-            } ${disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
-            title={checked ? "Included" : "Not selected"}
+            className={`rounded-full border px-3 py-1 text-xs font-medium transition ${checked ? "border-primary/40 bg-primary/10 text-foreground" : "border-border bg-background text-foreground hover:bg-accent"} ${disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
           >
             {labelize(item)}
           </button>
@@ -110,23 +92,8 @@ function Pills({
   )
 }
 
-function SectionCard({
-  title,
-  description,
-  items,
-  selected,
-  onToggle,
-  disabled,
-}: {
-  title: string
-  description: string
-  items: string[]
-  selected: string[]
-  onToggle: (value: string) => void
-  disabled: boolean
-}) {
+function SectionCard({ title, description, items, selected, onToggle, disabled }: { title: string, description: string, items: string[], selected: string[], onToggle: (v: string) => void, disabled: boolean }) {
   const selectedCount = countSelected(selected, items)
-
   return (
     <div className="rounded-xl border border-border bg-background p-4 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -134,25 +101,17 @@ function SectionCard({
           <div className="text-sm font-semibold text-foreground">{title}</div>
           <div className="text-xs text-muted-foreground">{description}</div>
         </div>
-
         <div className="flex items-center gap-2 text-[11px]">
-          <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-1 text-foreground">
-            Selected: <span className="font-semibold">{selectedCount}</span>
-          </span>
-          <span className="rounded-full border border-border bg-card px-2 py-1 text-muted-foreground">
-            Total: <span className="font-semibold text-foreground">{items.length}</span>
-          </span>
+          <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-1 text-foreground">Selected: <span className="font-semibold">{selectedCount}</span></span>
+          <span className="rounded-full border border-border bg-card px-2 py-1 text-muted-foreground">Total: <span className="font-semibold text-foreground">{items.length}</span></span>
         </div>
       </div>
-
-      <div className="mt-3">
-        <Pills items={items} selected={selected} onToggle={onToggle} disabled={disabled} />
-      </div>
+      <div className="mt-3"><Pills items={items} selected={selected} onToggle={onToggle} disabled={disabled} /></div>
     </div>
   )
 }
 
-export default function CreatorProfile({ onBack, onSave, initialProfile, saving }: CreatorProfileProps) {
+export default function CreatorProfile({ onBack, onApply, onShowTiers, initialProfile, saving }: CreatorProfileProps) {
   const [includeEthnicity, setIncludeEthnicity] = useState<string[]>([])
   const [includeBodyType, setIncludeBodyType] = useState<string[]>([])
   const [includeAge, setIncludeAge] = useState<string[]>([])
@@ -160,6 +119,11 @@ export default function CreatorProfile({ onBack, onSave, initialProfile, saving 
   const [includeBoobSubCategory, setIncludeBoobSubCategory] = useState<string[]>([])
   const [includeAssSubCategory, setIncludeAssSubCategory] = useState<string[]>([])
   const [includeOthers, setIncludeOthers] = useState<string[]>([])
+  const [showSaveModal, setShowSaveModal] = useState(false)
+  const [modelName, setModelName] = useState("")
+  const [isSavingDb, setIsSavingDb] = useState(false)
+  const [toastMessage, setToastMessage] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!initialProfile?.include) return
@@ -173,185 +137,120 @@ export default function CreatorProfile({ onBack, onSave, initialProfile, saving 
   }, [initialProfile])
 
   const resetProfile = () => {
-    setIncludeEthnicity([])
-    setIncludeBodyType([])
-    setIncludeAge([])
-    setIncludeBodyPart([])
-    setIncludeBoobSubCategory([])
-    setIncludeAssSubCategory([])
-    setIncludeOthers([])
+    setIncludeEthnicity([]); setIncludeBodyType([]); setIncludeAge([]); setIncludeBodyPart([]); setIncludeBoobSubCategory([]); setIncludeAssSubCategory([]); setIncludeOthers([])
   }
 
-  const handleSave = () => {
-    const profile: CreatorProfileValues = {
-      ethnicity: "any",
-      bodyType: "any",
-      hairColor: "any",
-      ageBracket: "any",
-      boobsType: "any",
-      distinctiveFeatures: "",
-      hardLimits: "",
-      specialties: "",
-      collabSolo: false,
-      collabBoyGirl: false,
-      collabGirlGirl: false,
-      ethnicityOther: "",
-      bodyTypeOther: "",
-      hairColorOther: "",
-      ageBracketOther: "",
-      include: {
-        ethnicity: includeEthnicity,
-        bodyType: includeBodyType,
-        age: includeAge,
-        bodyPart: includeBodyPart,
-        boobSubCategory: includeBoobSubCategory,
-        assSubCategory: includeAssSubCategory,
-        others: includeOthers,
-      },
+  const buildProfileData = (): CreatorProfileValues => ({
+    ethnicity: "any", bodyType: "any", hairColor: "any", ageBracket: "any", boobsType: "any", distinctiveFeatures: "", hardLimits: "", specialties: "", collabSolo: false, collabBoyGirl: false, collabGirlGirl: false, ethnicityOther: "", bodyTypeOther: "", hairColorOther: "", ageBracketOther: "",
+    include: { ethnicity: includeEthnicity, bodyType: includeBodyType, age: includeAge, bodyPart: includeBodyPart, boobSubCategory: includeBoobSubCategory, assSubCategory: includeAssSubCategory, others: includeOthers }
+  })
+
+  const handleApply = () => onApply(buildProfileData())
+
+  const handleSaveToDatabase = async () => {
+    if (!modelName.trim()) return
+    setIsSavingDb(true)
+    setError(null)
+    const token = localStorage.getItem("token")
+    try {
+      const res = await fetch("/api/reddit-database/creator-profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ name: modelName, profile: buildProfileData() }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        if (data.code === "LIMIT_REACHED") {
+          setError(`Limit reached (${data.cap} profiles). Upgrade your plan to save more.`)
+          if (onShowTiers) onShowTiers()
+        } else {
+          setError(data.error || "Failed to save profile")
+        }
+        return
+      }
+      setShowSaveModal(false)
+      setModelName("")
+      setToastMessage("Profile saved successfully!")
+      setTimeout(() => setToastMessage(null), 3000)
+    } catch (err) {
+      setError("A network error occurred.")
+    } finally {
+      setIsSavingDb(false)
     }
-    onSave(profile)
   }
 
-  const isSaving = !!saving
-
-  const selectedTotal =
-    includeEthnicity.length +
-    includeBodyType.length +
-    includeAge.length +
-    includeBodyPart.length +
-    includeBoobSubCategory.length +
-    includeAssSubCategory.length +
-    includeOthers.length
+  const isSaving = !!saving || isSavingDb
+  const selectedTotal = includeEthnicity.length + includeBodyType.length + includeAge.length + includeBodyPart.length + includeBoobSubCategory.length + includeAssSubCategory.length + includeOthers.length
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-4 md:p-6 space-y-6">
+    <div className="relative rounded-2xl border border-border bg-card p-4 md:p-6 space-y-6">
+      {showSaveModal && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center rounded-2xl bg-background/80 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-xl border border-border bg-card p-6 shadow-lg">
+            <h3 className="mb-4 text-lg font-semibold text-foreground">Save Profile</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-muted-foreground">Model Name</label>
+                <input
+                  type="text"
+                  value={modelName}
+                  onChange={(e) => setModelName(e.target.value)}
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  placeholder="Enter a name"
+                />
+                {error && <div className="mt-2 flex items-center gap-1 text-[11px] text-destructive"><AlertCircle className="h-3 w-3" /> {error}</div>}
+              </div>
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={() => { setShowSaveModal(false); setError(null); }} className="rounded-lg px-4 py-2 text-xs font-medium text-muted-foreground hover:bg-accent">Cancel</button>
+                <button type="button" onClick={handleSaveToDatabase} disabled={!modelName.trim() || isSavingDb} className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-xs font-medium text-primary-foreground shadow-sm hover:opacity-90 disabled:opacity-60"><Save className="h-4 w-4" /> {isSavingDb ? "Saving..." : "Save"}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-1">
           <h2 className="text-lg font-semibold text-foreground">Creator Profile</h2>
-          <p className="text-xs text-muted-foreground">
-            Click tags to <span className="font-semibold text-foreground">include</span> matching subreddits.
-          </p>
+          <p className="text-xs text-muted-foreground">Click tags to include matching subreddits.</p>
         </div>
-
         <div className="flex items-center gap-2">
-          <span className="hidden sm:inline-flex rounded-full border border-border bg-background px-2.5 py-1 text-[11px] text-muted-foreground">
-            Selected tags: <span className="ml-1 font-semibold text-foreground">{selectedTotal}</span>
-          </span>
-
-          <button
-            type="button"
-            onClick={onBack}
-            disabled={isSaving}
-            className="inline-flex items-center rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            Back to Database
-          </button>
+          <span className="hidden sm:inline-flex rounded-full border border-border bg-background px-2.5 py-1 text-[11px] text-muted-foreground">Selected tags: <span className="ml-1 font-semibold text-foreground">{selectedTotal}</span></span>
+          <button type="button" onClick={onBack} disabled={isSaving} className="inline-flex items-center rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent disabled:opacity-60">Back to Database</button>
         </div>
       </div>
 
       <div className="rounded-xl border border-border bg-background px-4 py-3">
         <div className="text-xs font-semibold text-foreground">How it works</div>
-        <div className="mt-1 text-xs text-muted-foreground">
-          If you select at least one tag, the database will show only subreddits tagged with any selected tag. If you
-          select nothing, it shows all subreddits.
-        </div>
+        <div className="mt-1 text-xs text-muted-foreground">Select tags to filter subreddits. If none are selected, all subreddits are shown.</div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <SectionCard
-          title="Ethnicity"
-          description="Select ethnic-focused subreddits you match."
-          items={OPTIONS.ethnicity}
-          selected={includeEthnicity}
-          onToggle={(v) => setIncludeEthnicity((prev) => toggle(prev, v))}
-          disabled={isSaving}
-        />
-
-        <SectionCard
-          title="Body Type"
-          description="Select subreddits centered around body-type labels."
-          items={OPTIONS.bodyType}
-          selected={includeBodyType}
-          onToggle={(v) => setIncludeBodyType((prev) => toggle(prev, v))}
-          disabled={isSaving}
-        />
-
-        <SectionCard
-          title="Age"
-          description="Select age-vibe categories that fit."
-          items={OPTIONS.age}
-          selected={includeAge}
-          onToggle={(v) => setIncludeAge((prev) => toggle(prev, v))}
-          disabled={isSaving}
-        />
-
-        <SectionCard
-          title="Body Part"
-          description="Select body-part niche subreddits you want."
-          items={OPTIONS.bodyPart}
-          selected={includeBodyPart}
-          onToggle={(v) => setIncludeBodyPart((prev) => toggle(prev, v))}
-          disabled={isSaving}
-        />
-
-        <SectionCard
-          title="Boob Sub Category"
-          description="Select boob-specific subcategories."
-          items={OPTIONS.boobSubCategory}
-          selected={includeBoobSubCategory}
-          onToggle={(v) => setIncludeBoobSubCategory((prev) => toggle(prev, v))}
-          disabled={isSaving}
-        />
-
-        <SectionCard
-          title="Ass Sub Category"
-          description="Select ass-specific subcategories."
-          items={OPTIONS.assSubCategory}
-          selected={includeAssSubCategory}
-          onToggle={(v) => setIncludeAssSubCategory((prev) => toggle(prev, v))}
-          disabled={isSaving}
-        />
-
-        <div className="lg:col-span-2">
-          <SectionCard
-            title="Others"
-            description="Select style/theme tags (cosplay, BDSM, alt, etc.)."
-            items={OPTIONS.others}
-            selected={includeOthers}
-            onToggle={(v) => setIncludeOthers((prev) => toggle(prev, v))}
-            disabled={isSaving}
-          />
-        </div>
+        <SectionCard title="Ethnicity" description="Select matching ethnic subreddits." items={OPTIONS.ethnicity} selected={includeEthnicity} onToggle={(v) => setIncludeEthnicity((prev) => toggle(prev, v))} disabled={isSaving} />
+        <SectionCard title="Body Type" description="Select matching body type subreddits." items={OPTIONS.bodyType} selected={includeBodyType} onToggle={(v) => setIncludeBodyType((prev) => toggle(prev, v))} disabled={isSaving} />
+        <SectionCard title="Age" description="Select matching age categories." items={OPTIONS.age} selected={includeAge} onToggle={(v) => setIncludeAge((prev) => toggle(prev, v))} disabled={isSaving} />
+        <SectionCard title="Body Part" description="Select body-part specific subreddits." items={OPTIONS.bodyPart} selected={includeBodyPart} onToggle={(v) => setIncludeBodyPart((prev) => toggle(prev, v))} disabled={isSaving} />
+        <SectionCard title="Boob Sub Category" description="Select boob-specific subcategories." items={OPTIONS.boobSubCategory} selected={includeBoobSubCategory} onToggle={(v) => setIncludeBoobSubCategory((prev) => toggle(prev, v))} disabled={isSaving} />
+        <SectionCard title="Ass Sub Category" description="Select ass-specific subcategories." items={OPTIONS.assSubCategory} selected={includeAssSubCategory} onToggle={(v) => setIncludeAssSubCategory((prev) => toggle(prev, v))} disabled={isSaving} />
+        <div className="lg:col-span-2"><SectionCard title="Others" description="Select style/theme tags." items={OPTIONS.others} selected={includeOthers} onToggle={(v) => setIncludeOthers((prev) => toggle(prev, v))} disabled={isSaving} /></div>
       </div>
 
-      <div className="flex flex-wrap justify-end gap-2 pt-1">
-        <button
-          type="button"
-          onClick={onBack}
-          disabled={isSaving}
-          className="inline-flex items-center rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          Cancel
-        </button>
-
-        <button
-          type="button"
-          onClick={resetProfile}
-          disabled={isSaving}
-          className="inline-flex items-center rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          Reset
-        </button>
-
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={isSaving}
-          aria-busy={isSaving}
-          className="inline-flex items-center rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isSaving ? "Saving…" : "Save Profile"}
-        </button>
+      <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+        <div className="flex-1 min-w-[200px]">
+          {toastMessage && (
+            <div className="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/10 px-3 py-1.5 text-sm font-medium text-primary shadow-sm w-fit animate-in fade-in duration-300">
+              <CheckCircle2 className="h-4 w-4" />
+              {toastMessage}
+            </div>
+          )}
+        </div>
+        
+        <div className="flex flex-wrap justify-end gap-2">
+          <button type="button" onClick={onBack} disabled={isSaving} className="inline-flex items-center rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent disabled:opacity-60">Cancel</button>
+          <button type="button" onClick={resetProfile} disabled={isSaving} className="inline-flex items-center rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent disabled:opacity-60">Reset</button>
+          <button type="button" onClick={() => setShowSaveModal(true)} disabled={isSaving} className="inline-flex items-center gap-2 rounded-lg border border-primary bg-background px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-60"><Save className="h-4 w-4" /> Save Profile</button>
+          <button type="button" onClick={handleApply} disabled={isSaving} className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-sm hover:opacity-90 disabled:opacity-60"><CheckCircle2 className="h-4 w-4" /> {saving ? "Applying…" : "Apply Profile"}</button>
+        </div>
       </div>
     </div>
   )
