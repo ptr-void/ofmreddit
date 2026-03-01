@@ -15,6 +15,8 @@ type Props = {
   rows: string[][]
   sortState: SortState
   onSort: (index: number) => void
+  // Add this new prop to receive the niche map from page.tsx
+  subredditNicheMap?: Map<string, string[]> 
 }
 
 function parseSortableValue(value: string) {
@@ -26,15 +28,35 @@ function parseSortableValue(value: string) {
   return { type: "string" as const, value: value.toLowerCase() }
 }
 
-export default function DatabaseTable({ headers, rows, sortState, onSort }: Props) {
+export default function DatabaseTable({ headers, rows, sortState, onSort, subredditNicheMap }: Props) {
+  // Find where the Subreddit and Niche columns are
+  const colIndices = useMemo(() => {
+    const lower = headers.map(h => h.toLowerCase().trim());
+    return {
+      subreddit: lower.indexOf("subreddit"),
+      niche: lower.indexOf("niche")
+    };
+  }, [headers]);
+
   const sortedRows = useMemo(() => {
     if (!rows.length) return []
     if (sortState.columnIndex === -1 || !sortState.direction) return rows
     const col = sortState.columnIndex
     const dir = sortState.direction
+    
     const sorted = [...rows].sort((a, b) => {
-      const av = parseSortableValue(a[col] ?? "")
-      const bv = parseSortableValue(b[col] ?? "")
+      // Logic: If sorting the Niche column, we must sort by the mapped tags, not the empty Sheet 1 cell
+      let valA = a[col] ?? "";
+      let valB = b[col] ?? "";
+
+      if (col === colIndices.niche && subredditNicheMap && colIndices.subreddit !== -1) {
+        valA = (subredditNicheMap.get(a[colIndices.subreddit]) || []).join(", ");
+        valB = (subredditNicheMap.get(b[colIndices.subreddit]) || []).join(", ");
+      }
+
+      const av = parseSortableValue(valA)
+      const bv = parseSortableValue(valB)
+
       if (av.type === "number" && bv.type === "number") {
         return dir === "asc" ? av.value - bv.value : bv.value - av.value
       }
@@ -45,7 +67,7 @@ export default function DatabaseTable({ headers, rows, sortState, onSort }: Prop
       return 0
     })
     return sorted
-  }, [rows, sortState])
+  }, [rows, sortState, colIndices, subredditNicheMap])
 
   if (!headers.length) {
     return (
@@ -87,11 +109,22 @@ export default function DatabaseTable({ headers, rows, sortState, onSort }: Prop
               key={ri}
               className="border-b border-border/60 last:border-b-0 odd:bg-background even:bg-muted/30 hover:bg-primary/5"
             >
-              {headers.map((_, ci) => (
-                <td key={ci} className="whitespace-nowrap px-4 py-2 text-xs md:text-sm">
-                  {row[ci] ?? ""}
-                </td>
-              ))}
+              {headers.map((_, ci) => {
+                let displayValue = row[ci] ?? "";
+
+                // If this is the Niche column, ignore the raw row data and pull from the Map
+                if (ci === colIndices.niche && subredditNicheMap && colIndices.subreddit !== -1) {
+                  const subName = row[colIndices.subreddit];
+                  const niches = subredditNicheMap.get(subName) || [];
+                  displayValue = niches.join(", ");
+                }
+
+                return (
+                  <td key={ci} className="whitespace-nowrap px-4 py-2 text-xs md:text-sm">
+                    {displayValue}
+                  </td>
+                );
+              })}
             </tr>
           ))}
         </tbody>

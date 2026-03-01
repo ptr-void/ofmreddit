@@ -89,6 +89,7 @@ export default function RedditDatabasePage() {
 
   const nicheColumnIndexRef = useRef<number>(-1)
   const intervalRef = useRef<number | null>(null)
+  const subredditNicheMapRef = useRef<Map<string, string[]>>(new Map())
 
   useEffect(() => {
     const snap = loadCreatorProfile()
@@ -98,22 +99,43 @@ export default function RedditDatabasePage() {
     }
   }, [])
 
-  const recomputeNicheOptions = (data: SheetData | null) => {
-    if (!data) {
+  const recomputeNicheOptions = (data: SheetData | null, tags: SheetData | null) => {
+    if (!tags || !data) {
       setNicheOptions([])
-      nicheColumnIndexRef.current = -1
       return
     }
-    const nicheIndex = data.headers.findIndex((h) => h.trim().toLowerCase() === "niche")
-    nicheColumnIndexRef.current = nicheIndex
-    if (nicheIndex !== -1) {
-      const uniques = Array.from(
-        new Set(data.rows.map((row) => row[nicheIndex]).filter((v): v is string => Boolean(v && v.trim().length > 0))),
-      ).sort((a, b) => a.localeCompare(b))
-      setNicheOptions(uniques)
-    } else {
-      setNicheOptions([])
-    }
+
+    const headers = tags.headers.map(h => h.trim().toLowerCase())
+    const subIdx = headers.indexOf("subreddit name")
+    
+    if (subIdx === -1) return
+
+    const newMap = new Map<string, string[]>()
+    const allNiches = new Set<string>()
+
+    tags.rows.forEach(row => {
+      const subName = (row[subIdx] || "").trim()
+      if (!subName) return
+
+      const rowNiches: string[] = []
+      row.forEach((cell, idx) => {
+        if (idx === subIdx) return
+        if (!cell) return
+        
+        const parts = cell.split(",").map(p => p.trim().toLowerCase()).filter(Boolean)
+        parts.forEach(p => {
+          rowNiches.push(p)
+          allNiches.add(p)
+        })
+      })
+      newMap.set(subName, Array.from(new Set(rowNiches)))
+    })
+
+    subredditNicheMapRef.current = newMap
+    setNicheOptions(Array.from(allNiches).sort((a, b) => a.localeCompare(b)))
+
+    const mainHeaders = data.headers.map(h => h.trim().toLowerCase())
+    nicheColumnIndexRef.current = mainHeaders.indexOf("subreddit")
   }
 
   const loadSheet = useCallback(async (resetFilters: boolean) => {
@@ -144,7 +166,7 @@ export default function RedditDatabasePage() {
       setRawSheetData(mainSheet)
       setSheetData(mainSheet)
       setTagSheetData(tagSheet)
-      recomputeNicheOptions(mainSheet)
+      recomputeNicheOptions(mainSheet, tagSheet)
     } catch (err) {
       const msg = err instanceof Error ? err.message : "An unknown error occurred while fetching the sheet."
       setError(msg)
@@ -182,9 +204,17 @@ export default function RedditDatabasePage() {
   const filteredRows = useMemo(() => {
     if (!sheetData) return []
     let rows = sheetData.rows
-    if (selectedNiche !== "all" && nicheColumnIndexRef.current !== -1) {
-      rows = rows.filter((row) => row[nicheColumnIndexRef.current] === selectedNiche)
+    
+    const subColIdx = nicheColumnIndexRef.current
+    
+    if (selectedNiche !== "all" && subColIdx !== -1) {
+      rows = rows.filter((row) => {
+        const subName = (row[subColIdx] || "").trim()
+        const subNiches = subredditNicheMapRef.current.get(subName) || []
+        return subNiches.includes(selectedNiche.toLowerCase())
+      })
     }
+    
     if (search.trim().length > 0) {
       const q = search.toLowerCase()
       rows = rows.filter((row) => row.some((cell) => (cell || "").toString().toLowerCase().includes(q)))
@@ -249,7 +279,7 @@ export default function RedditDatabasePage() {
 
       const filteredData: SheetData = await tableRes.json()
       setSheetData(filteredData)
-      recomputeNicheOptions(filteredData)
+      recomputeNicheOptions(filteredData, tagSheetData)
       setSelectedNiche("all")
       setSearch("")
       setSortState({ columnIndex: -1, direction: null })
@@ -275,10 +305,13 @@ export default function RedditDatabasePage() {
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold tracking-tight md:text-3xl">{titleText}</h1>
-            <p className="text-sm text-muted-foreground">
-              Browse and filter curated subreddits based on niche, tags, and creator profile preferences. 
-              Use the Creator Profile button beside the auto refresh button to narrow results to only the subreddits that match your selected tags.
-              Single subreddit data is being refreshed approximately every 4 days.
+            {/* Wrap in a div instead of a p tag to allow valid nesting of the Tooltip component */}
+            <div className="text-sm text-muted-foreground">
+              <span>
+                Browse and filter curated subreddits based on niche, tags, and creator profile preferences. 
+                Use the Creator Profile button beside the auto refresh button to narrow results to only the subreddits that match your selected tags.
+                Single subreddit data is being refreshed approximately every 4 days.
+              </span>
 
               <Tooltip
                 text={
@@ -322,7 +355,7 @@ export default function RedditDatabasePage() {
                   ?
                 </span>
               </Tooltip>
-            </p>
+            </div>
           </div>
         </div>
 
@@ -478,7 +511,13 @@ export default function RedditDatabasePage() {
               </div>
 
               {activeTab === "database" ? (
-                <DatabaseTable headers={sheetData.headers} rows={filteredRows} sortState={sortState} onSort={handleSort} />
+                <DatabaseTable 
+                  headers={sheetData.headers} 
+                  rows={filteredRows} 
+                  sortState={sortState} 
+                  onSort={handleSort} 
+                  subredditNicheMap={subredditNicheMapRef.current}
+                />
               ) : (
                 <AnalysisTable 
                   sortState={sortState} 
