@@ -128,10 +128,7 @@ export default function Navigation() {
                 >
                   Post Planner
                 </Link>
-                
-                {user.isAdmin ? (
-                  <>
-                    <Link
+                <Link
                       href="/reddit-database"
                       className={`hidden md:block px-4 py-2 rounded-lg font-medium transition-colors ${pathname === "/reddit-database"
                         ? "bg-primary text-primary-foreground"
@@ -140,6 +137,8 @@ export default function Navigation() {
                     >
                       Subreddit Database
                     </Link>
+                {user.isAdmin ? (
+                  <>
                     <Link
                       href="/caption-generator"
                       className={`hidden md:block px-4 py-2 rounded-lg font-medium transition-colors ${pathname === "/caption-generator"
@@ -228,10 +227,7 @@ export default function Navigation() {
             >
               Post Planner
             </Link>
-            
-            {user.isAdmin ? (
-              <>
-                <Link
+            <Link
                   href="/reddit-database"
                   className={`hidden md:block px-4 py-2 rounded-lg font-medium transition-colors ${pathname === "/reddit-database"
                     ? "bg-primary text-primary-foreground"
@@ -240,6 +236,8 @@ export default function Navigation() {
                 >
                   Subreddit Database
                 </Link>
+            {user.isAdmin ? (
+              <>
                 <Link
                   href="/caption-generator"
                   onClick={() => setMobileMenuOpen(false)}
