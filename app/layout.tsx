@@ -4,6 +4,7 @@ import { GeistSans } from "geist/font/sans"
 import { GeistMono } from "geist/font/mono"
 import { Analytics } from "@vercel/analytics/next"
 import Navigation from "@/components/navigation"
+import { VisitTracker } from "@/components/visit-tracker"
 import "./globals.css"
 import { Suspense } from "react"
 
@@ -40,6 +41,7 @@ export default function RootLayout({
       </head>
       <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable}`}>
         <Suspense fallback={<div>Loading...</div>}>
+          <VisitTracker />
           <Navigation />
           {children}
         </Suspense>

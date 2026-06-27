@@ -11,6 +11,7 @@ import { UserSubscriptionTab } from "@/components/admin/user-subscription-tab"
 import { SubscriptionTierTab } from "@/components/admin/subscription-tier-tab"
 import { SiteControlsTab } from "@/components/admin/site-controls-tab"
 import { ScraperDataTab } from "@/components/admin/scraper-data-tab"
+import { VisitsTab } from "@/components/admin/visits-tab"
 import s from "@/styles/scraper.module.css"
 
 type Prompt = {
@@ -505,6 +506,7 @@ export default function AdminPage() {
             <TabsTrigger className="flex-none px-4 lg:flex-1 lg:justify-center" value="subscriptions">User Subscription</TabsTrigger>
             <TabsTrigger className="flex-none px-4 lg:flex-1 lg:justify-center" value="tiers">Subscription Tier</TabsTrigger>
             <TabsTrigger className="flex-none px-4 lg:flex-1 lg:justify-center" value="analytics">Copied Captions</TabsTrigger>
+            <TabsTrigger className="flex-none px-4 lg:flex-1 lg:justify-center" value="visits">Website Visits</TabsTrigger>
             <TabsTrigger className="flex-none px-4 lg:flex-1 lg:justify-center" value="site_controls">Site Controls</TabsTrigger>
             <TabsTrigger className="flex-none px-4 lg:flex-1 lg:justify-center" value="scraper_data">Scraper Data</TabsTrigger>
           </TabsList>
@@ -544,6 +546,10 @@ export default function AdminPage() {
 
           <TabsContent value="analytics" className="space-y-4">
             <CopiedCaptionsTab copiedCaptions={copiedCaptions} />
+          </TabsContent>
+
+          <TabsContent value="visits" className="space-y-4">
+            <VisitsTab />
           </TabsContent>
 
           <TabsContent value="site_controls" className="space-y-4">
