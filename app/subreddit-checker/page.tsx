@@ -218,7 +218,7 @@ export default function SubredditCheckerPage() {
 
               </div>
               <div className="mt-8 text-center text-sm text-muted-foreground bg-muted p-4 rounded-lg">
-                <strong>Note:</strong> Moderators may set post, comment, or combined karma limits. We show the lowest we found, but the actual requirement could differ.
+                <strong>Note:</strong> Moderators may set post, comment, or combined karma limits. We show the lowest we found, but the actual requirement could differ. Each parameter may or may not come from a unique account.
               </div>
             </CardContent>
           </Card>
