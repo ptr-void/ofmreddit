@@ -20,10 +20,10 @@ async function syncUserSubscriptionDefaultCooldown() {
     []
   )
   if (site?.default_cooldown) {
-    const defaultCooldown = Number.parseInt(site.default_cooldown) || 0
+    const defaultCooldown = site.default_cooldown || "0"
     await query(
       `ALTER TABLE user_subscriptions 
-       ALTER cooldown SET DEFAULT ${defaultCooldown}`,
+       ALTER cooldown SET DEFAULT '${defaultCooldown}'`,
       []
     )
   }
