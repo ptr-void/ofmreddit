@@ -2,12 +2,14 @@
 import { useEffect, useState, useRef } from "react"
 import { useToast } from "@/hooks/use-toast"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select2"
+import { Button } from "@/components/ui/button"
 import s from "@/styles/scraper.module.css"
 import a from "@/styles/admin.module.css"
 
 type SiteControls = {
   show_sub: number
   default_cooldown: "0" | "10" | "30"
+  subreddit_checker_limit: number
 }
 
 const COOLDOWN_CHOICES: Array<{ value: "0" | "10" | "30"; label: string }> = [
@@ -19,6 +21,7 @@ const COOLDOWN_CHOICES: Array<{ value: "0" | "10" | "30"; label: string }> = [
 export function SiteControlsTab() {
   const { toast } = useToast()
   const [data, setData] = useState<SiteControls | null>(null)
+  const [localLimit, setLocalLimit] = useState<number | string>(5)
   const [saving, setSaving] = useState(false)
   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null
   const trigRef = useRef<HTMLButtonElement | null>(null)
@@ -32,6 +35,9 @@ export function SiteControlsTab() {
     }
     const j = await res.json()
     setData(j)
+    if (j && j.subreddit_checker_limit !== undefined) {
+      setLocalLimit(j.subreddit_checker_limit)
+    }
   }
 
   useEffect(() => {
@@ -146,6 +152,33 @@ export function SiteControlsTab() {
                 ))}
               </SelectContent>
             </Select>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-border bg-card p-4">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <div className="text-base font-medium text-foreground">Subreddit Checker Daily Limit</div>
+            <div className="text-sm text-muted-foreground">Number of times a user can use the checker per 24 hours.</div>
+          </div>
+          <div className="shrink-0 flex items-center gap-2">
+            <input
+              type="number"
+              min="1"
+              value={localLimit}
+              onChange={(e) => setLocalLimit(e.target.value === "" ? "" : Number(e.target.value))}
+              className={s.csvinput}
+              style={{ width: "80px", textAlign: "center" }}
+              disabled={!data || saving}
+            />
+            <Button 
+              size="sm" 
+              onClick={() => save({ subreddit_checker_limit: Number(localLimit) })}
+              disabled={!data || saving || Number(localLimit) === data?.subreddit_checker_limit || localLimit === ""}
+            >
+              Save
+            </Button>
           </div>
         </div>
       </div>

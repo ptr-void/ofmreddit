@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { verifyToken } from "@/lib/auth"
 import { queryOne } from "@/lib/db"
-import { assertWithinLimits, assertCooldown, recordUsage, listSavedScrapes, loadSavedScrape, saveSnapshotWithPrune, deleteSaved } from "@/lib/limits"
+import { assertWithinLimits, assertCooldown, recordUsage, listSavedScrapes, loadSavedScrape, saveSnapshotWithPrune, deleteSaved, assertDailySiteLimit } from "@/lib/limits"
 
 function tokenFromReq(req: Request): string | null {
     const h = req.headers.get("authorization") || ""
@@ -18,7 +18,7 @@ export async function POST(req: Request) {
         const feature = body?.feature
         const op = body?.op
         const meta = body?.meta
-        if (!feature || !["scraper", "post_planner", "caption_gen", "database"].includes(feature)) {
+        if (!feature || !["scraper", "post_planner", "caption_gen", "database", "subreddit_checker"].includes(feature)) {
             return NextResponse.json({ error: "Invalid feature" }, { status: 400 })
         }
 
@@ -69,15 +69,27 @@ export async function POST(req: Request) {
             }
             */
 
-            const within = await assertWithinLimits(userId, feature)
+            let within: any
+            if (feature === "subreddit_checker") {
+                within = await assertDailySiteLimit(userId, feature)
+            } else {
+                within = await assertWithinLimits(userId, feature)
+            }
             if (!within.ok) {
                 const anyWithin: any = within
                 if (anyWithin.code === "NO_ACCESS") {
                     return NextResponse.json({ error: "This feature is not available for your plan.", showTiers: showTiersFlag }, { status: 403 })
                 }
                 if (anyWithin.code === "WEEKLY_LIMIT") {
+                    const timeWindow = feature === "subreddit_checker" ? "Daily" : "Weekly"
+                    const perTime = feature === "subreddit_checker" ? "day" : "week"
                     return NextResponse.json(
-                        { error: `Weekly ${feature.replace("_", " ")} limit reached (${anyWithin.cap} uses per week).`, showTiers: showTiersFlag },
+                        { 
+                          error: `${timeWindow} limit reached (${anyWithin.cap} uses per ${perTime}).`, 
+                          showTiers: showTiersFlag,
+                          usage: anyWithin.weekly,
+                          cap: anyWithin.cap
+                        },
                         { status: 429 }
                     )
                 }
@@ -91,7 +103,7 @@ export async function POST(req: Request) {
                 }
             }
 
-            return NextResponse.json({ ok: true })
+            return NextResponse.json({ ok: true, usage: within?.usage, cap: within?.cap })
         }
 
         if (op === "record") {

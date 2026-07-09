@@ -1,6 +1,6 @@
 import { query, queryOne } from "@/lib/db"
 
-export type Feature = "scraper" | "post_planner" | "caption_gen"
+export type Feature = "scraper" | "post_planner" | "caption_gen" | "database" | "subreddit_checker"
 
 type Tier = {
   id: number
@@ -12,7 +12,7 @@ type Tier = {
   saved_profile_limit: number
 }
 
-type AssertOk = { ok: true }
+type AssertOk = { ok: true; usage?: number; cap?: number }
 type NoTier = { ok: false; code: "NO_TIER" }
 type NoAccess = { ok: false; code: "NO_ACCESS"; weekly: number; cap: number }
 type WeeklyLimit = { ok: false; code: "WEEKLY_LIMIT"; weekly: number; cap: number }
@@ -93,6 +93,36 @@ export async function assertWithinLimits(
     return { ok: false, code: "WEEKLY_LIMIT", weekly, cap }
 
   return { ok: true }
+}
+
+export async function assertDailySiteLimit(
+  userId: number,
+  feature: Feature
+): Promise<AssertOk | WeeklyLimit> {
+  // Get global limit from site_controls
+  const site = await queryOne<{ subreddit_checker_limit: number }>(
+    "SELECT subreddit_checker_limit FROM site_controls WHERE id = 1 LIMIT 1",
+    []
+  )
+  const cap = site?.subreddit_checker_limit ?? 5
+
+  // Get daily usage (last 24 hours)
+  const sql = `
+    SELECT COUNT(*) AS count
+    FROM feature_usage
+    WHERE user_id = ?
+      AND feature = ?
+      AND occurred_at >= NOW() - INTERVAL 1 DAY
+  `
+  const row = await queryOne<{ count: number }>(sql, [userId, feature])
+  const daily = Number(row?.count ?? 0)
+
+  if (cap > 0 && daily >= cap) {
+    // using WeeklyLimit type to reuse the same error structure, but it represents a daily limit
+    return { ok: false, code: "WEEKLY_LIMIT", weekly: daily, cap }
+  }
+
+  return { ok: true, usage: daily, cap }
 }
 
 

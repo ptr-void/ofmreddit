@@ -20,10 +20,11 @@ async function syncUserSubscriptionDefaultCooldown() {
     []
   )
   if (site?.default_cooldown) {
+    const defaultCooldown = Number.parseInt(site.default_cooldown) || 0
     await query(
       `ALTER TABLE user_subscriptions 
-       ALTER cooldown SET DEFAULT ?`,
-      [site.default_cooldown]
+       ALTER cooldown SET DEFAULT ${defaultCooldown}`,
+      []
     )
   }
 }
@@ -31,18 +32,22 @@ async function syncUserSubscriptionDefaultCooldown() {
 export async function GET(req: Request) {
   const admin = await requireAdmin(req)
   if (!admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-  let row = await queryOne<{ show_sub: number; default_cooldown: string }>(
-    "SELECT show_sub, default_cooldown FROM site_controls WHERE id = 1 LIMIT 1",
+  let row = await queryOne<{ show_sub: number; default_cooldown: string; subreddit_checker_limit: number }>(
+    "SELECT show_sub, default_cooldown, subreddit_checker_limit FROM site_controls WHERE id = 1 LIMIT 1",
     [],
   )
   if (!row) {
-    await query("INSERT INTO site_controls (id, show_sub, default_cooldown) VALUES (1, 1, '30')", [])
-    row = await queryOne<{ show_sub: number; default_cooldown: string }>(
-      "SELECT show_sub, default_cooldown FROM site_controls WHERE id = 1 LIMIT 1",
+    await query("INSERT INTO site_controls (id, show_sub, default_cooldown, subreddit_checker_limit) VALUES (1, 1, '30', 5)", [])
+    row = await queryOne<{ show_sub: number; default_cooldown: string; subreddit_checker_limit: number }>(
+      "SELECT show_sub, default_cooldown, subreddit_checker_limit FROM site_controls WHERE id = 1 LIMIT 1",
       [],
     )
   }
-  return NextResponse.json({ show_sub: row?.show_sub ?? 1, default_cooldown: (row?.default_cooldown as "0" | "10" | "30") ?? "30" })
+  return NextResponse.json({ 
+    show_sub: row?.show_sub ?? 1, 
+    default_cooldown: (row?.default_cooldown as "0" | "10" | "30") ?? "30",
+    subreddit_checker_limit: row?.subreddit_checker_limit ?? 5
+  })
 }
 
 export async function PUT(req: Request) {
@@ -59,13 +64,21 @@ export async function PUT(req: Request) {
     fields.push("default_cooldown = ?")
     values.push(body.default_cooldown)
   }
+  if (typeof body.subreddit_checker_limit === "number") {
+    fields.push("subreddit_checker_limit = ?")
+    values.push(body.subreddit_checker_limit)
+  }
   if (fields.length === 0) return NextResponse.json({ error: "No changes" }, { status: 400 })
   values.push(1)
   await query(`UPDATE site_controls SET ${fields.join(", ")} WHERE id = ?`, values)
   await syncUserSubscriptionDefaultCooldown()
-  const row = await queryOne<{ show_sub: number; default_cooldown: string }>(
-    "SELECT show_sub, default_cooldown FROM site_controls WHERE id = 1 LIMIT 1",
+  const row = await queryOne<{ show_sub: number; default_cooldown: string; subreddit_checker_limit: number }>(
+    "SELECT show_sub, default_cooldown, subreddit_checker_limit FROM site_controls WHERE id = 1 LIMIT 1",
     [],
   )
-  return NextResponse.json({ show_sub: row?.show_sub ?? 1, default_cooldown: (row?.default_cooldown as "0" | "10" | "30") ?? "30" })
+  return NextResponse.json({ 
+    show_sub: row?.show_sub ?? 1, 
+    default_cooldown: (row?.default_cooldown as "0" | "10" | "30") ?? "30",
+    subreddit_checker_limit: row?.subreddit_checker_limit ?? 5
+  })
 }
