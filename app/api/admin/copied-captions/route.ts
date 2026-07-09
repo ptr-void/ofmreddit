@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const limit = searchParams.get("limit") || "100"
 
+    const limitInt = Number.parseInt(limit) || 100
     const copiedCaptions = await query(
       `SELECT 
         cc.id,
@@ -28,8 +29,8 @@ export async function GET(request: NextRequest) {
       JOIN users u ON cc.user_id = u.id
       JOIN posts p ON cc.post_id = p.id
       ORDER BY cc.copied_at DESC
-      LIMIT ?`,
-      [Number.parseInt(limit)],
+      LIMIT ${limitInt}`,
+      [],
     )
 
     return NextResponse.json({ copiedCaptions })
