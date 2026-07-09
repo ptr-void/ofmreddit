@@ -215,6 +215,7 @@ export default function SubredditCheckerPage() {
                     <span className="text-sm text-muted-foreground font-medium">days</span>
                   </div>
                 </div>
+              </div>
 
               <div className="mt-8 flex flex-col gap-3">
                 <div className="text-center text-sm text-muted-foreground bg-muted p-4 rounded-lg">
