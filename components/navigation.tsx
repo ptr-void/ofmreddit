@@ -137,6 +137,15 @@ export default function Navigation() {
                     >
                       Subreddit Database
                     </Link>
+                <Link
+                      href="/subreddit-checker"
+                      className={`hidden md:block px-4 py-2 rounded-lg font-medium transition-colors ${pathname === "/subreddit-checker"
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                        }`}
+                    >
+                      Subreddit Checker
+                    </Link>
                 {user.isAdmin ? (
                   <>
                     <Link
@@ -235,6 +244,16 @@ export default function Navigation() {
                     }`}
                 >
                   Subreddit Database
+                </Link>
+            <Link
+                  href="/subreddit-checker"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`block px-4 py-2 rounded-lg font-medium transition-colors ${pathname === "/subreddit-checker"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                    }`}
+                >
+                  Subreddit Checker
                 </Link>
             {user.isAdmin ? (
               <>
