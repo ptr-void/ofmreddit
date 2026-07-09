@@ -196,7 +196,7 @@ export default function SubredditCheckerPage() {
                     <div className="p-3 bg-orange-500/10 rounded-full mb-3">
                       <Star className="w-6 h-6 text-orange-500" />
                     </div>
-                    <h3 className="text-sm font-medium text-muted-foreground leading-tight">Min Total Karma</h3>
+                    <h3 className="text-sm font-medium text-muted-foreground leading-tight">Min Combined Karma</h3>
                   </div>
                   <div className="mt-4">
                     <span className="text-4xl font-bold text-foreground">{result.minTotalKarma}</span>
