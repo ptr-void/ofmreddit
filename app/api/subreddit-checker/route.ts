@@ -41,12 +41,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Subreddit name is required" }, { status: 400 })
     }
 
+    const usageUrl = new URL("/api/usage", request.url).toString()
+    const pre = await fetch(usageUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        cookie: request.headers.get("cookie") || "",
+        authorization: request.headers.get("authorization") || ""
+      },
+      body: JSON.stringify({ feature: "subreddit_checker", op: "check" })
+    })
+    
+    if (!pre.ok) {
+      const j = await pre.json().catch(() => ({}))
+      return NextResponse.json({ error: j?.error || "Usage limit reached or not allowed" }, { status: pre.status })
+    }
+
     const maxPosts = Math.min(Math.max(10, Number(limit) || 100), 200) // cap between 10 and 200
     const cleanSubreddit = subreddit.replace(/^r\//i, '').trim()
     let token = await getAccessToken()
 
     // 1. Fetch recent posts from the subreddit
-    const postsUrl = `https://oauth.reddit.com/r/${encodeURIComponent(cleanSubreddit)}/hot?limit=${maxPosts}`
+    const postsUrl = `https://oauth.reddit.com/r/${encodeURIComponent(cleanSubreddit)}/new?limit=${maxPosts}`
     const postsRes = await fetch(postsUrl, {
       headers: { 
         Authorization: `Bearer ${token}`, 
@@ -71,6 +87,8 @@ export async function POST(request: NextRequest) {
     // 2. Extract unique authors (ignore deleted and automod)
     const uniqueAuthors = new Set<string>()
     for (const p of posts) {
+      if (p.data?.removed_by_category || p.data?.banned_by) continue;
+      
       const author = p.data?.author
       if (author && author !== "[deleted]" && author.toLowerCase() !== "automoderator") {
         uniqueAuthors.add(author)
@@ -87,6 +105,7 @@ export async function POST(request: NextRequest) {
     // 3. Fetch user profiles to find minimums
     let minPostKarma = Infinity
     let minCommentKarma = Infinity
+    let minTotalKarma = Infinity
     let minAgeDays = Infinity
     let analyzedCount = 0
     const nowSecs = Math.floor(Date.now() / 1000)
@@ -120,12 +139,14 @@ export async function POST(request: NextRequest) {
         if (profile) {
           const postKarma = profile.link_karma || 0
           const commentKarma = profile.comment_karma || 0
+          const totalKarma = profile.total_karma || (postKarma + commentKarma)
           const createdUtc = profile.created_utc || nowSecs
           
           const ageDays = Math.max(0, Math.floor((nowSecs - createdUtc) / 86400))
 
           if (postKarma < minPostKarma) minPostKarma = postKarma
           if (commentKarma < minCommentKarma) minCommentKarma = commentKarma
+          if (totalKarma < minTotalKarma) minTotalKarma = totalKarma
           if (ageDays < minAgeDays) minAgeDays = ageDays
           
           analyzedCount++
@@ -137,11 +158,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Could not fetch user profiles due to rate limits or suspended accounts" }, { status: 500 })
     }
 
+    // Record successful usage
+    await fetch(usageUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        cookie: request.headers.get("cookie") || "",
+        authorization: request.headers.get("authorization") || ""
+      },
+      body: JSON.stringify({ feature: "subreddit_checker", op: "record", meta: { subreddit: cleanSubreddit } })
+    }).catch(() => {})
+
     return NextResponse.json({
       success: true,
       data: {
         minPostKarma: minPostKarma === Infinity ? 0 : minPostKarma,
         minCommentKarma: minCommentKarma === Infinity ? 0 : minCommentKarma,
+        minTotalKarma: minTotalKarma === Infinity ? 0 : minTotalKarma,
         minAccountAgeDays: minAgeDays === Infinity ? 0 : minAgeDays,
         analyzedAccounts: analyzedCount
       }

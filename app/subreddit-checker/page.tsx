@@ -1,15 +1,18 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Loader2, Search, Activity, Clock, ShieldAlert } from "lucide-react"
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogAction } from "@/components/ui/alert-dialog"
+import { Loader2, Search, Activity, Clock, ShieldAlert, Star } from "lucide-react"
 
 type CheckerResult = {
   minPostKarma: number
   minCommentKarma: number
+  minTotalKarma: number
   minAccountAgeDays: number
   analyzedAccounts: number
 }
@@ -20,6 +23,36 @@ export default function SubredditCheckerPage() {
   const [postLimit, setPostLimit] = useState(50)
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<CheckerResult | null>(null)
+  const [errorDialog, setErrorDialog] = useState<string | null>(null)
+  const [usageInfo, setUsageInfo] = useState<{ usage: number; cap: number } | null>(null)
+  const router = useRouter()
+
+  const fetchUsage = async () => {
+    const token = localStorage.getItem("token")
+    if (!token) return
+    try {
+      const res = await fetch("/api/usage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ feature: "subreddit_checker", op: "check" })
+      })
+      const data = await res.json()
+      if (res.ok || res.status === 429) {
+        if (data.cap !== undefined) {
+          setUsageInfo({ usage: data.usage || 0, cap: data.cap })
+        }
+      }
+    } catch (e) {}
+  }
+
+  useEffect(() => {
+    const token = localStorage.getItem("token")
+    if (!token) {
+      router.push("/login")
+    } else {
+      fetchUsage()
+    }
+  }, [router])
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -33,9 +66,13 @@ export default function SubredditCheckerPage() {
       setLoading(true)
       setResult(null)
       
+      const token = localStorage.getItem("token")
       const res = await fetch("/api/subreddit-checker", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({ subreddit: subreddit.trim(), limit: postLimit })
       })
 
@@ -46,6 +83,7 @@ export default function SubredditCheckerPage() {
       }
 
       setResult(data.data)
+      await fetchUsage()
       
     } catch (error: any) {
       toast({
@@ -104,10 +142,16 @@ export default function SubredditCheckerPage() {
                 className="w-full accent-primary"
               />
               <span className="text-xs text-muted-foreground">
-                Higher numbers yield more accurate minimums but take longer to scan.
+                Scrapes the latest {postLimit} posts. Removed posts, deleted accounts, bots, and duplicate posters are not included for more accurate results. This is why the final number of analyzed accounts is usually lower than the sample size.
               </span>
             </div>
           </form>
+
+          {usageInfo && (
+            <div className="mt-4 text-center text-sm font-medium text-muted-foreground bg-muted/50 p-2 rounded-lg">
+              Daily Scrapes Used: <span className="text-foreground">{usageInfo.usage} / {usageInfo.cap}</span>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -121,30 +165,52 @@ export default function SubredditCheckerPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="pt-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 
-                <div className="flex flex-col items-center p-6 bg-muted/50 rounded-xl text-center space-y-2 border">
-                  <div className="p-3 bg-blue-500/10 rounded-full mb-2">
-                    <Activity className="w-6 h-6 text-blue-500" />
+                <div className="flex flex-col items-center justify-between p-5 bg-muted/50 rounded-xl text-center border h-full">
+                  <div className="flex flex-col items-center">
+                    <div className="p-3 bg-blue-500/10 rounded-full mb-3">
+                      <Activity className="w-6 h-6 text-blue-500" />
+                    </div>
+                    <h3 className="text-sm font-medium text-muted-foreground leading-tight">Min Post Karma</h3>
                   </div>
-                  <h3 className="text-sm font-medium text-muted-foreground">Min Post Karma</h3>
-                  <span className="text-4xl font-bold text-foreground">{result.minPostKarma}</span>
+                  <div className="mt-4">
+                    <span className="text-4xl font-bold text-foreground">{result.minPostKarma}</span>
+                  </div>
                 </div>
 
-                <div className="flex flex-col items-center p-6 bg-muted/50 rounded-xl text-center space-y-2 border">
-                  <div className="p-3 bg-purple-500/10 rounded-full mb-2">
-                    <ShieldAlert className="w-6 h-6 text-purple-500" />
+                <div className="flex flex-col items-center justify-between p-5 bg-muted/50 rounded-xl text-center border h-full">
+                  <div className="flex flex-col items-center">
+                    <div className="p-3 bg-purple-500/10 rounded-full mb-3">
+                      <ShieldAlert className="w-6 h-6 text-purple-500" />
+                    </div>
+                    <h3 className="text-sm font-medium text-muted-foreground leading-tight">Min Comment Karma</h3>
                   </div>
-                  <h3 className="text-sm font-medium text-muted-foreground">Min Comment Karma</h3>
-                  <span className="text-4xl font-bold text-foreground">{result.minCommentKarma}</span>
+                  <div className="mt-4">
+                    <span className="text-4xl font-bold text-foreground">{result.minCommentKarma}</span>
+                  </div>
                 </div>
 
-                <div className="flex flex-col items-center p-6 bg-muted/50 rounded-xl text-center space-y-2 border">
-                  <div className="p-3 bg-green-500/10 rounded-full mb-2">
-                    <Clock className="w-6 h-6 text-green-500" />
+                <div className="flex flex-col items-center justify-between p-5 bg-muted/50 rounded-xl text-center border h-full">
+                  <div className="flex flex-col items-center">
+                    <div className="p-3 bg-orange-500/10 rounded-full mb-3">
+                      <Star className="w-6 h-6 text-orange-500" />
+                    </div>
+                    <h3 className="text-sm font-medium text-muted-foreground leading-tight">Min Total Karma</h3>
                   </div>
-                  <h3 className="text-sm font-medium text-muted-foreground">Min Account Age</h3>
-                  <div className="flex items-baseline gap-1">
+                  <div className="mt-4">
+                    <span className="text-4xl font-bold text-foreground">{result.minTotalKarma}</span>
+                  </div>
+                </div>
+
+                <div className="flex flex-col items-center justify-between p-5 bg-muted/50 rounded-xl text-center border h-full">
+                  <div className="flex flex-col items-center">
+                    <div className="p-3 bg-green-500/10 rounded-full mb-3">
+                      <Clock className="w-6 h-6 text-green-500" />
+                    </div>
+                    <h3 className="text-sm font-medium text-muted-foreground leading-tight">Min Account Age</h3>
+                  </div>
+                  <div className="mt-4 flex items-baseline gap-1">
                     <span className="text-4xl font-bold text-foreground">{result.minAccountAgeDays}</span>
                     <span className="text-sm text-muted-foreground font-medium">days</span>
                   </div>
@@ -152,13 +218,26 @@ export default function SubredditCheckerPage() {
 
               </div>
               <div className="mt-8 text-center text-sm text-muted-foreground bg-muted p-4 rounded-lg">
-                <strong>Note:</strong> These numbers represent the lowest qualified account found recently. 
-                The actual automoderator requirements may be slightly higher or lower, but matching these numbers gives you a very high chance of successfully posting.
+                <strong>Note:</strong> each number represents the lowest number found for that parameter so the actual minimum requirements may be lower.
               </div>
             </CardContent>
           </Card>
         </div>
       )}
+
+      <AlertDialog open={!!errorDialog} onOpenChange={(open) => !open && setErrorDialog(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Scan Failed</AlertDialogTitle>
+            <AlertDialogDescription className="text-base">
+              {errorDialog}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setErrorDialog(null)}>Got it</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
     </div>
   )
