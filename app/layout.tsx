@@ -5,6 +5,7 @@ import { GeistMono } from "geist/font/mono"
 import { Analytics } from "@vercel/analytics/next"
 import Navigation from "@/components/navigation"
 import { VisitTracker } from "@/components/visit-tracker"
+import { Toaster } from "@/components/ui/toaster"
 import "./globals.css"
 import { Suspense } from "react"
 
@@ -45,6 +46,7 @@ export default function RootLayout({
           <Navigation />
           {children}
         </Suspense>
+        <Toaster />
         <Analytics />
       </body>
     </html>
