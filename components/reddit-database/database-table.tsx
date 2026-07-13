@@ -21,10 +21,18 @@ type Props = {
 
 function parseSortableValue(value: string) {
   if (!value) return { type: "string" as const, value: "" }
-  const numeric = Number(value.replace(/,/g, "").trim())
-  if (!Number.isNaN(numeric) && value.trim() !== "") {
+  const clean = value.replace(/,/g, "").trim()
+  const numeric = Number(clean)
+  if (!Number.isNaN(numeric) && clean !== "") {
     return { type: "number" as const, value: numeric }
   }
+  
+  // Extract leading numbers from strings like "126d (u/user)"
+  const match = clean.match(/^-?\d+(\.\d+)?/)
+  if (match) {
+    return { type: "number" as const, value: Number(match[0]) }
+  }
+
   return { type: "string" as const, value: value.toLowerCase() }
 }
 

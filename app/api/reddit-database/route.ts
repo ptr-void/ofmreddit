@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { query } from "@/lib/db"
 
 type SheetData = {
   title: string
@@ -103,6 +104,39 @@ export async function GET() {
       tagsGid,
       apiKey,
     )
+
+    // Merge in cached subreddit metrics
+    try {
+      const cacheRows = await query<any>("SELECT * FROM subreddit_metrics_cache")
+      const cacheMap = new Map<string, any>()
+      cacheRows.forEach(row => {
+        cacheMap.set(row.subreddit.toLowerCase(), row)
+      })
+
+      const subColIndex = mainSheet.headers.findIndex(h => h.toLowerCase() === "subreddit")
+      if (subColIndex !== -1) {
+        mainSheet.headers.push("Min Post Karma", "Min Comment Karma", "Min Total Karma", "Min Account Age")
+        mainSheet.rows = mainSheet.rows.map(row => {
+          let subName = row[subColIndex] || ""
+          subName = subName.replace(/^r\//i, "").trim().toLowerCase()
+          
+          const cached = cacheMap.get(subName)
+          if (cached) {
+            row.push(
+              `${cached.min_post_karma} (u/${cached.min_post_karma_user})`,
+              `${cached.min_comment_karma} (u/${cached.min_comment_karma_user})`,
+              `${cached.min_total_karma} (u/${cached.min_total_karma_user})`,
+              `${cached.min_account_age_days}d (u/${cached.min_account_age_user})`
+            )
+          } else {
+            row.push("", "", "", "")
+          }
+          return row
+        })
+      }
+    } catch (e) {
+      console.error("Failed to merge cache metrics into sheets:", e)
+    }
 
     return NextResponse.json({
       mainSheet,

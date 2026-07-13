@@ -211,14 +211,14 @@ export async function POST(request: NextRequest) {
           subreddit, min_post_karma, min_post_karma_user, min_comment_karma, min_comment_karma_user, min_total_karma, min_total_karma_user, min_account_age_days, min_account_age_user, analyzed_accounts, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
         ON DUPLICATE KEY UPDATE
-          min_post_karma = VALUES(min_post_karma),
-          min_post_karma_user = VALUES(min_post_karma_user),
-          min_comment_karma = VALUES(min_comment_karma),
-          min_comment_karma_user = VALUES(min_comment_karma_user),
-          min_total_karma = VALUES(min_total_karma),
-          min_total_karma_user = VALUES(min_total_karma_user),
-          min_account_age_days = VALUES(min_account_age_days),
-          min_account_age_user = VALUES(min_account_age_user),
+          min_post_karma_user = IF(VALUES(min_post_karma) < min_post_karma, VALUES(min_post_karma_user), min_post_karma_user),
+          min_post_karma = LEAST(min_post_karma, VALUES(min_post_karma)),
+          min_comment_karma_user = IF(VALUES(min_comment_karma) < min_comment_karma, VALUES(min_comment_karma_user), min_comment_karma_user),
+          min_comment_karma = LEAST(min_comment_karma, VALUES(min_comment_karma)),
+          min_total_karma_user = IF(VALUES(min_total_karma) < min_total_karma, VALUES(min_total_karma_user), min_total_karma_user),
+          min_total_karma = LEAST(min_total_karma, VALUES(min_total_karma)),
+          min_account_age_user = IF(VALUES(min_account_age_days) < min_account_age_days, VALUES(min_account_age_user), min_account_age_user),
+          min_account_age_days = LEAST(min_account_age_days, VALUES(min_account_age_days)),
           analyzed_accounts = VALUES(analyzed_accounts),
           updated_at = NOW()`,
         [
