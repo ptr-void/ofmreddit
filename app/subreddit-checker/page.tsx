@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogAction } from "@/components/ui/alert-dialog"
-import { Loader2, Search, Activity, Clock, ShieldAlert, Star } from "lucide-react"
+import { Loader2, Search, Activity, Clock, ShieldAlert, Star, History } from "lucide-react"
 
 type CheckerResult = {
   minPostKarma: number
@@ -176,10 +176,32 @@ export default function SubredditCheckerPage() {
             <CardContent className="pt-6">
               
               {previousResult && (
-                <div className="mb-6 p-4 bg-muted/50 rounded-xl border border-muted flex flex-col items-center justify-center text-center">
-                  <div className="text-sm font-semibold mb-1">Previous Scan Lowest Minimums</div>
-                  <div className="text-xs text-muted-foreground">
-                    Post: {previousResult.minPostKarma} (u/{previousResult.minPostKarmaUser}) &bull; Comment: {previousResult.minCommentKarma} (u/{previousResult.minCommentKarmaUser}) &bull; Combined: {previousResult.minTotalKarma} (u/{previousResult.minTotalKarmaUser}) &bull; Age: {previousResult.minAccountAgeDays}d (u/{previousResult.minAccountAgeUser})
+                <div className="mb-8 p-6 bg-blue-500/10 border border-blue-500/20 rounded-xl shadow-inner">
+                  <div className="flex items-center gap-2 mb-5 justify-center">
+                    <History className="w-5 h-5 text-blue-500" />
+                    <h3 className="font-bold text-blue-500 text-lg">Previous Scan Lowest Minimums</h3>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                    <div className="flex flex-col p-3 bg-background/50 rounded-lg border border-blue-500/10">
+                      <span className="text-xs font-medium text-muted-foreground mb-1">Post Karma</span>
+                      <span className="text-xl font-bold text-foreground">{previousResult.minPostKarma}</span>
+                      <span className="text-[10px] text-muted-foreground mt-1">u/{previousResult.minPostKarmaUser}</span>
+                    </div>
+                    <div className="flex flex-col p-3 bg-background/50 rounded-lg border border-blue-500/10">
+                      <span className="text-xs font-medium text-muted-foreground mb-1">Comment Karma</span>
+                      <span className="text-xl font-bold text-foreground">{previousResult.minCommentKarma}</span>
+                      <span className="text-[10px] text-muted-foreground mt-1">u/{previousResult.minCommentKarmaUser}</span>
+                    </div>
+                    <div className="flex flex-col p-3 bg-background/50 rounded-lg border border-blue-500/10">
+                      <span className="text-xs font-medium text-muted-foreground mb-1">Combined Karma</span>
+                      <span className="text-xl font-bold text-foreground">{previousResult.minTotalKarma}</span>
+                      <span className="text-[10px] text-muted-foreground mt-1">u/{previousResult.minTotalKarmaUser}</span>
+                    </div>
+                    <div className="flex flex-col p-3 bg-background/50 rounded-lg border border-blue-500/10">
+                      <span className="text-xs font-medium text-muted-foreground mb-1">Account Age</span>
+                      <span className="text-xl font-bold text-foreground">{previousResult.minAccountAgeDays}d</span>
+                      <span className="text-[10px] text-muted-foreground mt-1">u/{previousResult.minAccountAgeUser}</span>
+                    </div>
                   </div>
                 </div>
               )}
