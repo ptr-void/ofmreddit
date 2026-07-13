@@ -11,9 +11,13 @@ import { Loader2, Search, Activity, Clock, ShieldAlert, Star } from "lucide-reac
 
 type CheckerResult = {
   minPostKarma: number
+  minPostKarmaUser: string
   minCommentKarma: number
+  minCommentKarmaUser: string
   minTotalKarma: number
+  minTotalKarmaUser: string
   minAccountAgeDays: number
+  minAccountAgeUser: string
   analyzedAccounts: number
 }
 
@@ -23,6 +27,7 @@ export default function SubredditCheckerPage() {
   const [postLimit, setPostLimit] = useState(50)
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<CheckerResult | null>(null)
+  const [previousResult, setPreviousResult] = useState<CheckerResult | null>(null)
   const [errorDialog, setErrorDialog] = useState<string | null>(null)
   const [usageInfo, setUsageInfo] = useState<{ usage: number; cap: number } | null>(null)
   const router = useRouter()
@@ -81,8 +86,12 @@ export default function SubredditCheckerPage() {
       if (!res.ok) {
         throw new Error(data.error || "Failed to check subreddit")
       }
-
-      setResult(data.data)
+      if (data.success) {
+        setResult(data.data)
+        setPreviousResult(data.previous || null)
+      } else {
+        throw new Error(data.error || "Failed to check subreddit")
+      }
       await fetchUsage()
       
     } catch (error: any) {
@@ -157,14 +166,24 @@ export default function SubredditCheckerPage() {
 
       {result && (
         <div className="w-full max-w-3xl animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <Card>
+          <Card className="shadow-lg border-muted">
             <CardHeader className="text-center pb-2">
-              <CardTitle className="text-2xl">Requirements for r/{subreddit.replace(/^r\//i, '')}</CardTitle>
+              <CardTitle className="text-2xl font-bold">Requirements for r/{subreddit}</CardTitle>
               <CardDescription>
                 Based on analysis of the {result.analyzedAccounts} most recent successful posters.
               </CardDescription>
             </CardHeader>
             <CardContent className="pt-6">
+              
+              {previousResult && (
+                <div className="mb-6 p-4 bg-muted/50 rounded-xl border border-muted flex flex-col items-center justify-center text-center">
+                  <div className="text-sm font-semibold mb-1">Previous Scan Lowest Minimums</div>
+                  <div className="text-xs text-muted-foreground">
+                    Post: {previousResult.minPostKarma} (u/{previousResult.minPostKarmaUser}) &bull; Comment: {previousResult.minCommentKarma} (u/{previousResult.minCommentKarmaUser}) &bull; Combined: {previousResult.minTotalKarma} (u/{previousResult.minTotalKarmaUser}) &bull; Age: {previousResult.minAccountAgeDays}d (u/{previousResult.minAccountAgeUser})
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 
                 <div className="flex flex-col items-center justify-between p-5 bg-muted/50 rounded-xl text-center border h-full">
@@ -174,8 +193,9 @@ export default function SubredditCheckerPage() {
                     </div>
                     <h3 className="text-sm font-medium text-muted-foreground leading-tight">Min Post Karma</h3>
                   </div>
-                  <div className="mt-4">
+                  <div className="mt-4 flex flex-col items-center">
                     <span className="text-4xl font-bold text-foreground">{result.minPostKarma}</span>
+                    <span className="text-[10px] text-muted-foreground mt-1">u/{result.minPostKarmaUser}</span>
                   </div>
                 </div>
 
@@ -186,8 +206,9 @@ export default function SubredditCheckerPage() {
                     </div>
                     <h3 className="text-sm font-medium text-muted-foreground leading-tight">Min Comment Karma</h3>
                   </div>
-                  <div className="mt-4">
+                  <div className="mt-4 flex flex-col items-center">
                     <span className="text-4xl font-bold text-foreground">{result.minCommentKarma}</span>
+                    <span className="text-[10px] text-muted-foreground mt-1">u/{result.minCommentKarmaUser}</span>
                   </div>
                 </div>
 
@@ -198,8 +219,9 @@ export default function SubredditCheckerPage() {
                     </div>
                     <h3 className="text-sm font-medium text-muted-foreground leading-tight">Min Combined Karma</h3>
                   </div>
-                  <div className="mt-4">
+                  <div className="mt-4 flex flex-col items-center">
                     <span className="text-4xl font-bold text-foreground">{result.minTotalKarma}</span>
+                    <span className="text-[10px] text-muted-foreground mt-1">u/{result.minTotalKarmaUser}</span>
                   </div>
                 </div>
 
@@ -210,9 +232,12 @@ export default function SubredditCheckerPage() {
                     </div>
                     <h3 className="text-sm font-medium text-muted-foreground leading-tight">Min Account Age</h3>
                   </div>
-                  <div className="mt-4 flex items-baseline gap-1">
-                    <span className="text-4xl font-bold text-foreground">{result.minAccountAgeDays}</span>
-                    <span className="text-sm text-muted-foreground font-medium">days</span>
+                  <div className="mt-4 flex flex-col items-center">
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-4xl font-bold text-foreground">{result.minAccountAgeDays}</span>
+                      <span className="text-sm text-muted-foreground font-medium">days</span>
+                    </div>
+                    <span className="text-[10px] text-muted-foreground mt-1">u/{result.minAccountAgeUser}</span>
                   </div>
                 </div>
               </div>

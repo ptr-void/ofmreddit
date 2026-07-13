@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { query } from "@/lib/db"
 
 interface RedditTokenResponse {
   access_token: string
@@ -104,9 +105,13 @@ export async function POST(request: NextRequest) {
 
     // 3. Fetch user profiles to find minimums
     let minPostKarma = Infinity
+    let minPostKarmaUser = ""
     let minCommentKarma = Infinity
+    let minCommentKarmaUser = ""
     let minTotalKarma = Infinity
+    let minTotalKarmaUser = ""
     let minAgeDays = Infinity
+    let minAgeDaysUser = ""
     let analyzedCount = 0
     const nowSecs = Math.floor(Date.now() / 1000)
 
@@ -144,10 +149,22 @@ export async function POST(request: NextRequest) {
           
           const ageDays = Math.max(0, Math.floor((nowSecs - createdUtc) / 86400))
 
-          if (postKarma < minPostKarma) minPostKarma = postKarma
-          if (commentKarma < minCommentKarma) minCommentKarma = commentKarma
-          if (totalKarma < minTotalKarma) minTotalKarma = totalKarma
-          if (ageDays < minAgeDays) minAgeDays = ageDays
+          if (postKarma < minPostKarma) {
+            minPostKarma = postKarma
+            minPostKarmaUser = author
+          }
+          if (commentKarma < minCommentKarma) {
+            minCommentKarma = commentKarma
+            minCommentKarmaUser = author
+          }
+          if (totalKarma < minTotalKarma) {
+            minTotalKarma = totalKarma
+            minTotalKarmaUser = author
+          }
+          if (ageDays < minAgeDays) {
+            minAgeDays = ageDays
+            minAgeDaysUser = author
+          }
           
           analyzedCount++
         }
@@ -156,6 +173,65 @@ export async function POST(request: NextRequest) {
 
     if (analyzedCount === 0) {
       return NextResponse.json({ error: "Could not fetch user profiles due to rate limits or suspended accounts" }, { status: 500 })
+    }
+
+    const currentData = {
+      minPostKarma: minPostKarma === Infinity ? 0 : minPostKarma,
+      minPostKarmaUser,
+      minCommentKarma: minCommentKarma === Infinity ? 0 : minCommentKarma,
+      minCommentKarmaUser,
+      minTotalKarma: minTotalKarma === Infinity ? 0 : minTotalKarma,
+      minTotalKarmaUser,
+      minAccountAgeDays: minAgeDays === Infinity ? 0 : minAgeDays,
+      minAccountAgeUser: minAgeDaysUser,
+      analyzedAccounts: analyzedCount
+    }
+
+    let previousData = null
+    try {
+      const prevRows = await query<any>("SELECT * FROM subreddit_metrics_cache WHERE subreddit = ? LIMIT 1", [cleanSubreddit.toLowerCase()])
+      if (prevRows && prevRows.length > 0) {
+        const row = prevRows[0]
+        previousData = {
+          minPostKarma: row.min_post_karma,
+          minPostKarmaUser: row.min_post_karma_user,
+          minCommentKarma: row.min_comment_karma,
+          minCommentKarmaUser: row.min_comment_karma_user,
+          minTotalKarma: row.min_total_karma,
+          minTotalKarmaUser: row.min_total_karma_user,
+          minAccountAgeDays: row.min_account_age_days,
+          minAccountAgeUser: row.min_account_age_user,
+          analyzedAccounts: row.analyzed_accounts,
+          updatedAt: row.updated_at
+        }
+      }
+
+      await query(
+        `INSERT INTO subreddit_metrics_cache (
+          subreddit, min_post_karma, min_post_karma_user, min_comment_karma, min_comment_karma_user, min_total_karma, min_total_karma_user, min_account_age_days, min_account_age_user, analyzed_accounts, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+        ON DUPLICATE KEY UPDATE
+          min_post_karma = VALUES(min_post_karma),
+          min_post_karma_user = VALUES(min_post_karma_user),
+          min_comment_karma = VALUES(min_comment_karma),
+          min_comment_karma_user = VALUES(min_comment_karma_user),
+          min_total_karma = VALUES(min_total_karma),
+          min_total_karma_user = VALUES(min_total_karma_user),
+          min_account_age_days = VALUES(min_account_age_days),
+          min_account_age_user = VALUES(min_account_age_user),
+          analyzed_accounts = VALUES(analyzed_accounts),
+          updated_at = NOW()`,
+        [
+          cleanSubreddit.toLowerCase(),
+          currentData.minPostKarma, currentData.minPostKarmaUser,
+          currentData.minCommentKarma, currentData.minCommentKarmaUser,
+          currentData.minTotalKarma, currentData.minTotalKarmaUser,
+          currentData.minAccountAgeDays, currentData.minAccountAgeUser,
+          currentData.analyzedAccounts
+        ]
+      )
+    } catch (dbErr) {
+      console.error("Database cache error:", dbErr)
     }
 
     // Record successful usage
@@ -171,13 +247,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: {
-        minPostKarma: minPostKarma === Infinity ? 0 : minPostKarma,
-        minCommentKarma: minCommentKarma === Infinity ? 0 : minCommentKarma,
-        minTotalKarma: minTotalKarma === Infinity ? 0 : minTotalKarma,
-        minAccountAgeDays: minAgeDays === Infinity ? 0 : minAgeDays,
-        analyzedAccounts: analyzedCount
-      }
+      data: currentData,
+      previous: previousData
     })
 
   } catch (error: any) {
