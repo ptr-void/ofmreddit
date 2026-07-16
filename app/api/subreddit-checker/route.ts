@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
     let token = await getAccessToken()
 
     // 1. Fetch recent posts from the subreddit
-    const postsUrl = `https://oauth.reddit.com/r/${encodeURIComponent(cleanSubreddit)}/new?limit=${maxPosts}`
+    const postsUrl = `https://oauth.reddit.com/r/${encodeURIComponent(cleanSubreddit)}/hot?limit=${maxPosts}`
     const postsRes = await fetch(postsUrl, {
       headers: { 
         Authorization: `Bearer ${token}`, 
