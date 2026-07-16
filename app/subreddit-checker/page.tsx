@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogAction } from "@/components/ui/alert-dialog"
 import { Loader2, Search, Activity, Clock, ShieldAlert, Star, History } from "lucide-react"
+import s from "@/styles/scraper.module.css"
 
 type CheckerResult = {
   minPostKarma: number
@@ -106,7 +107,8 @@ export default function SubredditCheckerPage() {
   }
 
   return (
-    <div className="container mx-auto p-4 md:p-8 max-w-4xl min-h-[80vh] flex flex-col items-center justify-center space-y-8">
+    <div className={`min-h-screen w-full bg-background ${s.bgPattern}`}>
+      <div className="container mx-auto p-4 md:p-8 max-w-4xl min-h-[80vh] flex flex-col items-center justify-center space-y-8">
       
       <div className="text-center space-y-4">
         <h1 className="text-4xl font-bold tracking-tight text-foreground">Subreddit Requirements Checker</h1>
@@ -285,7 +287,8 @@ export default function SubredditCheckerPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
+    </div>
     </div>
   )
 }
+
