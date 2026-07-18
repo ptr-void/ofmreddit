@@ -148,6 +148,12 @@ export async function POST(request: NextRequest) {
           const createdUtc = profile.created_utc || nowSecs
           
           const ageDays = Math.max(0, Math.floor((nowSecs - createdUtc) / 86400))
+          
+          // CRITICAL: Filter out fresh spam bots that bypassed automod but haven't been deleted yet
+          // If they have less than 5 total karma and are less than 2 days old, they are an anomaly.
+          if (totalKarma < 5 && ageDays < 2) {
+            continue
+          }
 
           if (postKarma < minPostKarma) {
             minPostKarma = postKarma
