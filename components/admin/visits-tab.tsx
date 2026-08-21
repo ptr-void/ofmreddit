@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Loader2, Activity, Globe, Monitor, MousePointerClick } from "lucide-react"
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
 
 type Visit = {
   id: number
@@ -19,11 +20,17 @@ type TopPage = {
   visit_count: number
 }
 
+type VisitDay = {
+  date: string
+  count: number
+}
+
 type AnalyticsData = {
   totalVisits: number
   visitsToday: number
   recentVisits: Visit[]
   topPages: TopPage[]
+  visitsByDay: VisitDay[]
 }
 
 export function VisitsTab() {
@@ -50,6 +57,16 @@ export function VisitsTab() {
       }
 
       const analyticsData = await res.json()
+      
+      // Format dates and ensure count is a number for the chart
+      if (analyticsData.visitsByDay) {
+        analyticsData.visitsByDay = analyticsData.visitsByDay.map((v: any) => ({
+          ...v,
+          date: new Date(v.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+          count: Number(v.count)
+        }))
+      }
+      
       setData(analyticsData)
     } catch (error: any) {
       console.error("Error fetching analytics:", error)
@@ -65,11 +82,11 @@ export function VisitsTab() {
 
   const formatUserAgent = (ua: string) => {
     if (!ua || ua === "unknown") return "Unknown Device"
-    if (ua.includes("Mobile")) return "Mobile Device"
-    if (ua.includes("Windows")) return "Windows PC"
+    if (ua.includes("Mobile")) return "Mobile"
+    if (ua.includes("Windows")) return "Windows"
     if (ua.includes("Mac OS")) return "Mac"
     if (ua.includes("Linux")) return "Linux"
-    return "Desktop / Other"
+    return "Desktop"
   }
 
   if (isLoading) {
@@ -109,6 +126,28 @@ export function VisitsTab() {
           </CardContent>
         </Card>
       </div>
+
+      <Card className="col-span-full">
+        <CardHeader>
+          <CardTitle>Visits Over Time (Last 30 Days)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[300px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={data.visitsByDay || []}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" />
+                <XAxis dataKey="date" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+                <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `${value}`} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: "#0f172a", borderColor: "#1e293b", borderRadius: "8px", color: "#f8fafc" }}
+                  itemStyle={{ color: "#3b82f6" }}
+                />
+                <Line type="monotone" dataKey="count" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, fill: "#3b82f6" }} activeDot={{ r: 6 }} name="Visits" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4">

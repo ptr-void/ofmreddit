@@ -42,11 +42,21 @@ export async function GET(request: NextRequest) {
       LIMIT 10
     `)
 
+    // Get visits by day (last 30 days)
+    const visitsByDay = await query(`
+      SELECT DATE(visited_at) as date, COUNT(*) as count 
+      FROM website_visits 
+      WHERE visited_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+      GROUP BY DATE(visited_at)
+      ORDER BY date ASC
+    `)
+
     return NextResponse.json({
       totalVisits,
       visitsToday,
       recentVisits,
-      topPages
+      topPages,
+      visitsByDay
     })
   } catch (error: any) {
     console.error("Error fetching analytics:", error)
