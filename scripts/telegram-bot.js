@@ -3,8 +3,13 @@ const { Telegraf } = require('telegraf');
 const fs = require('fs');
 const path = require('path');
 
-// Replace with token if not in env
-const token = process.env.TELEGRAM_BOT_TOKEN || '8771430790:AAFIiKz_Rj4-HxUjvIGot1WY7mDydRiRgcc';
+// Use token from env
+const token = process.env.TELEGRAM_BOT_TOKEN;
+
+if (!token) {
+  console.error("ERROR: TELEGRAM_BOT_TOKEN is missing in .env.local");
+  process.exit(1);
+}
 
 const bot = new Telegraf(token);
 
