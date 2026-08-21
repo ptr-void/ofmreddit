@@ -181,6 +181,72 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Could not fetch user profiles due to rate limits or suspended accounts" }, { status: 500 })
     }
 
+    // New: Fetch Top 10 Posts of the Week (7-day rolling average equivalent) and check Moderators for Bot Bouncer
+    let hot1Weekly = 0;
+    let hot2to5WeeklyAvg = 0;
+    let hot6to10WeeklyAvg = 0;
+    let hasBotBouncer = false;
+    let requiresVerification = false;
+    
+    try {
+      // Check Subreddit About for Restricted (Verification)
+      const aboutUrl = `https://oauth.reddit.com/r/${encodeURIComponent(cleanSubreddit)}/about`
+      const aboutRes = await fetch(aboutUrl, {
+        headers: { Authorization: `Bearer ${token}`, "User-Agent": process.env.REDDIT_USER_AGENT || "SubredditRequirementsChecker/1.0" }
+      })
+      if (aboutRes.ok) {
+        const aboutData = await aboutRes.json()
+        if (aboutData.data?.subreddit_type === "restricted") {
+          requiresVerification = true;
+        }
+      }
+
+      // Check Moderators for Bot Bouncer
+      const modsUrl = `https://oauth.reddit.com/r/${encodeURIComponent(cleanSubreddit)}/about/moderators`
+      const modsRes = await fetch(modsUrl, {
+        headers: { Authorization: `Bearer ${token}`, "User-Agent": process.env.REDDIT_USER_AGENT || "SubredditRequirementsChecker/1.0" }
+      })
+      if (modsRes.ok) {
+        const modsData = await modsRes.json()
+        const mods = modsData.data?.children || []
+        hasBotBouncer = mods.some((m: any) => m.name?.toLowerCase().includes("botbouncer") || m.name?.toLowerCase().includes("safestbot"));
+      }
+
+      const topUrl = `https://oauth.reddit.com/r/${encodeURIComponent(cleanSubreddit)}/top?limit=10&t=week`
+      const topRes = await fetch(topUrl, {
+        headers: { 
+          Authorization: `Bearer ${token}`, 
+          "User-Agent": process.env.REDDIT_USER_AGENT || "SubredditRequirementsChecker/1.0" 
+        }
+      })
+      if (topRes.ok) {
+        const topData = await topRes.json()
+        const topPosts = topData?.data?.children || []
+        
+        if (topPosts.length > 0) {
+          hot1Weekly = topPosts[0].data?.ups || 0;
+          
+          let sum2to5 = 0;
+          let count2to5 = 0;
+          for(let i = 1; i < 5 && i < topPosts.length; i++) {
+             sum2to5 += topPosts[i].data?.ups || 0;
+             count2to5++;
+          }
+          if (count2to5 > 0) hot2to5WeeklyAvg = Math.floor(sum2to5 / count2to5);
+          
+          let sum6to10 = 0;
+          let count6to10 = 0;
+          for(let i = 5; i < 10 && i < topPosts.length; i++) {
+             sum6to10 += topPosts[i].data?.ups || 0;
+             count6to10++;
+          }
+          if (count6to10 > 0) hot6to10WeeklyAvg = Math.floor(sum6to10 / count6to10);
+        }
+      }
+    } catch(e) {
+      console.error("Failed to fetch top posts", e)
+    }
+
     const currentData = {
       minPostKarma: minPostKarma === Infinity ? 0 : minPostKarma,
       minPostKarmaUser,
@@ -190,7 +256,12 @@ export async function POST(request: NextRequest) {
       minTotalKarmaUser,
       minAccountAgeDays: minAgeDays === Infinity ? 0 : minAgeDays,
       minAccountAgeUser: minAgeDaysUser,
-      analyzedAccounts: analyzedCount
+      analyzedAccounts: analyzedCount,
+      hot1Weekly,
+      hot2to5WeeklyAvg,
+      hot6to10WeeklyAvg,
+      hasBotBouncer,
+      requiresVerification
     }
 
     let previousData = null
@@ -234,6 +305,31 @@ export async function POST(request: NextRequest) {
           currentData.minTotalKarma, currentData.minTotalKarmaUser,
           currentData.minAccountAgeDays, currentData.minAccountAgeUser,
           currentData.analyzedAccounts
+        ]
+      )
+      
+      // Upsert into master_subreddits too
+      await query(
+        `INSERT INTO master_subreddits (
+          subreddit_name, hot_1_weekly, hot_2_5_weekly_avg, hot_6_10_weekly_avg,
+          min_post_karma, min_comment_karma, min_combined_karma, min_account_age_days, status,
+          has_bot_bouncer, requires_verification
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?)
+        ON DUPLICATE KEY UPDATE
+          hot_1_weekly = VALUES(hot_1_weekly),
+          hot_2_5_weekly_avg = VALUES(hot_2_5_weekly_avg),
+          hot_6_10_weekly_avg = VALUES(hot_6_10_weekly_avg),
+          min_post_karma = LEAST(min_post_karma, VALUES(min_post_karma)),
+          min_comment_karma = LEAST(min_comment_karma, VALUES(min_comment_karma)),
+          min_combined_karma = LEAST(min_combined_karma, VALUES(min_combined_karma)),
+          min_account_age_days = LEAST(min_account_age_days, VALUES(min_account_age_days)),
+          has_bot_bouncer = VALUES(has_bot_bouncer),
+          requires_verification = VALUES(requires_verification)`,
+        [
+          cleanSubreddit.toLowerCase(),
+          hot1Weekly, hot2to5WeeklyAvg, hot6to10WeeklyAvg,
+          currentData.minPostKarma, currentData.minCommentKarma, currentData.minTotalKarma, currentData.minAccountAgeDays,
+          hasBotBouncer, requiresVerification
         ]
       )
     } catch (dbErr) {

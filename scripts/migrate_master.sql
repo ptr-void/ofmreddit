@@ -1,0 +1,23 @@
+CREATE TABLE IF NOT EXISTS master_subreddits (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  subreddit_name VARCHAR(255) NOT NULL UNIQUE,
+  niche_tags TEXT,
+  subscribers INT DEFAULT 0,
+  weekly_visitors INT DEFAULT 0,
+  weekly_contributions INT DEFAULT 0,
+  top_5_avg_upvotes INT DEFAULT 0,
+  top_5_avg_comments INT DEFAULT 0,
+  top_1_post_upvotes INT DEFAULT 0,
+  top_1_post_comments INT DEFAULT 0,
+  min_post_karma INT DEFAULT 0,
+  min_comment_karma INT DEFAULT 0,
+  min_combined_karma INT DEFAULT 0,
+  min_account_age_days INT DEFAULT 0,
+  btv FLOAT DEFAULT 0,
+  tsdi FLOAT DEFAULT 0,
+  upvote_comment_ratio FLOAT DEFAULT 0,
+  is_nsfw BOOLEAN DEFAULT TRUE,
+  status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);

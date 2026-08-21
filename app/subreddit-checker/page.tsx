@@ -20,6 +20,11 @@ type CheckerResult = {
   minAccountAgeDays: number
   minAccountAgeUser: string
   analyzedAccounts: number
+  hot1Weekly?: number
+  hot2to5WeeklyAvg?: number
+  hot6to10WeeklyAvg?: number
+  hasBotBouncer?: boolean
+  requiresVerification?: boolean
 }
 
 export default function SubredditCheckerPage() {
@@ -177,6 +182,37 @@ export default function SubredditCheckerPage() {
             </CardHeader>
             <CardContent className="pt-6">
               
+              <div className="flex flex-wrap justify-center gap-3 mb-6">
+                {result.requiresVerification && (
+                  <span className="px-3 py-1 bg-red-500/10 text-red-500 border border-red-500/20 rounded-full text-xs font-semibold uppercase tracking-wider">
+                    Verification Required (Restricted)
+                  </span>
+                )}
+                {result.hasBotBouncer && (
+                  <span className="px-3 py-1 bg-orange-500/10 text-orange-500 border border-orange-500/20 rounded-full text-xs font-semibold uppercase tracking-wider">
+                    BotBouncer Detected
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-3 gap-4 mb-8">
+                <div className="p-4 bg-muted/30 border rounded-xl text-center flex flex-col justify-center">
+                   <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">#1 Post (Week)</h4>
+                   <span className="block text-2xl font-bold text-primary">{result.hot1Weekly}</span>
+                   <span className="text-[10px] text-muted-foreground">Upvotes</span>
+                </div>
+                <div className="p-4 bg-muted/30 border rounded-xl text-center flex flex-col justify-center">
+                   <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Top 2-5 Avg (Week)</h4>
+                   <span className="block text-2xl font-bold">{result.hot2to5WeeklyAvg}</span>
+                   <span className="text-[10px] text-muted-foreground">Upvotes</span>
+                </div>
+                <div className="p-4 bg-muted/30 border rounded-xl text-center flex flex-col justify-center">
+                   <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Top 6-10 Avg (Week)</h4>
+                   <span className="block text-2xl font-bold">{result.hot6to10WeeklyAvg}</span>
+                   <span className="text-[10px] text-muted-foreground">Upvotes</span>
+                </div>
+              </div>
+
               {previousResult && (
                 <div className="mb-8 p-6 bg-blue-500/10 border border-blue-500/20 rounded-xl shadow-inner">
                   <div className="flex items-center gap-2 mb-5 justify-center">
