@@ -12,6 +12,7 @@ import { SubscriptionTierTab } from "@/components/admin/subscription-tier-tab"
 import { SiteControlsTab } from "@/components/admin/site-controls-tab"
 import { ScraperDataTab } from "@/components/admin/scraper-data-tab"
 import { VisitsTab } from "@/components/admin/visits-tab"
+import { PendingSubredditsTab } from "@/components/admin/pending-subreddits-tab"
 import s from "@/styles/scraper.module.css"
 
 type Prompt = {
@@ -503,6 +504,7 @@ export default function AdminPage() {
           <TabsList className="flex w-full items-center justify-start gap-2 overflow-x-auto whitespace-nowrap px-1 lg:justify-between lg:overflow-visible lg:px-1">
             <TabsTrigger className="flex-none px-4 lg:flex-1 lg:justify-center" value="prompts">Prompts & Docs</TabsTrigger>
             <TabsTrigger className="flex-none px-4 lg:flex-1 lg:justify-center" value="users">Users</TabsTrigger>
+            <TabsTrigger className="flex-none px-4 lg:flex-1 lg:justify-center" value="pending_subs">Pending Subs</TabsTrigger>
             <TabsTrigger className="flex-none px-4 lg:flex-1 lg:justify-center" value="subscriptions">User Subscription</TabsTrigger>
             <TabsTrigger className="flex-none px-4 lg:flex-1 lg:justify-center" value="tiers">Subscription Tier</TabsTrigger>
             <TabsTrigger className="flex-none px-4 lg:flex-1 lg:justify-center" value="analytics">Copied Captions</TabsTrigger>
@@ -510,6 +512,10 @@ export default function AdminPage() {
             <TabsTrigger className="flex-none px-4 lg:flex-1 lg:justify-center" value="site_controls">Site Controls</TabsTrigger>
             <TabsTrigger className="flex-none px-4 lg:flex-1 lg:justify-center" value="scraper_data">Scraper Data</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="pending_subs" className="space-y-6">
+            <PendingSubredditsTab />
+          </TabsContent>
 
           <TabsContent value="prompts" className="space-y-6">
             <PromptsTab

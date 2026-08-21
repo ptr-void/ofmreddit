@@ -69,7 +69,7 @@ export default function Navigation() {
 
   return (
     <nav className="border-b border-border bg-card">
-      <div className="mx-auto max-w-7xl px-4">
+      <div className="mx-auto max-w-[1600px] px-4">
         <div className="flex h-16 items-center justify-between">
           <div className="flex items-center gap-1">
             {mounted && user && (
@@ -84,7 +84,7 @@ export default function Navigation() {
 
             <Link
               href="/"
-              className="flex items-center gap-2 mr-4 order-last md:order-none"
+              className="flex items-center gap-2 mr-4 order-last md:order-none whitespace-nowrap"
             >
               <span className="text-xl font-bold text-foreground">OFMReddit</span>
             </Link>
@@ -93,7 +93,7 @@ export default function Navigation() {
               <>
                 <Link
                   href="/scraper"
-                  className={`hidden xl:block px-3 py-2 text-sm rounded-lg font-medium transition-colors ${pathname === "/scraper"
+                  className={`hidden xl:block whitespace-nowrap px-3 py-2 text-sm rounded-lg font-medium transition-colors ${pathname === "/scraper"
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:text-foreground hover:bg-muted"
                     }`}
@@ -102,7 +102,7 @@ export default function Navigation() {
                 </Link>
                 <Link
                   href="/post-planner"
-                  className={`hidden xl:block px-3 py-2 text-sm rounded-lg font-medium transition-colors ${pathname === "/post-planner"
+                  className={`hidden xl:block whitespace-nowrap px-3 py-2 text-sm rounded-lg font-medium transition-colors ${pathname === "/post-planner"
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:text-foreground hover:bg-muted"
                     }`}
@@ -111,7 +111,7 @@ export default function Navigation() {
                 </Link>
                 <Link
                       href="/reddit-database"
-                      className={`hidden xl:block px-3 py-2 text-sm rounded-lg font-medium transition-colors ${pathname === "/reddit-database"
+                      className={`hidden xl:block whitespace-nowrap px-3 py-2 text-sm rounded-lg font-medium transition-colors ${pathname === "/reddit-database"
                         ? "bg-primary text-primary-foreground"
                         : "text-muted-foreground hover:text-foreground hover:bg-muted"
                         }`}
@@ -120,18 +120,27 @@ export default function Navigation() {
                     </Link>
                 <Link
                       href="/subreddit-checker"
-                      className={`hidden xl:block px-3 py-2 text-sm rounded-lg font-medium transition-colors ${pathname === "/subreddit-checker"
+                      className={`hidden xl:block whitespace-nowrap px-3 py-2 text-sm rounded-lg font-medium transition-colors ${pathname === "/subreddit-checker"
                         ? "bg-primary text-primary-foreground"
                         : "text-muted-foreground hover:text-foreground hover:bg-muted"
                         }`}
                     >
                       Subreddit Checker
                     </Link>
+                <Link
+                      href="/submit-subreddit"
+                      className={`hidden xl:block whitespace-nowrap px-3 py-2 text-sm rounded-lg font-medium transition-colors ${pathname === "/submit-subreddit"
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                        }`}
+                    >
+                      Submit Subreddit
+                    </Link>
                 {user.isAdmin ? (
                   <>
                     <Link
                       href="/caption-generator"
-                      className={`hidden xl:block px-3 py-2 text-sm rounded-lg font-medium transition-colors ${pathname === "/caption-generator"
+                      className={`hidden xl:block whitespace-nowrap px-3 py-2 text-sm rounded-lg font-medium transition-colors ${pathname === "/caption-generator"
                         ? "bg-primary text-primary-foreground"
                         : "text-muted-foreground hover:text-foreground hover:bg-muted"
                         }`}
@@ -140,7 +149,7 @@ export default function Navigation() {
                     </Link>
                     <Link
                       href="/admin"
-                      className={`hidden xl:flex items-center gap-2 px-3 py-2 text-sm rounded-lg font-medium transition-colors ${pathname === "/admin"
+                      className={`hidden xl:flex whitespace-nowrap items-center gap-2 px-3 py-2 text-sm rounded-lg font-medium transition-colors ${pathname === "/admin"
                         ? "bg-primary text-primary-foreground"
                         : "text-muted-foreground hover:text-foreground hover:bg-muted"
                         }`}
@@ -237,6 +246,16 @@ export default function Navigation() {
                     }`}
                 >
                   Subreddit Checker
+                </Link>
+            <Link
+                  href="/submit-subreddit"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`block px-4 py-2 rounded-lg font-medium transition-colors ${pathname === "/submit-subreddit"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                    }`}
+                >
+                  Submit Subreddit
                 </Link>
             {user.isAdmin ? (
               <>
