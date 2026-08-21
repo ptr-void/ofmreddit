@@ -13,6 +13,7 @@ export default function RegisterPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
+  const [inviteCode, setInviteCode] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [error, setError] = useState("")
@@ -45,13 +46,18 @@ export default function RegisterPage() {
       return
     }
 
+    if (!inviteCode || inviteCode.length < 6) {
+      setError("Please provide a valid Telegram invite code")
+      return
+    }
+
     setLoading(true)
 
     try {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, inviteCode }),
       })
 
       const data = await res.json()
@@ -317,6 +323,20 @@ export default function RegisterPage() {
                   )}
                 </button>
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="inviteCode">Telegram Invite Code</Label>
+              <Input
+                id="inviteCode"
+                type="text"
+                value={inviteCode}
+                onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+                placeholder="e.g. A1B2C3"
+                required
+                disabled={loading}
+              />
+              <p className="text-xs text-muted-foreground">Type /signup in our Telegram group to get a code</p>
             </div>
 
             <Button type="submit" className="w-full" size="lg" disabled={loading}>

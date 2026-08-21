@@ -58,13 +58,46 @@ async function sendVerificationEmail(to: string, code: string) {
     html,
   })
 }
+import fs from "fs"
+import path from "path"
+
 export async function POST(request: Request) {
   try {
-    const { email, password } = await request.json()
+    const { email, password, inviteCode } = await request.json()
     if (!email || !password) {
       return NextResponse.json(
         { error: "Email and password are required" },
         { status: 400 }
+      )
+    }
+    
+    if (!inviteCode) {
+      return NextResponse.json(
+        { error: "Telegram invite code is required" },
+        { status: 400 }
+      )
+    }
+
+    // Verify Telegram Invite Code
+    const codesPath = path.join(process.cwd(), 'scripts', 'invite_codes.json')
+    if (fs.existsSync(codesPath)) {
+      const data = JSON.parse(fs.readFileSync(codesPath, 'utf8'))
+      const codeIndex = data.codes.findIndex((c: any) => c.code === inviteCode.toUpperCase())
+      
+      if (codeIndex === -1) {
+        return NextResponse.json(
+          { error: "Invalid or already used Telegram invite code" },
+          { status: 400 }
+        )
+      }
+      
+      // Remove used code
+      data.codes.splice(codeIndex, 1)
+      fs.writeFileSync(codesPath, JSON.stringify(data, null, 2))
+    } else {
+       return NextResponse.json(
+        { error: "Verification system offline. Please contact admin." },
+        { status: 500 }
       )
     }
 
