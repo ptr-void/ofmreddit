@@ -41,8 +41,9 @@ type User = {
   email_verified: boolean
   created_at: string
   updated_at: string
-  post_count: number
-  copied_count: number
+  tier_name: string | null
+  spa_uses: number
+  checker_uses: number
   banned_id: number | null
   ban_reason: string | null
   banned_at: string | null

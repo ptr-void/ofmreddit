@@ -13,8 +13,9 @@ type User = {
   is_admin: boolean
   email_verified: boolean
   created_at: string
-  post_count: number
-  copied_count: number
+  tier_name: string | null
+  spa_uses: number
+  checker_uses: number
   banned_id: number | null
   ban_reason: string | null
   banned_at: string | null
@@ -186,6 +187,11 @@ export function UserRow({ user, onBan, onDelete, onUpdateUsername, onUpdateCusto
         )}
       </td>
       <td className="p-3 text-sm">
+        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">
+          {user.tier_name || "Free"}
+        </span>
+      </td>
+      <td className="p-3 text-sm">
         {!editingLimit ? (
           <div className={`flex items-center justify-between gap-2 ${LIMIT_COL_WIDTH}`}>
             <span className={`truncate ${user.custom_subreddit_checker_limit !== null ? "" : "text-muted-foreground/70 italic"}`}>
@@ -248,8 +254,8 @@ export function UserRow({ user, onBan, onDelete, onUpdateUsername, onUpdateCusto
           </div>
         )}
       </td>
-      <td className="p-3 text-sm">{user.post_count}</td>
-      <td className="p-3 text-sm">{user.copied_count}</td>
+      <td className="p-3 text-sm text-center">{user.spa_uses}</td>
+      <td className="p-3 text-sm text-center">{user.checker_uses}</td>
       <td className="p-3">
         {user.banned_id ? (
           <span className="text-xs bg-destructive/20 text-destructive px-2 py-1 rounded">Banned</span>

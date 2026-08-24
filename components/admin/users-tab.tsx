@@ -11,8 +11,9 @@ type User = {
   is_admin: boolean
   email_verified: boolean
   created_at: string
-  post_count: number
-  copied_count: number
+  tier_name: string | null
+  spa_uses: number
+  checker_uses: number
   banned_id: number | null
   ban_reason: string | null
   banned_at: string | null
@@ -43,9 +44,10 @@ export function UsersTab({ users, onBanUser, onDeleteUser, onUpdateUsername, onU
             <tr className="border-b border-border">
               <th className="text-left p-3 text-sm font-medium">Email</th>
               <th className="text-left p-3 text-sm font-medium">Username</th>
+              <th className="text-left p-3 text-sm font-medium">Tier</th>
               <th className="text-left p-3 text-sm font-medium">Limit</th>
-              <th className="text-left p-3 text-sm font-medium">Posts</th>
-              <th className="text-left p-3 text-sm font-medium">Copied</th>
+              <th className="text-center p-3 text-sm font-medium" title="Subreddit Profile Analyzer Uses">SPA</th>
+              <th className="text-center p-3 text-sm font-medium" title="Subreddit Checker Uses">Checker</th>
               <th className="text-left p-3 text-sm font-medium">Status</th>
               <th className="text-left p-3 text-sm font-medium">Joined</th>
               <th className="text-right p-3 text-sm font-medium">Actions</th>
