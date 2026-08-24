@@ -48,7 +48,7 @@ export function UsersTab({ users, onBanUser, onDeleteUser, onUpdateUsername, onU
               <th className="text-left p-3 text-sm font-medium">Limit</th>
               <th className="text-center p-3 text-sm font-medium" title="Subreddit Profile Analyzer Uses">SPA</th>
               <th className="text-center p-3 text-sm font-medium" title="Subreddit Checker Uses">Checker</th>
-              <th className="text-left p-3 text-sm font-medium">Status</th>
+              <th className="text-left p-3 text-sm font-medium">Last Active</th>
               <th className="text-left p-3 text-sm font-medium">Joined</th>
               <th className="text-right p-3 text-sm font-medium">Actions</th>
             </tr>

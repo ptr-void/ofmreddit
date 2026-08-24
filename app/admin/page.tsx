@@ -44,6 +44,7 @@ type User = {
   tier_name: string | null
   spa_uses: number
   checker_uses: number
+  last_active: string | null
   banned_id: number | null
   ban_reason: string | null
   banned_at: string | null

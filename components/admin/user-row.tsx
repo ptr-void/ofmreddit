@@ -16,6 +16,7 @@ type User = {
   tier_name: string | null
   spa_uses: number
   checker_uses: number
+  last_active: string | null
   banned_id: number | null
   ban_reason: string | null
   banned_at: string | null
@@ -256,11 +257,13 @@ export function UserRow({ user, onBan, onDelete, onUpdateUsername, onUpdateCusto
       </td>
       <td className="p-3 text-sm text-center">{user.spa_uses}</td>
       <td className="p-3 text-sm text-center">{user.checker_uses}</td>
-      <td className="p-3">
+      <td className="p-3 text-sm">
         {user.banned_id ? (
           <span className="text-xs bg-destructive/20 text-destructive px-2 py-1 rounded">Banned</span>
         ) : (
-          <span className="text-xs bg-green-500/20 text-green-600 px-2 py-1 rounded">Active</span>
+          <span className="text-muted-foreground">
+            {user.last_active ? new Date(user.last_active).toLocaleDateString() : "Never"}
+          </span>
         )}
       </td>
       <td className="p-3 text-sm text-muted-foreground">{new Date(user.created_at).toLocaleDateString()}</td>

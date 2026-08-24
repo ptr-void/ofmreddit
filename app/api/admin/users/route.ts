@@ -27,6 +27,7 @@ export async function GET(request: NextRequest) {
         (SELECT st.name FROM user_subscriptions us JOIN subscription_tiers st ON us.tier_id = st.id WHERE us.user_id = u.id AND st.is_active = 1 AND us.starts_at <= NOW() AND (us.ends_at IS NULL OR us.ends_at >= NOW()) ORDER BY st.price DESC LIMIT 1) as tier_name,
         (SELECT COUNT(*) FROM feature_usage WHERE user_id = u.id AND feature = 'scraper') as spa_uses,
         (SELECT COUNT(*) FROM feature_usage WHERE user_id = u.id AND feature = 'subreddit_checker') as checker_uses,
+        (SELECT MAX(occurred_at) FROM feature_usage WHERE user_id = u.id) as last_active,
         b.id as banned_id,
         b.reason as ban_reason,
         b.banned_at
