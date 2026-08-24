@@ -40,11 +40,13 @@ type User = {
   is_admin: boolean
   email_verified: boolean
   created_at: string
+  updated_at: string
   post_count: number
   copied_count: number
   banned_id: number | null
   ban_reason: string | null
   banned_at: string | null
+  custom_subreddit_checker_limit: number | null
 }
 
 type CopiedCaption = {
@@ -471,6 +473,37 @@ export default function AdminPage() {
     }
   }
 
+  const handleUpdateCustomLimit = async (userId: number, limit: number | null) => {
+    const token = localStorage.getItem("token")
+    if (!token) {
+      toast({ title: "Error", description: "Authentication token missing", variant: "destructive" })
+      return
+    }
+    setSavingUsername(prev => ({ ...prev, [userId]: true }))
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ userId, limit }),
+      })
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}))
+        throw new Error(e.error || "Failed to update custom limit")
+      }
+      const data = await res.json().catch(() => ({}))
+      const newLimit = (data?.user?.custom_subreddit_checker_limit !== undefined ? data.user.custom_subreddit_checker_limit : limit) as number | null
+
+      setUsers(prev => prev.map(u => (u.id === userId ? { ...u, custom_subreddit_checker_limit: newLimit } : u)))
+      toast({ title: "Saved", description: "Custom limit updated" })
+      showBanner("Custom limit updated!", "ok")
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message || "Failed to update custom limit", variant: "destructive" })
+      showBanner(err.message || "Failed to update custom limit", "err")
+    } finally {
+      setSavingUsername(prev => ({ ...prev, [userId]: false }))
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
@@ -537,6 +570,7 @@ export default function AdminPage() {
               onBanUser={handleBanUser}
               onDeleteUser={handleDeleteUser}
               onUpdateUsername={handleUpdateUsername}
+              onUpdateCustomLimit={handleUpdateCustomLimit}
               disabled={isSaving || uploadingFile}
               savingMap={savingUsername}
             />

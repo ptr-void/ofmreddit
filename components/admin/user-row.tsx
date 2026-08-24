@@ -18,6 +18,7 @@ type User = {
   banned_id: number | null
   ban_reason: string | null
   banned_at: string | null
+  custom_subreddit_checker_limit: number | null
 }
 
 type UserRowProps = {
@@ -25,15 +26,22 @@ type UserRowProps = {
   onBan: (userId: number, currentlyBanned: boolean) => Promise<void>
   onDelete: (userId: number) => Promise<void>
   onUpdateUsername: (userId: number, username: string | null) => Promise<void>
+  onUpdateCustomLimit: (userId: number, limit: number | null) => Promise<void>
   disabled: boolean
   saving?: boolean
 }
 
-export function UserRow({ user, onBan, onDelete, onUpdateUsername, disabled, saving }: UserRowProps) {
+export function UserRow({ user, onBan, onDelete, onUpdateUsername, onUpdateCustomLimit, disabled, saving }: UserRowProps) {
   const [editing, setEditing] = useState(false)
   const original = useMemo(() => user.username ?? "", [user.username])
   const [name, setName] = useState(original)
+  
+  const [editingLimit, setEditingLimit] = useState(false)
+  const originalLimit = useMemo(() => (user.custom_subreddit_checker_limit === null ? "" : String(user.custom_subreddit_checker_limit)), [user.custom_subreddit_checker_limit])
+  const [limitStr, setLimitStr] = useState(originalLimit)
+
   const USERNAME_COL_WIDTH = "min-w-[240px] max-w-[240px] w-[240px]"
+  const LIMIT_COL_WIDTH = "min-w-[120px] max-w-[120px] w-[120px]"
 
   const noSubmit =
     (fn: () => void) =>
@@ -44,12 +52,19 @@ export function UserRow({ user, onBan, onDelete, onUpdateUsername, disabled, sav
       }
 
   useEffect(() => setName(original), [original])
+  useEffect(() => setLimitStr(originalLimit), [originalLimit])
 
   const startEdit = () => setEditing(true)
+  const startEditLimit = () => setEditingLimit(true)
 
   const cancelEdit = () => {
     setName(original)
     setEditing(false)
+  }
+  
+  const cancelEditLimit = () => {
+    setLimitStr(originalLimit)
+    setEditingLimit(false)
   }
 
   const saveEdit = async () => {
@@ -62,17 +77,29 @@ export function UserRow({ user, onBan, onDelete, onUpdateUsername, disabled, sav
     await onUpdateUsername(user.id, normalized)
     setEditing(false)
   }
+  
+  const saveEditLimit = async () => {
+    const trimmed = limitStr.trim()
+    if (trimmed === originalLimit) {
+      setEditingLimit(false)
+      return
+    }
+    const val = trimmed === "" ? null : Number(trimmed)
+    if (val !== null && isNaN(val)) {
+      setEditingLimit(false)
+      return
+    }
+    await onUpdateCustomLimit(user.id, val)
+    setEditingLimit(false)
+  }
 
   useEffect(() => {
     setName(user.username ?? "")
   }, [user.username])
-
-  const saveIfChanged = async () => {
-    const trimmed = name.trim()
-    const current = user.username ?? ""
-    if (trimmed === current) return
-    await onUpdateUsername(user.id, trimmed === "" ? null : trimmed)
-  }
+  
+  useEffect(() => {
+    setLimitStr(user.custom_subreddit_checker_limit === null ? "" : String(user.custom_subreddit_checker_limit))
+  }, [user.custom_subreddit_checker_limit])
 
   return (
     <tr className="border-b border-border hover:bg-muted/50">
@@ -153,6 +180,69 @@ export function UserRow({ user, onBan, onDelete, onUpdateUsername, disabled, sav
                 ) : (
                   <Check className="w-4 h-4" />
                 )}
+              </span>
+            </button>
+          </div>
+        )}
+      </td>
+      <td className="p-3 text-sm">
+        {!editingLimit ? (
+          <div className={`flex items-center justify-between gap-2 ${LIMIT_COL_WIDTH}`}>
+            <span className={`truncate ${user.custom_subreddit_checker_limit !== null ? "" : "text-muted-foreground/70 italic"}`}>
+              {user.custom_subreddit_checker_limit !== null ? user.custom_subreddit_checker_limit : "Tier Def"}
+            </span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setEditingLimit(true)
+              }}
+              className="inline-flex items-center rounded px-2 py-1 hover:bg-muted transition-colors"
+              disabled={disabled}
+              aria-label="Edit limit"
+              title="Edit"
+            >
+              <Pencil className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          <div className={`flex items-center gap-2 ${LIMIT_COL_WIDTH}`}>
+            <input
+              className={`${s.csvinput} w-full`}
+              placeholder="Tier Def"
+              value={limitStr}
+              onChange={(e) => setLimitStr(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); saveEditLimit() }
+                if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cancelEditLimit() }
+              }}
+              autoFocus
+            />
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                cancelEditLimit()
+              }}
+              className={`${s.btn2} !p-3`}
+            >
+              <span className="text-xs flex items-center gap-1">
+                <X className="w-4 h-4" />
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                saveEditLimit()
+              }}
+              className={`${s.btn1} !p-3`}
+            >
+              <span className="text-xs flex items-center gap-1">
+                <Check className="w-4 h-4" />
               </span>
             </button>
           </div>

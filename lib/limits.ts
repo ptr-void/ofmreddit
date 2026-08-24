@@ -95,16 +95,27 @@ export async function assertWithinLimits(
   return { ok: true }
 }
 
-export async function assertDailySiteLimit(
+export async function assertDailySubredditCheckerLimit(
   userId: number,
   feature: Feature
 ): Promise<AssertOk | WeeklyLimit> {
-  // Get global limit from site_controls
-  const site = await queryOne<{ subreddit_checker_limit: number }>(
-    "SELECT subreddit_checker_limit FROM site_controls WHERE id = 1 LIMIT 1",
-    []
+  // Check if the user has a custom limit first
+  const user = await queryOne<{ custom_subreddit_checker_limit: number | null }>(
+    "SELECT custom_subreddit_checker_limit FROM users WHERE id = ? LIMIT 1",
+    [userId]
   )
-  const cap = site?.subreddit_checker_limit ?? 5
+  
+  let cap = 0
+
+  if (user && user.custom_subreddit_checker_limit !== null) {
+    cap = user.custom_subreddit_checker_limit
+  } else {
+    // Look at their active tier limit
+    const tier = await getActiveTierForUser(userId)
+    if (tier && (tier as any).daily_subreddit_checker_limit !== undefined) {
+      cap = (tier as any).daily_subreddit_checker_limit
+    }
+  }
 
   // Get daily usage (last 24 hours)
   const sql = `
@@ -119,6 +130,11 @@ export async function assertDailySiteLimit(
 
   if (cap > 0 && daily >= cap) {
     // using WeeklyLimit type to reuse the same error structure, but it represents a daily limit
+    return { ok: false, code: "WEEKLY_LIMIT", weekly: daily, cap }
+  }
+
+  // if cap is 0, they have no access
+  if (cap === 0) {
     return { ok: false, code: "WEEKLY_LIMIT", weekly: daily, cap }
   }
 

@@ -18,10 +18,12 @@ export async function GET(request: NextRequest) {
       `SELECT 
         u.id, 
         u.email, 
+        u.username,
         u.is_admin, 
         u.email_verified, 
         u.created_at,
         u.updated_at,
+        u.custom_subreddit_checker_limit,
         (SELECT COUNT(*) FROM posts WHERE user_id = u.id) as post_count,
         (SELECT COUNT(*) FROM copied_captions WHERE user_id = u.id) as copied_count,
         b.id as banned_id,
@@ -47,8 +49,13 @@ export async function PUT(request: NextRequest) {
     const payload = verifyAdminToken(token)
     if (!payload) return NextResponse.json({ error: "Admin access required" }, { status: 403 })
 
-    const { userId, username } = await request.json()
+    const { userId, username, limit } = await request.json()
     if (!userId) return NextResponse.json({ error: "User ID is required" }, { status: 400 })
+
+    if (limit !== undefined) {
+      await query("UPDATE users SET custom_subreddit_checker_limit = ? WHERE id = ?", [limit, userId])
+      return NextResponse.json({ success: true, user: { id: Number(userId), custom_subreddit_checker_limit: limit } })
+    }
 
     const cleanName =
       typeof username === "string" && username.trim() !== "" ? username.trim() : null
@@ -60,7 +67,7 @@ export async function PUT(request: NextRequest) {
       user: { id: Number(userId), username: cleanName ?? null }
     })
   } catch (error: any) {
-    console.error("Error updating username:", error)
+    console.error("Error updating user:", error)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }

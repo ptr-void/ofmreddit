@@ -5,7 +5,7 @@ export async function POST(req: Request) {
   try {
     const { email, action } = await req.json()
     
-    const users = await query<any[]>("SELECT id FROM users WHERE email = ?", [email])
+    const users = await query<any>("SELECT id FROM users WHERE email = ?", [email])
     if (!users || users.length === 0) {
       return NextResponse.json({ error: "User not found" }, { status: 404 })
     }

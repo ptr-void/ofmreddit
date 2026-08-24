@@ -16,6 +16,7 @@ type User = {
   banned_id: number | null
   ban_reason: string | null
   banned_at: string | null
+  custom_subreddit_checker_limit: number | null
 }
 
 type UsersTabProps = {
@@ -23,11 +24,12 @@ type UsersTabProps = {
   onBanUser: (userId: number, currentlyBanned: boolean) => Promise<void>
   onDeleteUser: (userId: number) => Promise<void>
   onUpdateUsername: (userId: number, username: string | null) => Promise<void>
+  onUpdateCustomLimit: (userId: number, limit: number | null) => Promise<void>
   disabled: boolean
   savingMap: Record<number, boolean>
 }
 
-export function UsersTab({ users, onBanUser, onDeleteUser, onUpdateUsername, disabled, savingMap }: UsersTabProps) {
+export function UsersTab({ users, onBanUser, onDeleteUser, onUpdateUsername, onUpdateCustomLimit, disabled, savingMap }: UsersTabProps) {
   return (
     <Card className="p-6">
       <div className="flex items-center gap-2 mb-4">
@@ -41,6 +43,7 @@ export function UsersTab({ users, onBanUser, onDeleteUser, onUpdateUsername, dis
             <tr className="border-b border-border">
               <th className="text-left p-3 text-sm font-medium">Email</th>
               <th className="text-left p-3 text-sm font-medium">Username</th>
+              <th className="text-left p-3 text-sm font-medium">Limit</th>
               <th className="text-left p-3 text-sm font-medium">Posts</th>
               <th className="text-left p-3 text-sm font-medium">Copied</th>
               <th className="text-left p-3 text-sm font-medium">Status</th>
@@ -56,6 +59,7 @@ export function UsersTab({ users, onBanUser, onDeleteUser, onUpdateUsername, dis
                 onBan={onBanUser}
                 onDelete={onDeleteUser}
                 onUpdateUsername={onUpdateUsername}
+                onUpdateCustomLimit={onUpdateCustomLimit}
                 disabled={disabled}
                 saving={!!savingMap[user.id]} 
               />

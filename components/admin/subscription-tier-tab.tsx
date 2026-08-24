@@ -12,6 +12,7 @@ type ApiTier = {
   weekly_database_limit: number | string | null
   saved_username_limit: number | string | null
   saved_profile_limit: number | string | null
+  daily_subreddit_checker_limit: number | string | null
 }
 
 type UiTier = {
@@ -25,6 +26,7 @@ type UiTier = {
     weekly_database_limit: string
     saved_username_limit: string
     saved_profile_limit: string
+    daily_subreddit_checker_limit: string
   }
 }
 
@@ -35,6 +37,7 @@ const LIMIT_KEYS = [
   "weekly_database_limit",
   "saved_username_limit",
   "saved_profile_limit",
+  "daily_subreddit_checker_limit",
 ] as const
 
 const LABELS: Record<(typeof LIMIT_KEYS)[number], string> = {
@@ -44,6 +47,7 @@ const LABELS: Record<(typeof LIMIT_KEYS)[number], string> = {
   weekly_database_limit: "Weekly Database Limit",
   saved_username_limit: "Saved Username Limit",
   saved_profile_limit: "Saved Profile Limit",
+  daily_subreddit_checker_limit: "Daily Subreddit Checker Limit",
 }
 
 export function SubscriptionTierTab() {
@@ -81,6 +85,8 @@ export function SubscriptionTierTab() {
               row.saved_username_limit == null ? "" : String(row.saved_username_limit),
             saved_profile_limit:
               row.saved_profile_limit == null ? "" : String(row.saved_profile_limit),
+            daily_subreddit_checker_limit:
+              row.daily_subreddit_checker_limit == null ? "" : String(row.daily_subreddit_checker_limit),
           },
         }))
         setTiers(mapped)

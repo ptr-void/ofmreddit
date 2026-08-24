@@ -13,6 +13,7 @@ export async function GET() {
       weekly_database_limit,
       saved_username_limit,     
       saved_profile_limit,
+      daily_subreddit_checker_limit,
       is_active,
       updated_at,
       created_at
@@ -38,6 +39,7 @@ export async function PUT(req: Request) {
   const weekly_database_limit = Number(tier?.weekly_database_limit ?? 0)
   const saved_username_limit = Number(tier?.saved_username_limit ?? 0)
   const saved_profile_limit = Number(tier?.saved_profile_limit ?? 0)
+  const daily_subreddit_checker_limit = Number(tier?.daily_subreddit_checker_limit ?? 0)
 
   if (!id) return NextResponse.json({ error: "Missing tier id" }, { status: 400 })
 
@@ -52,6 +54,7 @@ export async function PUT(req: Request) {
           weekly_database_limit = ?,
           saved_username_limit = ?,      
           saved_profile_limit = ?,
+          daily_subreddit_checker_limit = ?,
           updated_at = NOW()
      WHERE id = ?
     `,
@@ -64,12 +67,13 @@ export async function PUT(req: Request) {
       weekly_database_limit,
       saved_username_limit,
       saved_profile_limit,
+      daily_subreddit_checker_limit,
       id,
     ],
   )
 
   const updated = await query<any>(
-    `SELECT id, name, price, weekly_scraper_limit, weekly_planner_limit, weekly_caption_limit, weekly_database_limit, saved_username_limit, saved_profile_limit, is_active, updated_at, created_at
+    `SELECT id, name, price, weekly_scraper_limit, weekly_planner_limit, weekly_caption_limit, weekly_database_limit, saved_username_limit, saved_profile_limit, daily_subreddit_checker_limit, is_active, updated_at, created_at
        FROM subscription_tiers
       WHERE id = ?`,
     [id],

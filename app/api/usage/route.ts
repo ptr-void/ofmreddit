@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { verifyToken } from "@/lib/auth"
 import { queryOne } from "@/lib/db"
-import { assertWithinLimits, assertCooldown, recordUsage, listSavedScrapes, loadSavedScrape, saveSnapshotWithPrune, deleteSaved, assertDailySiteLimit } from "@/lib/limits"
+import { assertWithinLimits, assertCooldown, recordUsage, listSavedScrapes, loadSavedScrape, saveSnapshotWithPrune, deleteSaved, assertDailySubredditCheckerLimit } from "@/lib/limits"
 
 function tokenFromReq(req: Request): string | null {
     const h = req.headers.get("authorization") || ""
@@ -71,7 +71,7 @@ export async function POST(req: Request) {
 
             let within: any
             if (feature === "subreddit_checker") {
-                within = await assertDailySiteLimit(userId, feature)
+                within = await assertDailySubredditCheckerLimit(userId, feature)
             } else {
                 within = await assertWithinLimits(userId, feature)
             }

@@ -155,33 +155,6 @@ export function SiteControlsTab() {
           </div>
         </div>
       </div>
-
-      <div className="rounded-xl border border-border bg-card p-4">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <div className="text-base font-medium text-foreground">Subreddit Checker Daily Limit</div>
-            <div className="text-sm text-muted-foreground">Number of times a user can use the checker per 24 hours.</div>
-          </div>
-          <div className="shrink-0 flex items-center gap-2">
-            <input
-              type="number"
-              min="1"
-              value={localLimit}
-              onChange={(e) => setLocalLimit(e.target.value === "" ? "" : Number(e.target.value))}
-              className={s.csvinput}
-              style={{ width: "80px", textAlign: "center" }}
-              disabled={!data || saving}
-            />
-            <Button 
-              size="sm" 
-              onClick={() => save({ subreddit_checker_limit: Number(localLimit) })}
-              disabled={!data || saving || Number(localLimit) === data?.subreddit_checker_limit || localLimit === ""}
-            >
-              Save
-            </Button>
-          </div>
-        </div>
-      </div>
     </div>
   )
 }
