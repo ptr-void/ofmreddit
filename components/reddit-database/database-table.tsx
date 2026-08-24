@@ -127,6 +127,38 @@ export default function DatabaseTable({ headers, rows, sortState, onSort, subred
                   displayValue = niches.join(", ");
                 }
 
+                let isLink = false;
+                if (typeof displayValue === "string" && displayValue.startsWith("http")) {
+                  isLink = true;
+                }
+
+                if (isLink) {
+                  return (
+                    <td key={ci} className="px-4 py-2 text-xs md:text-sm">
+                      <div className="flex items-center gap-2">
+                        <a 
+                          href={displayValue} 
+                          target="_blank" 
+                          rel="noreferrer"
+                          className="w-[100px] truncate text-primary hover:underline"
+                          title={displayValue}
+                        >
+                          {displayValue.replace("https://www.reddit.com/r/", "r/")}
+                        </a>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(displayValue);
+                          }}
+                          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition"
+                          title="Copy Link"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                        </button>
+                      </div>
+                    </td>
+                  )
+                }
+
                 return (
                   <td key={ci} className="whitespace-nowrap px-4 py-2 text-xs md:text-sm">
                     {displayValue}

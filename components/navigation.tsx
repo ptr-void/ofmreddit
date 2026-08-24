@@ -125,16 +125,7 @@ export default function Navigation() {
                         : "text-muted-foreground hover:text-foreground hover:bg-muted"
                         }`}
                     >
-                      Subreddit Checker
-                    </Link>
-                <Link
-                      href="/submit-subreddit"
-                      className={`hidden xl:block whitespace-nowrap px-3 py-2 text-sm rounded-lg font-medium transition-colors ${pathname === "/submit-subreddit"
-                        ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                        }`}
-                    >
-                      Submit Subreddit
+                      Subreddit min reqs checker
                     </Link>
                 {user.isAdmin ? (
                   <>
@@ -245,17 +236,7 @@ export default function Navigation() {
                     : "text-muted-foreground hover:text-foreground hover:bg-muted"
                     }`}
                 >
-                  Subreddit Checker
-                </Link>
-            <Link
-                  href="/submit-subreddit"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className={`block px-4 py-2 rounded-lg font-medium transition-colors ${pathname === "/submit-subreddit"
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                    }`}
-                >
-                  Submit Subreddit
+                  Subreddit min reqs checker
                 </Link>
             {user.isAdmin ? (
               <>

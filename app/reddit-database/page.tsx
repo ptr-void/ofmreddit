@@ -9,6 +9,7 @@ import SavedProfiles from "@/components/reddit-database/saved-profile"
 import DatabaseTable from "@/components/reddit-database/database-table"
 import AnalysisTable from "@/components/reddit-database/analysis-table"
 import SubscriptionTiers from "@/components/subscription/tiers"
+import SubmitSubredditModal from "@/components/reddit-database/submit-subreddit-modal"
 import { saveCreatorProfile, loadCreatorProfile } from "@/lib/session-cache/creator-profile-cache"
 import s from "@/styles/scraper.module.css"
 
@@ -86,6 +87,7 @@ export default function RedditDatabasePage() {
   const [cachedProfile, setCachedProfile] = useState<CreatorProfileValues | null>(null)
   const [activeTab, setActiveTab] = useState<"database" | "analysis">("database")
   const [showTiers, setShowTiers] = useState(false)
+  const [showMinReqs, setShowMinReqs] = useState(false)
 
   const nicheColumnIndexRef = useRef<number>(-1)
   const intervalRef = useRef<number | null>(null)
@@ -434,26 +436,6 @@ export default function RedditDatabasePage() {
                 </div>
 
                 <div className="flex items-end gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setCurrentView("creator")}
-                    disabled={loading}
-                    className="mb-1 inline-flex h-10 items-center gap-2 rounded-md border border-border bg-card px-4 text-xs font-medium text-foreground shadow-sm transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <User className="h-4 w-4" />
-                    Creator Profile
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setCurrentView("saved")}
-                    disabled={loading}
-                    className="mb-1 inline-flex h-10 items-center gap-2 rounded-md border border-border bg-card px-4 text-xs font-medium text-foreground shadow-sm transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <Bookmark className="h-4 w-4" />
-                    Saved Profiles
-                  </button>
-
                   <div className="mb-1 inline-flex h-10 items-center gap-3 rounded-md border border-border bg-card pl-3 pr-2 shadow-sm">
                     <span className="text-xs font-medium text-muted-foreground">Auto-refresh</span>
                     <Switch checked={isAutoRefreshing} onChange={(v) => setIsAutoRefreshing(v)} disabled={loading} />
@@ -496,6 +478,26 @@ export default function RedditDatabasePage() {
                   <BarChart3 className="h-4 w-4" />
                   Subreddit Analysis
                 </button>
+
+                {activeTab === "database" && (
+                  <div className="ml-auto flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowMinReqs(!showMinReqs)}
+                      className="inline-flex items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition"
+                    >
+                      {showMinReqs ? "Hide Min Reqs" : "Show Min Reqs"}
+                    </button>
+                    <SubmitSubredditModal>
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-md transition"
+                      >
+                        Submit a Subreddit
+                      </button>
+                    </SubmitSubredditModal>
+                  </div>
+                )}
               </div>
 
               <div className="px-1 text-xs text-muted-foreground">
@@ -511,13 +513,30 @@ export default function RedditDatabasePage() {
               </div>
 
               {activeTab === "database" ? (
-                <DatabaseTable 
-                  headers={sheetData.headers} 
-                  rows={filteredRows} 
-                  sortState={sortState} 
-                  onSort={handleSort} 
-                  subredditNicheMap={subredditNicheMapRef.current}
-                />
+                (() => {
+                  let renderHeaders = sheetData.headers
+                  let renderRows = filteredRows
+
+                  if (!showMinReqs) {
+                    const hideCols = new Set(["Min Post Karma", "Min Comment Karma", "Min Total Karma", "Min Account Age"])
+                    const keepIndices = renderHeaders
+                      .map((h, i) => hideCols.has(h) ? -1 : i)
+                      .filter(i => i !== -1)
+                    
+                    renderHeaders = renderHeaders.filter((_, i) => keepIndices.includes(i))
+                    renderRows = renderRows.map(row => row.filter((_, i) => keepIndices.includes(i)))
+                  }
+
+                  return (
+                    <DatabaseTable 
+                      headers={renderHeaders} 
+                      rows={renderRows} 
+                      sortState={sortState} 
+                      onSort={handleSort} 
+                      subredditNicheMap={subredditNicheMapRef.current}
+                    />
+                  )
+                })()
               ) : (
                 <AnalysisTable 
                   sortState={sortState} 
