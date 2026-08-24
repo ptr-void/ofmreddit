@@ -41,7 +41,7 @@ export function UserRow({ user, onBan, onDelete, onUpdateUsername, onUpdateCusto
   const [limitStr, setLimitStr] = useState(originalLimit)
 
   const USERNAME_COL_WIDTH = "min-w-[240px] max-w-[240px] w-[240px]"
-  const LIMIT_COL_WIDTH = "min-w-[120px] max-w-[120px] w-[120px]"
+  const LIMIT_COL_WIDTH = "min-w-[200px] max-w-[200px] w-[200px]"
 
   const noSubmit =
     (fn: () => void) =>
@@ -137,7 +137,7 @@ export function UserRow({ user, onBan, onDelete, onUpdateUsername, onUpdateCusto
         ) : (
           <div className={`flex items-center gap-2 ${USERNAME_COL_WIDTH}`}>
             <input
-              className={`${s.csvinput} w-full`}
+              className={`${s.csvinput} w-full text-foreground bg-background`}
               placeholder="None"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -209,7 +209,7 @@ export function UserRow({ user, onBan, onDelete, onUpdateUsername, onUpdateCusto
         ) : (
           <div className={`flex items-center gap-2 ${LIMIT_COL_WIDTH}`}>
             <input
-              className={`${s.csvinput} w-full`}
+              className={`${s.csvinput} w-full text-foreground bg-background`}
               placeholder="Tier Def"
               value={limitStr}
               onChange={(e) => setLimitStr(e.target.value)}
