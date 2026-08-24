@@ -195,21 +195,29 @@ export default function SubredditCheckerPage() {
                 )}
               </div>
 
-              <div className="grid grid-cols-3 gap-4 mb-8">
-                <div className="p-4 bg-muted/30 border rounded-xl text-center flex flex-col justify-center">
-                   <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">#1 Post (Week)</h4>
-                   <span className="block text-2xl font-bold text-primary">{result.hot1Weekly}</span>
-                   <span className="text-[10px] text-muted-foreground">Upvotes</span>
+              <div className="mb-6 bg-gradient-to-br from-primary/10 to-primary/5 rounded-xl border border-primary/10 p-5">
+                <div className="text-center mb-4">
+                  <h3 className="text-lg font-bold text-foreground">Top 10 Posts of the Week Analysis</h3>
+                  <p className="text-xs text-muted-foreground mt-1 max-w-xl mx-auto">
+                    Real-time analysis of the subreddit's top 10 most upvoted posts from the past 7 days to help you gauge the competition and potential reach.
+                  </p>
                 </div>
-                <div className="p-4 bg-muted/30 border rounded-xl text-center flex flex-col justify-center">
-                   <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Top 2-5 Avg (Week)</h4>
-                   <span className="block text-2xl font-bold">{result.hot2to5WeeklyAvg}</span>
-                   <span className="text-[10px] text-muted-foreground">Upvotes</span>
-                </div>
-                <div className="p-4 bg-muted/30 border rounded-xl text-center flex flex-col justify-center">
-                   <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Top 6-10 Avg (Week)</h4>
-                   <span className="block text-2xl font-bold">{result.hot6to10WeeklyAvg}</span>
-                   <span className="text-[10px] text-muted-foreground">Upvotes</span>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="p-4 bg-background border rounded-xl text-center flex flex-col justify-center shadow-sm">
+                     <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">#1 Top Post</h4>
+                     <span className="block text-2xl font-bold text-primary">{result.hot1Weekly}</span>
+                     <span className="text-[10px] text-muted-foreground mt-1">Upvotes on the single best post</span>
+                  </div>
+                  <div className="p-4 bg-background border rounded-xl text-center flex flex-col justify-center shadow-sm">
+                     <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Posts #2 - #5</h4>
+                     <span className="block text-2xl font-bold">{result.hot2to5WeeklyAvg}</span>
+                     <span className="text-[10px] text-muted-foreground mt-1">Average upvotes per post</span>
+                  </div>
+                  <div className="p-4 bg-background border rounded-xl text-center flex flex-col justify-center shadow-sm">
+                     <h4 className="text-xs font-semibold text-muted-foreground uppercase mb-2">Posts #6 - #10</h4>
+                     <span className="block text-2xl font-bold">{result.hot6to10WeeklyAvg}</span>
+                     <span className="text-[10px] text-muted-foreground mt-1">Average upvotes per post</span>
+                  </div>
                 </div>
               </div>
 
