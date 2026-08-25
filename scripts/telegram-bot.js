@@ -24,9 +24,20 @@ function generateCode() {
   return Math.random().toString(36).substring(2, 8).toUpperCase();
 }
 
-bot.start((ctx) => ctx.reply('Welcome to OFMReddit! To get your exclusive signup code, type /signup'));
+const groupId = process.env.TELEGRAM_GROUP_ID;
+
+bot.start((ctx) => {
+  if (groupId && ctx.chat.id.toString() !== groupId) {
+    return ctx.reply("Sorry, this bot is restricted to members of the exclusive group.");
+  }
+  ctx.reply('Welcome to OFMReddit! To get your exclusive signup code, type /signup')
+});
 
 bot.command('signup', (ctx) => {
+  if (groupId && ctx.chat.id.toString() !== groupId) {
+    return ctx.reply("Sorry, you can only generate signup codes from within the exclusive Telegram group!");
+  }
+
   const newCode = generateCode();
   
   // Save to file (temporary until DB is up)
