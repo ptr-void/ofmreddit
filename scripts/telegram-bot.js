@@ -1,7 +1,7 @@
-require('dotenv').config({ path: '../.env.local' });
 const { Telegraf } = require('telegraf');
 const fs = require('fs');
 const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env.local') });
 
 // Use token from env
 const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -38,13 +38,21 @@ bot.command('signup', (ctx) => {
     return ctx.reply("Sorry, you can only generate signup codes from within the exclusive Telegram group!");
   }
 
+  const data = JSON.parse(fs.readFileSync(CODES_FILE, 'utf8'));
+  const userStr = ctx.from.username || ctx.from.first_name;
+
+  // Check if they already have an unused code
+  const existingCode = data.codes.find(c => c.user === userStr);
+  if (existingCode) {
+    return ctx.reply(`You already have an unused signup code: ${existingCode.code}\n\nEnter this code on the registration page to create your account!`);
+  }
+
   const newCode = generateCode();
   
   // Save to file (temporary until DB is up)
-  const data = JSON.parse(fs.readFileSync(CODES_FILE, 'utf8'));
   data.codes.push({ 
     code: newCode, 
-    user: ctx.from.username || ctx.from.first_name, 
+    user: userStr, 
     date: new Date() 
   });
   fs.writeFileSync(CODES_FILE, JSON.stringify(data, null, 2));
