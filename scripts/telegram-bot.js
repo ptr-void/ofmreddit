@@ -38,8 +38,11 @@ bot.start((ctx) => {
 });
 
 bot.command('signup', async (ctx) => {
+  console.log("DEBUG - Incoming Chat ID:", ctx.chat.id);
+  console.log("DEBUG - Expected Group ID:", groupId);
+  
   if (groupId && ctx.chat.id.toString() !== groupId) {
-    return ctx.reply("Sorry, you can only generate signup codes from within the exclusive Telegram group!");
+    return ctx.reply(`Sorry, you can only generate signup codes from within the exclusive Telegram group! (Debug: Your Chat ID is ${ctx.chat.id})`);
   }
 
   const userStr = ctx.from.username || ctx.from.first_name;
