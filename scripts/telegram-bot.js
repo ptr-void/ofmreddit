@@ -31,18 +31,25 @@ function generateCode() {
 const groupId = process.env.TELEGRAM_GROUP_ID;
 
 bot.start((ctx) => {
-  if (groupId && ctx.chat.id.toString() !== groupId) {
-    return ctx.reply("Sorry, this bot is restricted to members of the exclusive group.");
-  }
   ctx.reply('Welcome to OFMReddit! To get your exclusive signup code, type /signup')
 });
 
 bot.command('signup', async (ctx) => {
-  console.log("DEBUG - Incoming Chat ID:", ctx.chat.id);
-  console.log("DEBUG - Expected Group ID:", groupId);
-  
-  if (groupId && ctx.chat.id.toString() !== groupId) {
-    return ctx.reply(`Sorry, you can only generate signup codes from within the exclusive Telegram group! (Debug: Your Chat ID is ${ctx.chat.id})`);
+  // If they are not DMing the bot, ask them to DM it to avoid cluttering groups
+  if (ctx.chat.type !== 'private') {
+    return ctx.reply("Please send me a direct message (DM) to get your signup code!");
+  }
+
+  if (groupId) {
+    try {
+      const member = await ctx.telegram.getChatMember(groupId, ctx.from.id);
+      if (member.status === 'left' || member.status === 'kicked') {
+        return ctx.reply("Sorry, you must be a member of the exclusive Telegram group to generate a signup code!");
+      }
+    } catch (error) {
+      console.error("Error checking group membership:", error);
+      return ctx.reply("Sorry, I couldn't verify your group membership. Make sure you are in the exclusive group!");
+    }
   }
 
   const userStr = ctx.from.username || ctx.from.first_name;
