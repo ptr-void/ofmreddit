@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import bcrypt from "bcryptjs"
 import nodemailer from "nodemailer"
-import { query } from "@/lib/db"
+import { query, queryOne } from "@/lib/db"
 import type { ResultSetHeader } from "mysql2"
 
 const lastSent = new Map<string, number>()
@@ -78,25 +78,26 @@ export async function POST(request: Request) {
       )
     }
 
-    // Verify Telegram Invite Code
-    const codesPath = path.join(process.cwd(), 'scripts', 'invite_codes.json')
-    if (fs.existsSync(codesPath)) {
-      const data = JSON.parse(fs.readFileSync(codesPath, 'utf8'))
-      const codeIndex = data.codes.findIndex((c: any) => c.code === inviteCode.toUpperCase())
-      
-      if (codeIndex === -1) {
+    // Verify Telegram Invite Code using Database
+    try {
+      const existingCode = await queryOne<{ code: string }>(
+        "SELECT code FROM invite_codes WHERE code = ?",
+        [inviteCode.toUpperCase()]
+      )
+
+      if (!existingCode) {
         return NextResponse.json(
           { error: "Invalid or already used Telegram invite code" },
           { status: 400 }
         )
       }
-      
+
       // Remove used code
-      data.codes.splice(codeIndex, 1)
-      fs.writeFileSync(codesPath, JSON.stringify(data, null, 2))
-    } else {
-       return NextResponse.json(
-        { error: "Verification system offline. Please contact admin." },
+      await query("DELETE FROM invite_codes WHERE code = ?", [inviteCode.toUpperCase()])
+    } catch (dbErr) {
+      console.error("DB Error checking invite code:", dbErr)
+      return NextResponse.json(
+        { error: "Verification system error. Please contact admin." },
         { status: 500 }
       )
     }
