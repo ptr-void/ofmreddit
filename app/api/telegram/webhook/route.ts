@@ -33,11 +33,11 @@ bot.command("signup", async (ctx) => {
     try {
       const member = await ctx.telegram.getChatMember(groupId, ctx.from.id);
       if (member.status === "left" || member.status === "kicked") {
-        return ctx.reply("Sorry, you must be a member of the exclusive Telegram group to generate a signup code!");
+        return ctx.reply("Sorry, you must be a member of the exclusive Telegram group to generate a signup code!\n\nJoin here: @ofmredditcommunity");
       }
     } catch (error) {
       console.error("Error checking group membership:", error);
-      return ctx.reply("Sorry, I couldn't verify your group membership. Make sure you are in the exclusive group!");
+      return ctx.reply("Sorry, I couldn't verify your group membership. Make sure you have joined @ofmredditcommunity!");
     }
   }
 
