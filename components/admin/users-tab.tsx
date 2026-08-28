@@ -8,6 +8,7 @@ type User = {
   id: number
   email: string
   username?: string | null
+  telegram_username?: string | null
   is_admin: boolean
   email_verified: boolean
   created_at: string
@@ -44,6 +45,7 @@ export function UsersTab({ users, onBanUser, onDeleteUser, onUpdateUsername, onU
             <tr className="border-b border-border">
               <th className="text-left p-3 text-sm font-medium">Email</th>
               <th className="text-left p-3 text-sm font-medium">Username</th>
+              <th className="text-left p-3 text-sm font-medium">Telegram</th>
               <th className="text-left p-3 text-sm font-medium">Tier</th>
               <th className="text-left p-3 text-sm font-medium">Checker Limit</th>
               <th className="text-center p-3 text-sm font-medium" title="Subreddit Profile Analyzer Uses">SPA</th>

@@ -78,10 +78,12 @@ export async function POST(request: Request) {
       )
     }
 
+    let telegramUsername: string | null = null;
+    
     // Verify Telegram Invite Code using Database
     try {
-      const existingCode = await queryOne<{ code: string }>(
-        "SELECT code FROM invite_codes WHERE code = ?",
+      const existingCode = await queryOne<{ code: string, user_name: string }>(
+        "SELECT code, user_name FROM invite_codes WHERE code = ?",
         [inviteCode.toUpperCase()]
       )
 
@@ -91,6 +93,8 @@ export async function POST(request: Request) {
           { status: 400 }
         )
       }
+      
+      telegramUsername = existingCode.user_name;
 
       // Remove used code
       await query("DELETE FROM invite_codes WHERE code = ?", [inviteCode.toUpperCase()])
@@ -126,9 +130,9 @@ export async function POST(request: Request) {
     if ((existing as any[]).length === 0) {
       const result = (await query(
         `INSERT INTO users
-         (email, password, email_verified, verification_code, verification_expires_at, created_at)
-         VALUES (?, ?, 0, ?, ?, NOW())`,
-        [email, hashedPassword, verificationCode, expiresAt]
+         (email, password, email_verified, verification_code, verification_expires_at, telegram_username, created_at)
+         VALUES (?, ?, 0, ?, ?, ?, NOW())`,
+        [email, hashedPassword, verificationCode, expiresAt, telegramUsername]
       )) as unknown as ResultSetHeader
 
       insertId = result.insertId
@@ -146,9 +150,10 @@ export async function POST(request: Request) {
         `UPDATE users
          SET verification_code = ?,
              verification_expires_at = ?,
-             password = ?
+             password = ?,
+             telegram_username = ?
          WHERE email = ?`,
-        [verificationCode, expiresAt, hashedPassword, email]
+        [verificationCode, expiresAt, hashedPassword, telegramUsername, email]
       )
 
       insertId = user.id

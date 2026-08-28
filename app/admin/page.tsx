@@ -37,6 +37,7 @@ type User = {
   id: number
   email: string
   username?: string | null
+  telegram_username?: string | null
   is_admin: boolean
   email_verified: boolean
   created_at: string

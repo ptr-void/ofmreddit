@@ -10,6 +10,7 @@ type User = {
   id: number
   email: string
   username?: string | null
+  telegram_username?: string | null
   is_admin: boolean
   email_verified: boolean
   created_at: string
@@ -45,73 +46,62 @@ export function UserRow({ user, onBan, onDelete, onUpdateUsername, onUpdateCusto
   const USERNAME_COL_WIDTH = "min-w-[240px] max-w-[240px] w-[240px]"
   const LIMIT_COL_WIDTH = "min-w-[200px] max-w-[200px] w-[200px]"
 
-  const noSubmit =
-    (fn: () => void) =>
-      (e: React.MouseEvent) => {
-        e.preventDefault()
-        e.stopPropagation()
-        fn()
-      }
-
-  useEffect(() => setName(original), [original])
-  useEffect(() => setLimitStr(originalLimit), [originalLimit])
-
-  const startEdit = () => setEditing(true)
-  const startEditLimit = () => setEditingLimit(true)
+  // Reset inputs when user prop changes (e.g., after successful save)
+  useEffect(() => {
+    setName(user.username ?? "")
+    setLimitStr(user.custom_subreddit_checker_limit === null ? "" : String(user.custom_subreddit_checker_limit))
+    setEditing(false)
+    setEditingLimit(false)
+  }, [user])
 
   const cancelEdit = () => {
     setName(original)
     setEditing(false)
   }
-  
-  const cancelEditLimit = () => {
+
+  const cancelLimitEdit = () => {
     setLimitStr(originalLimit)
     setEditingLimit(false)
   }
 
   const saveEdit = async () => {
-    const trimmed = name.trim()
-    const normalized = trimmed === "" ? null : trimmed
-    if ((original || "") === (trimmed || "")) {
-      setEditing(false)
+    const newName = name.trim() === "" ? null : name.trim()
+    if (newName === user.username) {
+      cancelEdit()
       return
     }
-    await onUpdateUsername(user.id, normalized)
-    setEditing(false)
+    await onUpdateUsername(user.id, newName)
   }
-  
-  const saveEditLimit = async () => {
+
+  const saveLimitEdit = async () => {
     const trimmed = limitStr.trim()
     if (trimmed === originalLimit) {
-      setEditingLimit(false)
+      cancelLimitEdit()
       return
     }
-    const val = trimmed === "" ? null : Number(trimmed)
-    if (val !== null && isNaN(val)) {
-      setEditingLimit(false)
-      return
+
+    let parsed: number | null = null
+    if (trimmed !== "") {
+      const num = parseInt(trimmed, 10)
+      if (isNaN(num) || num < 0) {
+        alert("Please enter a valid positive number.")
+        return
+      }
+      parsed = num
     }
-    await onUpdateCustomLimit(user.id, val)
-    setEditingLimit(false)
+    
+    await onUpdateCustomLimit(user.id, parsed)
   }
 
-  useEffect(() => {
-    setName(user.username ?? "")
-  }, [user.username])
-  
-  useEffect(() => {
-    setLimitStr(user.custom_subreddit_checker_limit === null ? "" : String(user.custom_subreddit_checker_limit))
-  }, [user.custom_subreddit_checker_limit])
-
   return (
-    <tr className="border-b border-border hover:bg-muted/50">
+    <tr className="border-b border-border hover:bg-muted/30 transition-colors">
       <td className="p-3">
-        <div>
+        <div className="flex flex-col gap-1">
           <p className="text-sm font-medium">{user.email}</p>
           {user.is_admin ? (
-            <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded">Admin</span>
+            <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded w-max">Admin</span>
           ) : (
-            <span className="text-xs bg-muted text-foreground/70 px-2 py-0.5 rounded">User</span>
+            <span className="text-xs bg-muted text-foreground/70 px-2 py-0.5 rounded w-max">User</span>
           )}
         </div>
       </td>
@@ -186,6 +176,11 @@ export function UserRow({ user, onBan, onDelete, onUpdateUsername, onUpdateCusto
             </button>
           </div>
         )}
+      </td>
+      <td className="p-3 text-sm">
+        <span className={`truncate ${user.telegram_username ? "" : "text-muted-foreground/70 italic"}`}>
+          {user.telegram_username ? `@${user.telegram_username}` : "None"}
+        </span>
       </td>
       <td className="p-3 text-sm">
         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">
