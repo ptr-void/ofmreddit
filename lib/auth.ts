@@ -7,6 +7,7 @@ export interface JWTPayload {
   userId: number
   email: string
   isAdmin?: boolean
+  hasTelegramLinked?: boolean
 }
 
 export function hashPassword(password: string): Promise<string> {

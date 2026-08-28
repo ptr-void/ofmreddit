@@ -6,6 +6,7 @@ import { Analytics } from "@vercel/analytics/next"
 import Navigation from "@/components/navigation"
 import { VisitTracker } from "@/components/visit-tracker"
 import { Toaster } from "@/components/ui/toaster"
+import { TelegramGuard } from "@/components/telegram-guard"
 import "./globals.css"
 import { Suspense } from "react"
 
@@ -47,6 +48,7 @@ export default function RootLayout({
           {children}
         </Suspense>
         <Toaster />
+        <TelegramGuard />
         <Analytics />
       </body>
     </html>

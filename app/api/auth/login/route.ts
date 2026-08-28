@@ -20,7 +20,8 @@ export async function POST(request: NextRequest) {
       password: string
       is_admin: boolean
       email_verified: boolean
-    }>("SELECT id, email, password, is_admin, email_verified FROM users WHERE email = ?", [
+      telegram_username: string | null
+    }>("SELECT id, email, password, is_admin, email_verified, telegram_username FROM users WHERE email = ?", [
       email,
     ])
 
@@ -69,6 +70,7 @@ export async function POST(request: NextRequest) {
       userId: user.id,
       email: user.email,
       isAdmin: user.is_admin,
+      hasTelegramLinked: !!user.telegram_username,
     }
     console.log("Login - Token payload:", tokenPayload)
 
@@ -81,6 +83,7 @@ export async function POST(request: NextRequest) {
         email: user.email,
         isAdmin: user.is_admin,
         emailVerified: user.email_verified,
+        hasTelegramLinked: !!user.telegram_username,
       },
     }
     console.log("Login - Response data:", responseData)
