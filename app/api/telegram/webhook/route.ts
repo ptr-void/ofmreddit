@@ -44,6 +44,16 @@ bot.command("signup", async (ctx) => {
   const userStr = ctx.from.username || ctx.from.first_name || "Unknown";
 
   try {
+    // Check if they are already registered on the website
+    const existingUser = await query<{ id: number }>(
+      "SELECT id FROM users WHERE telegram_username = ?",
+      [userStr]
+    );
+
+    if (existingUser.length > 0) {
+      return ctx.reply("Your Telegram account is already linked to an active OFMReddit account! You cannot generate another code.");
+    }
+
     const existingCode = await query<{ code: string }>(
       "SELECT code FROM invite_codes WHERE user_name = ?",
       [userStr]
