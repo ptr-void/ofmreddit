@@ -146,7 +146,7 @@ export function SubscriptionTierTab() {
         <h2 className="text-xl font-semibold">Edit Subscription Tiers</h2>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-4">
         {tiers.map((tier, i) => (
           <div key={tier.id} className="rounded-xl border border-border bg-card/40 p-4">
             <div className="flex items-center justify-between gap-3 mb-3">
