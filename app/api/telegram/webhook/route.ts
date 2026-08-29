@@ -37,7 +37,7 @@ bot.command("signup", async (ctx) => {
       }
     } catch (error) {
       console.error("Error checking group membership:", error);
-      return ctx.reply("Sorry, I couldn't verify your group membership. Make sure you have joined @ofmredditcommunity!");
+      return ctx.reply("Sorry but you must be a member of @ofmredditcommunity in order to receive a sign up code.\n\nJoin here: @ofmredditcommunity");
     }
   }
 
