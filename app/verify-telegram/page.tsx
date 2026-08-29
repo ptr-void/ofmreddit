@@ -97,7 +97,7 @@ export default function VerifyTelegramPage() {
         <h2 className="text-2xl font-bold mb-2">Verify Your Telegram</h2>
         <p className="text-muted-foreground mb-8 text-sm leading-relaxed">
           To continue using OFMReddit, you must link your Telegram account. 
-          Message the bot <strong className="text-foreground">@OFMReddit_RR_Bot</strong> with <strong className="text-foreground">/signup</strong> to get your verification code.
+          Message the bot <strong className="text-foreground">@ofmredditcommunity</strong> with <strong className="text-foreground">/signup</strong> to get your verification code.
         </p>
 
         <form onSubmit={handleVerify} className="w-full flex flex-col gap-4">
