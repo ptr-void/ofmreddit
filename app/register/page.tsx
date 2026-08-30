@@ -346,7 +346,7 @@ export default function RegisterPage() {
                 >
                   @Reddit_Key_Master_Bot
                 </a>{" "}
-                to get your code (do not write it in the group).
+                with /signup to get your code.
               </p>
             </div>
 
