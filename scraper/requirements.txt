@@ -1,0 +1,5 @@
+gspread==6.2.1
+google-auth==2.40.3
+mysql-connector-python==9.4.0
+praw==8.0.3
+python-dotenv==1.1.1

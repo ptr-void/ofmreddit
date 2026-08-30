@@ -210,7 +210,10 @@ export async function POST(request: NextRequest) {
       if (modsRes.ok) {
         const modsData = await modsRes.json()
         const mods = modsData.data?.children || []
-        hasBotBouncer = mods.some((m: any) => m.name?.toLowerCase().includes("botbouncer") || m.name?.toLowerCase().includes("safestbot"));
+        hasBotBouncer = mods.some((m: any) => {
+          const normalized = String(m.name || "").toLowerCase().replace(/[^a-z0-9]/g, "")
+          return normalized.includes("botbouncer") || normalized.includes("safestbot")
+        });
       }
 
       const topUrl = `https://oauth.reddit.com/r/${encodeURIComponent(cleanSubreddit)}/top?limit=10&t=week`
@@ -351,15 +354,15 @@ export async function POST(request: NextRequest) {
             subreddit_name, hot_1_weekly, hot_2_5_weekly_avg, hot_6_10_weekly_avg,
             min_post_karma, min_comment_karma, min_combined_karma, min_account_age_days, status,
             has_bot_bouncer, requires_verification, allows_cta_captions
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
           ON DUPLICATE KEY UPDATE
             hot_1_weekly = VALUES(hot_1_weekly),
             hot_2_5_weekly_avg = VALUES(hot_2_5_weekly_avg),
             hot_6_10_weekly_avg = VALUES(hot_6_10_weekly_avg),
-            min_post_karma = LEAST(min_post_karma, VALUES(min_post_karma)),
-            min_comment_karma = LEAST(min_comment_karma, VALUES(min_comment_karma)),
-            min_combined_karma = LEAST(min_combined_karma, VALUES(min_combined_karma)),
-            min_account_age_days = LEAST(min_account_age_days, VALUES(min_account_age_days)),
+            min_post_karma = VALUES(min_post_karma),
+            min_comment_karma = VALUES(min_comment_karma),
+            min_combined_karma = VALUES(min_combined_karma),
+            min_account_age_days = VALUES(min_account_age_days),
             has_bot_bouncer = VALUES(has_bot_bouncer),
             requires_verification = VALUES(requires_verification),
             allows_cta_captions = IF(VALUES(allows_cta_captions) IS NOT NULL, VALUES(allows_cta_captions), allows_cta_captions)`,

@@ -20,6 +20,11 @@ yarn-error.log*
 
 # env files
 .env*
+!scraper/.env.example
+
+# python
+__pycache__/
+*.py[cod]
 
 # vercel
 .vercel
@@ -27,3 +32,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# scraper runtime artifacts
+/output/

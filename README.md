@@ -8,6 +8,10 @@ A full-stack Next.js application for Reddit analytics and AI-powered caption gen
 - **Reddit Scraper**: Analyze Reddit user posts and generate performance reports
 - **Caption Generator**: AI-powered caption generation using Hugging Face API
 - **MySQL Database**: Store user data, posts, and captions
+- **Scheduled Subreddit Sync**: Batched Google Sheets/MySQL analytics with GitHub Actions
+
+See [`scraper/README.md`](scraper/README.md) for the consolidated Fred scraper,
+dry-run workflow, production-safe DB migration plan, and scheduler secrets.
 
 ## Setup Instructions
 
