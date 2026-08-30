@@ -241,9 +241,16 @@ export default function RegisterPage() {
     <div className={`min-h-screen flex items-center justify-center ${s.bgPattern} p-4`}>
       <div className="w-full max-w-md">
         <div className="bg-card border border-border rounded-2xl shadow-lg p-8">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-foreground mb-2">Create Account</h1>
-            <p className="text-muted-foreground">Sign up to get started</p>
+          <div className="text-center mb-6 flex flex-col items-center">
+            <div className="w-16 h-16 rounded-2xl overflow-hidden mb-3 border border-border shadow-inner bg-black flex items-center justify-center">
+              <img
+                src="/key_master.jpg"
+                alt="Key Master"
+                className="w-full h-full object-cover"
+              />
+            </div>
+            <h1 className="text-3xl font-bold text-foreground mb-1">Create Account</h1>
+            <p className="text-muted-foreground text-sm">Sign up to get started</p>
           </div>
 
           {error && (

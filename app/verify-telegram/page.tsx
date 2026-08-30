@@ -90,8 +90,12 @@ export default function VerifyTelegramPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background/95">
       <div className="bg-card w-full max-w-md mx-4 rounded-xl border border-border shadow-2xl p-6 sm:p-8 flex flex-col items-center text-center">
-        <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-6">
-          <ShieldAlert className="w-8 h-8 text-primary" />
+        <div className="w-20 h-20 rounded-2xl overflow-hidden mb-6 border border-border shadow-inner bg-black flex items-center justify-center">
+          <img
+            src="/key_master.jpg"
+            alt="Key Master"
+            className="w-full h-full object-cover"
+          />
         </div>
         
         <h2 className="text-2xl font-bold mb-2">Verify Your Telegram</h2>
