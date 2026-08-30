@@ -187,6 +187,7 @@ export async function POST(request: NextRequest) {
     let hot6to10WeeklyAvg = 0;
     let hasBotBouncer = false;
     let requiresVerification = false;
+    let allowsCtaCaptions: boolean | null = null;
     
     try {
       // Check Subreddit About for Restricted (Verification)
@@ -243,45 +244,44 @@ export async function POST(request: NextRequest) {
           if (count6to10 > 0) hot6to10WeeklyAvg = Math.floor(sum6to10 / count6to10);
         }
       }
+
       // Check for CTA Captions (question marks '?', and keywords 'would', 'how', 'what', 'do', 'or', 'who', 'should', 'rate')
       // Only check live surviving posts older than 1 hour (3600s)
-      let allowsCtaCaptions: boolean | null = null;
-      try {
-        const newUrl = `https://oauth.reddit.com/r/${encodeURIComponent(cleanSubreddit)}/new?limit=50`
-        const newRes = await fetch(newUrl, {
-          headers: { 
-            Authorization: `Bearer ${token}`, 
-            "User-Agent": process.env.REDDIT_USER_AGENT || "SubredditRequirementsChecker/1.0" 
+      const newUrl = `https://oauth.reddit.com/r/${encodeURIComponent(cleanSubreddit)}/new?limit=50`
+      const newRes = await fetch(newUrl, {
+        headers: { 
+          Authorization: `Bearer ${token}`, 
+          "User-Agent": process.env.REDDIT_USER_AGENT || "SubredditRequirementsChecker/1.0" 
+        }
+      })
+      if (newRes.ok) {
+        const newData = await newRes.json()
+        const posts = newData?.data?.children || []
+        const nowSecs = Math.floor(Date.now() / 1000)
+        
+        const maturedPosts = posts.filter((p: any) => {
+          const created = p.data?.created_utc || 0
+          return (nowSecs - created) >= 3600
+        })
+
+        const ctaPattern = /\?|\b(would|how|what|do|or|who|should|rate)\b/i
+        let ctaCount = 0
+        maturedPosts.forEach((p: any) => {
+          const title = p.data?.title || ""
+          if (ctaPattern.test(title)) {
+            ctaCount++
           }
         })
-        if (newRes.ok) {
-          const newData = await newRes.json()
-          const posts = newData?.data?.children || []
-          const nowSecs = Math.floor(Date.now() / 1000)
-          
-          const maturedPosts = posts.filter((p: any) => {
-            const created = p.data?.created_utc || 0
-            return (nowSecs - created) >= 3600
-          })
 
-          const ctaPattern = /\?|\b(would|how|what|do|or|who|should|rate)\b/i
-          let ctaCount = 0
-          maturedPosts.forEach((p: any) => {
-            const title = p.data?.title || ""
-            if (ctaPattern.test(title)) {
-              ctaCount++
-            }
-          })
-
-          if (maturedPosts.length >= 5) {
-            allowsCtaCaptions = ctaCount >= 2
-          } else if (maturedPosts.length > 0) {
-            allowsCtaCaptions = ctaCount >= 1
-          }
+        if (maturedPosts.length >= 5) {
+          allowsCtaCaptions = ctaCount >= 2
+        } else if (maturedPosts.length > 0) {
+          allowsCtaCaptions = ctaCount >= 1
         }
-      } catch (e) {
-        console.error("Failed to check CTA Captions", e)
       }
+    } catch (e) {
+      console.error("Failed to fetch subreddit metadata", e)
+    }
 
       const currentData = {
         minPostKarma: minPostKarma === Infinity ? 0 : minPostKarma,
