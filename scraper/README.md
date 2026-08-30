@@ -25,6 +25,7 @@ The minimum karma and age fields are **observed successful-poster minima**, not 
 - Sheet3 is matched by normalized subreddit name. Duplicate Sheet3 rows receive the same update; a different subreddit is never overwritten because its row number changed.
 - Sheet1 writes are batched and limited to column D (`Total Members`) and column F (`Bot Bouncer Present`). Existing Verification and Niche values are preserved.
 - Failed scrapes update only status/error metadata; last successful analytics remain intact.
+- Individual unavailable/private subreddit errors are recorded without failing the whole batch, so successful rows remain committed. Use `--fail-on-row-error` when strict batch failure is required.
 - The checkpoint rotates through Sheet1 and Sheet3 `Sync Status` + `Scraped At UTC` provides durable cloud recovery.
 - MySQL uses one transaction and defaults to `update-only`, which skips names not already present in `master_subreddits`.
 - New DB rows require `--db-sync-mode upsert` and default to `pending`.

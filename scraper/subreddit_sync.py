@@ -798,6 +798,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--new-limit", type=int, default=int(os.getenv("NEW_LIMIT", "25")))
     parser.add_argument("--exact-root-comments", action="store_true", help="Slower: fetch comment trees for an exact root-comment ratio")
     parser.add_argument("--force", action="store_true", help="Ignore successful freshness checkpoints")
+    parser.add_argument(
+        "--fail-on-row-error",
+        action="store_true",
+        default=os.getenv("FAIL_ON_ROW_ERROR", "false").lower() == "true",
+        help="Return a non-zero exit code when individual subreddits are unavailable",
+    )
     parser.add_argument("--plan-only", action="store_true", help="List selected rows without calling Reddit or writing")
     parser.add_argument("--checkpoint", type=Path, default=Path(os.getenv("SYNC_CHECKPOINT", "output/subreddit_sync_checkpoint.json")))
     parser.add_argument("--report", type=Path, default=None)
@@ -934,7 +940,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     }
     atomic_write_json(report_path, report)
     LOG.info("Verified report artifact: %s", report_path.resolve())
-    return 1 if report["error_count"] else 0
+    if report["error_count"]:
+        LOG.warning(
+            "Batch completed with %s subreddit error(s); successful rows were committed and details are in the report",
+            report["error_count"],
+        )
+    return 1 if report["error_count"] and args.fail_on_row_error else 0
 
 
 if __name__ == "__main__":
