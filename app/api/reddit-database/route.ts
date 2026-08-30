@@ -105,6 +105,15 @@ export async function GET() {
       apiKey,
     )
 
+    // Strip out duplicate unneeded sheet columns like 'Bot Bouncer Present'
+    const excludeHeaders = new Set(["bot bouncer present", "bot bouncer"])
+    const validColIndices = mainSheet.headers
+      .map((h, i) => excludeHeaders.has(h.trim().toLowerCase()) ? -1 : i)
+      .filter(i => i !== -1)
+
+    mainSheet.headers = mainSheet.headers.filter((_, i) => validColIndices.includes(i))
+    mainSheet.rows = mainSheet.rows.map(row => row.filter((_, i) => validColIndices.includes(i)))
+
     // Merge in master_subreddits (Advanced scraping + crowdsourced)
     try {
       const cacheRows = await query<any>("SELECT * FROM master_subreddits WHERE status = 'approved'")
