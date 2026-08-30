@@ -1,48 +1,31 @@
 import { NextResponse } from "next/server"
+import { createWorkbookReader, parseSpreadsheetUrl } from "@/lib/google-sheets-reader"
 
 export const dynamic = "force-dynamic"
+export const revalidate = 0
 
 export async function GET() {
   try {
-    const apiKey = process.env.GOOGLE_SHEETS_API_KEY
     const sheetUrl = process.env.SUBREDDIT_SHEET_URL
-    const range = "Sheet3!A:Z" 
-
-    
-    const sheetId = sheetUrl?.split('/d/')[1]?.split('/')[0]
-
-    if (!apiKey || !sheetId) {
-      console.error("MISSING ENV VARS: API Key or Sheet URL")
-      return NextResponse.json({ error: "Missing API Key or invalid Sheet URL" }, { status: 500 })
+    const analyticsSheetName = process.env.SUBREDDIT_ANALYTICS_SHEET_NAME || "Sheet3"
+    const parsed = sheetUrl ? parseSpreadsheetUrl(sheetUrl) : null
+    if (!parsed) {
+      return NextResponse.json({ error: "Missing or invalid subreddit Sheet URL" }, { status: 500 })
     }
 
-    console.log(`Fetching Sheet3... ID: ${sheetId}`)
-
-    
-    const apiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${range}?key=${apiKey}`
-    const res = await fetch(apiUrl)
-    
-    if (!res.ok) {
-      const text = await res.text()
-      console.error(`GOOGLE ERROR (${res.status}):`, text)
-      return NextResponse.json({ error: text }, { status: res.status })
+    const reader = await createWorkbookReader(parsed.spreadsheetId)
+    const sheet = await reader.readByName(analyticsSheetName)
+    if (!sheet.headers.length) {
+      return NextResponse.json({ error: `${analyticsSheetName} is empty` }, { status: 404 })
     }
 
-    const data = await res.json()
-    const values = data.values
-
-    if (!values || values.length === 0) {
-      console.error("Sheet3 is EMPTY")
-      return NextResponse.json({ error: "No data found in Sheet3" }, { status: 404 })
-    }
-
-    return NextResponse.json({ 
-      headers: values[0], 
-      rows: values.slice(1) 
-    })
-
-  } catch (error: any) {
-    console.error("CRASH:", error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json(
+      { headers: sheet.headers, rows: sheet.rows },
+      { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } },
+    )
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to fetch analytics data"
+    console.error("Failed to fetch analytics sheet:", error)
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }

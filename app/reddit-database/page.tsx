@@ -151,7 +151,7 @@ export default function RedditDatabasePage() {
     }
     setError(null)
     try {
-      const res = await fetch("/api/reddit-database")
+      const res = await fetch("/api/reddit-database", { cache: "no-store" })
       if (!res.ok) {
         let msg = "Failed to fetch sheet data."
         try {
