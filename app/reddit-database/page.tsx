@@ -466,6 +466,7 @@ export default function RedditDatabasePage() {
                   Subreddit Database
                 </button>
 
+                {/* Hidden / Commented out for now as requested by Fred
                 <button
                   type="button"
                   onClick={() => setActiveTab("analysis")}
@@ -478,6 +479,7 @@ export default function RedditDatabasePage() {
                   <BarChart3 className="h-4 w-4" />
                   Subreddit Analysis
                 </button>
+                */}
 
                 {activeTab === "database" && (
                   <div className="ml-auto flex items-center gap-2">
