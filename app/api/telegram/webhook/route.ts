@@ -15,18 +15,15 @@ function generateCode() {
   return Math.random().toString(36).substring(2, 8).toUpperCase();
 }
 
-bot.start((ctx) => {
-  ctx.reply("Welcome to OFMReddit! To get your exclusive signup code, type /signup");
-});
-
-bot.command("getid", (ctx) => {
-  console.log("DEBUG - Chat ID:", ctx.chat.id);
-  ctx.reply(`This chat's ID is: ${ctx.chat.id}`);
-});
-
-bot.command("signup", async (ctx) => {
+async function handleSignupCode(ctx: any) {
   if (ctx.chat.type !== "private") {
-    return ctx.reply("Please send me a direct message (DM) to get your signup code!");
+    return ctx.reply("Please send me a direct message (DM) to get your signup code!", {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "💬 Get Code in Direct Message", url: "https://t.me/Reddit_Key_Master_Bot?start=signup" }]
+        ]
+      }
+    });
   }
 
   if (groupId) {
@@ -72,6 +69,55 @@ bot.command("signup", async (ctx) => {
     console.error("Database error:", error);
     ctx.reply("Sorry, there was an error generating your code. Please try again later.");
   }
+}
+
+bot.start(async (ctx) => {
+  if (ctx.startPayload === "signup") {
+    return handleSignupCode(ctx);
+  }
+
+  if (ctx.chat.type === "private") {
+    return ctx.reply(
+      "👋 Welcome to OFMReddit!\n\nClick the button below or type /signup to get your exclusive website signup code:",
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🔑 Get Signup Code", callback_data: "action_get_code" }]
+          ]
+        }
+      }
+    );
+  }
+});
+
+bot.action("action_get_code", async (ctx) => {
+  await ctx.answerCbQuery();
+  return handleSignupCode(ctx);
+});
+
+bot.command("getid", (ctx) => {
+  console.log("DEBUG - Chat ID:", ctx.chat.id);
+  ctx.reply(`This chat's ID is: ${ctx.chat.id}`);
+});
+
+bot.command("signup", async (ctx) => {
+  return handleSignupCode(ctx);
+});
+
+bot.on("text", async (ctx, next) => {
+  if (ctx.chat.type === "private" && !ctx.message.text.startsWith("/")) {
+    return ctx.reply(
+      "To get your exclusive signup code, tap the button below or type /signup:",
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🔑 Get Signup Code", callback_data: "action_get_code" }]
+          ]
+        }
+      }
+    );
+  }
+  return next();
 });
 
 export async function POST(req: Request) {

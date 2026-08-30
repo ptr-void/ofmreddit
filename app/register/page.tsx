@@ -336,7 +336,18 @@ export default function RegisterPage() {
                 required
                 disabled={loading}
               />
-              <p className="text-xs text-muted-foreground">Type /signup in our Telegram group to get a code</p>
+              <p className="text-xs text-muted-foreground">
+                Message{" "}
+                <a
+                  href="https://t.me/Reddit_Key_Master_Bot"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary font-medium hover:underline"
+                >
+                  @Reddit_Key_Master_Bot
+                </a>{" "}
+                to get your code (do not write it in the group).
+              </p>
             </div>
 
             <Button type="submit" className="w-full" size="lg" disabled={loading}>
