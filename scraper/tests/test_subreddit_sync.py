@@ -18,15 +18,21 @@ from scraper.subreddit_sync import (
 
 
 class FakeWorksheet:
-    def __init__(self):
+    def __init__(self, col_count=26):
         self.updates = []
         self.batch_updates = []
+        self.col_count = col_count
+        self.added_cols = []
 
     def update(self, **kwargs):
         self.updates.append(kwargs)
 
     def batch_update(self, data, **kwargs):
         self.batch_updates.append((data, kwargs))
+
+    def add_cols(self, count):
+        self.added_cols.append(count)
+        self.col_count += count
 
 
 class SubredditSyncTests(unittest.TestCase):
@@ -88,7 +94,7 @@ class SubredditSyncTests(unittest.TestCase):
     def test_sheet_writer_matches_name_and_never_uses_ad_hoc_sheet1_row(self):
         store = object.__new__(GoogleSheetStore)
         store.sheet1 = FakeWorksheet()
-        store.sheet3 = FakeWorksheet()
+        store.sheet3 = FakeWorksheet(col_count=7)
         store._sheet3_values = [["Subreddit"], ["other"], ["target"], ["target"]]
         store._sheet3_headers = ["Subreddit"]
         result = ScrapeResult(
@@ -102,6 +108,8 @@ class SubredditSyncTests(unittest.TestCase):
         store.write_results([result])
 
         self.assertEqual(store.sheet1.batch_updates, [])
+        self.assertEqual(store.sheet3.col_count, 23)
+        self.assertEqual(store.sheet3.added_cols, [16])
         written_ranges = {
             item["range"]
             for batch, _ in store.sheet3.batch_updates
