@@ -195,7 +195,10 @@ export default function SubredditCheckerPage() {
                   </span>
                 )}
                 {result.allowsCtaCaptions !== null && result.allowsCtaCaptions !== undefined && (
-                  <span className={`px-3 py-1 ${result.allowsCtaCaptions ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-rose-500/10 text-rose-500 border-rose-500/20"} border rounded-full text-xs font-semibold uppercase tracking-wider`}>
+                  <span 
+                    title={result.allowsCtaCaptions ? "This subreddit allows question marks (?), comparison captions ('or'), and CTA words ('do', 'would', 'how', 'what')." : "Question marks (?), comparison captions ('or'), and CTA words ('do', 'would', 'how', 'what') are strictly auto-filtered or deleted."}
+                    className={`cursor-help px-3 py-1 ${result.allowsCtaCaptions ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-rose-500/10 text-rose-500 border-rose-500/20"} border rounded-full text-xs font-semibold uppercase tracking-wider transition hover:opacity-80`}
+                  >
                     {result.allowsCtaCaptions ? "CTA Captions: Allowed" : "CTA Captions: Forbidden"}
                   </span>
                 )}
