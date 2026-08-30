@@ -524,6 +524,7 @@ class GoogleSheetStore:
         headers, values = self._load_sheet3()
         if not headers:
             headers = list(SHEET3_HEADERS)
+            self._ensure_sheet3_width(len(headers))
             self.sheet3.update(values=[headers], range_name=f"A1:{column_letters(len(headers))}1")
             self._sheet3_values = [headers]
             self._sheet3_headers = headers
@@ -535,6 +536,7 @@ class GoogleSheetStore:
         if additions:
             start = len(headers) + 1
             end = len(headers) + len(additions)
+            self._ensure_sheet3_width(end)
             self.sheet3.update(
                 values=[additions],
                 range_name=f"{column_letters(start)}1:{column_letters(end)}1",
@@ -544,6 +546,12 @@ class GoogleSheetStore:
                 self._sheet3_values[0] = headers
         self._sheet3_headers = headers
         return headers
+
+    def _ensure_sheet3_width(self, required_columns: int) -> None:
+        """Expand the physical grid before writing newly managed columns."""
+        current_columns = int(getattr(self.sheet3, "col_count", 0) or 0)
+        if current_columns < required_columns:
+            self.sheet3.add_cols(required_columns - current_columns)
 
     def write_results(self, results: Sequence[ScrapeResult]) -> None:
         if not results:
