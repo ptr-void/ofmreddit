@@ -30,7 +30,7 @@ async function handleSignupCode(ctx: any) {
     try {
       const member = await ctx.telegram.getChatMember(groupId, ctx.from.id);
       if (member.status === "left" || member.status === "kicked") {
-        return ctx.reply("Sorry, you must be a member of the exclusive Telegram group to generate a signup code!\n\nJoin here: @ofmredditcommunity");
+        return ctx.reply("Sorry, you must be a member of @ofmredditcommunity to generate a signup code!\n\nJoin here: @ofmredditcommunity");
       }
     } catch (error) {
       console.error("Error checking group membership:", error);
@@ -64,7 +64,7 @@ async function handleSignupCode(ctx: any) {
 
     await query("INSERT INTO invite_codes (code, user_name) VALUES (?, ?)", [newCode, userStr]);
 
-    ctx.reply(`Here is your exclusive signup code: ${newCode}\n\nEnter this code on the registration page to create your account!`);
+    ctx.reply(`Here is your signup code: ${newCode}\n\nEnter this code on the registration page to create your account!`);
   } catch (error) {
     console.error("Database error:", error);
     ctx.reply("Sorry, there was an error generating your code. Please try again later.");
@@ -78,7 +78,7 @@ bot.start(async (ctx) => {
 
   if (ctx.chat.type === "private") {
     return ctx.reply(
-      "👋 Welcome to OFMReddit!\n\nClick the button below or type /signup to get your exclusive website signup code:",
+      "👋 Welcome to OFMReddit!\n\nClick the button below or type /signup to get your website signup code:",
       {
         reply_markup: {
           inline_keyboard: [
@@ -107,7 +107,7 @@ bot.command("signup", async (ctx) => {
 bot.on("text", async (ctx, next) => {
   if (ctx.chat.type === "private" && !ctx.message.text.startsWith("/")) {
     return ctx.reply(
-      "To get your exclusive signup code, tap the button below or type /signup:",
+      "To get your signup code, tap the button below or type /signup:",
       {
         reply_markup: {
           inline_keyboard: [
