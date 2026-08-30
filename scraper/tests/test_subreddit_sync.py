@@ -9,6 +9,7 @@ from scraper.subreddit_sync import (
     ScrapeResult,
     SheetState,
     SourceRow,
+    build_parser,
     compact_top_posts,
     detect_cta_titles,
     normalize_subreddit,
@@ -36,6 +37,10 @@ class FakeWorksheet:
 
 
 class SubredditSyncTests(unittest.TestCase):
+    def test_row_errors_are_reported_without_failing_batch_by_default(self):
+        self.assertFalse(build_parser().parse_args([]).fail_on_row_error)
+        self.assertTrue(build_parser().parse_args(["--fail-on-row-error"]).fail_on_row_error)
+
     def test_normalize_subreddit(self):
         self.assertEqual(normalize_subreddit("https://www.reddit.com/r/Test_Sub/"), "test_sub")
         self.assertEqual(normalize_subreddit("r/Test_Sub"), "test_sub")
