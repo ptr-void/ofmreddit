@@ -175,15 +175,13 @@ export default function SubredditCheckerPage() {
       {result && (
         <div className="w-full max-w-3xl animate-in fade-in slide-in-from-bottom-4 duration-500">
           <Card className="shadow-lg border-muted">
-            <CardHeader className="text-center pb-2">
+            <CardHeader className="text-center pb-2 space-y-1.5">
               <CardTitle className="text-2xl font-bold">Requirements for r/{subreddit}</CardTitle>
               <CardDescription>
                 Based on analysis of the {result.analyzedAccounts} most recent successful posters.
               </CardDescription>
-            </CardHeader>
-            <CardContent className="pt-6">
-              
-              <div className="flex flex-wrap justify-center gap-3 mb-6">
+
+              <div className="flex flex-wrap justify-center gap-2 pt-1.5">
                 {result.requiresVerification && (
                   <span className="px-3 py-1 bg-red-500/10 text-red-500 border border-red-500/20 rounded-full text-xs font-semibold uppercase tracking-wider">
                     Verification Required (Restricted)
@@ -203,6 +201,8 @@ export default function SubredditCheckerPage() {
                   </span>
                 )}
               </div>
+            </CardHeader>
+            <CardContent className="pt-4">
 
               <div className="mb-6 bg-gradient-to-br from-primary/10 to-primary/5 rounded-xl border border-primary/10 p-5">
                 <div className="text-center mb-4">
