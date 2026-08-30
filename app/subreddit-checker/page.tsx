@@ -25,6 +25,7 @@ type CheckerResult = {
   hot6to10WeeklyAvg?: number
   hasBotBouncer?: boolean
   requiresVerification?: boolean
+  allowsCtaCaptions?: boolean | null
 }
 
 export default function SubredditCheckerPage() {
@@ -191,6 +192,11 @@ export default function SubredditCheckerPage() {
                 {result.hasBotBouncer && (
                   <span className="px-3 py-1 bg-orange-500/10 text-orange-500 border border-orange-500/20 rounded-full text-xs font-semibold uppercase tracking-wider">
                     BotBouncer Detected
+                  </span>
+                )}
+                {result.allowsCtaCaptions !== null && result.allowsCtaCaptions !== undefined && (
+                  <span className={`px-3 py-1 ${result.allowsCtaCaptions ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" : "bg-rose-500/10 text-rose-500 border-rose-500/20"} border rounded-full text-xs font-semibold uppercase tracking-wider`}>
+                    {result.allowsCtaCaptions ? "CTA Captions: Allowed" : "CTA Captions: Forbidden"}
                   </span>
                 )}
               </div>

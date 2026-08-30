@@ -126,7 +126,7 @@ export async function GET() {
       if (subColIndex !== -1) {
         mainSheet.headers.push(
           "Min Post Karma", "Min Comment Karma", "Min Total Karma", "Min Account Age",
-          "Hot 1 (Weekly)", "Hot 2-5 Avg (Weekly)", "Hot 6-10 Avg (Weekly)", "Bot Bouncer", "Requires Verification"
+          "Hot 1 (Weekly)", "Hot 2-5 Avg (Weekly)", "Hot 6-10 Avg (Weekly)", "Bot Bouncer", "Requires Verification", "CTA Captions"
         )
         
         const existingSubs = new Set<string>()
@@ -147,10 +147,11 @@ export async function GET() {
               `${cached.hot_2_5_weekly_avg || ""}`,
               `${cached.hot_6_10_weekly_avg || ""}`,
               cached.has_bot_bouncer ? "Yes" : "No",
-              cached.requires_verification ? "Yes" : "No"
+              cached.requires_verification ? "Yes" : "No",
+              cached.allows_cta_captions === 1 ? "Yes" : cached.allows_cta_captions === 0 ? "No" : ""
             )
           } else {
-            row.push("", "", "", "", "", "", "", "", "")
+            row.push("", "", "", "", "", "", "", "", "", "")
           }
           return row
         })
@@ -167,15 +168,16 @@ export async function GET() {
               newRow[tagsColIndex] = row.niche_tags
             }
             // Fill in our appended columns at the end
-            newRow[mainSheet.headers.length - 9] = `${row.min_post_karma || ""}`
-            newRow[mainSheet.headers.length - 8] = `${row.min_comment_karma || ""}`
-            newRow[mainSheet.headers.length - 7] = `${row.min_combined_karma || ""}`
-            newRow[mainSheet.headers.length - 6] = `${row.min_account_age_days ? row.min_account_age_days + "d" : ""}`
-            newRow[mainSheet.headers.length - 5] = `${row.hot_1_weekly || ""}`
-            newRow[mainSheet.headers.length - 4] = `${row.hot_2_5_weekly_avg || ""}`
-            newRow[mainSheet.headers.length - 3] = `${row.hot_6_10_weekly_avg || ""}`
-            newRow[mainSheet.headers.length - 2] = row.has_bot_bouncer ? "Yes" : "No"
-            newRow[mainSheet.headers.length - 1] = row.requires_verification ? "Yes" : "No"
+            newRow[mainSheet.headers.length - 10] = `${row.min_post_karma || ""}`
+            newRow[mainSheet.headers.length - 9] = `${row.min_comment_karma || ""}`
+            newRow[mainSheet.headers.length - 8] = `${row.min_combined_karma || ""}`
+            newRow[mainSheet.headers.length - 7] = `${row.min_account_age_days ? row.min_account_age_days + "d" : ""}`
+            newRow[mainSheet.headers.length - 6] = `${row.hot_1_weekly || ""}`
+            newRow[mainSheet.headers.length - 5] = `${row.hot_2_5_weekly_avg || ""}`
+            newRow[mainSheet.headers.length - 4] = `${row.hot_6_10_weekly_avg || ""}`
+            newRow[mainSheet.headers.length - 3] = row.has_bot_bouncer ? "Yes" : "No"
+            newRow[mainSheet.headers.length - 2] = row.requires_verification ? "Yes" : "No"
+            newRow[mainSheet.headers.length - 1] = row.allows_cta_captions === 1 ? "Yes" : row.allows_cta_captions === 0 ? "No" : ""
             
             mainSheet.rows.push(newRow)
           }

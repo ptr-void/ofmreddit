@@ -243,98 +243,137 @@ export async function POST(request: NextRequest) {
           if (count6to10 > 0) hot6to10WeeklyAvg = Math.floor(sum6to10 / count6to10);
         }
       }
-    } catch(e) {
-      console.error("Failed to fetch top posts", e)
-    }
+      // Check for CTA Captions (question marks '?', and keywords 'would', 'how', 'what', 'do', 'or', 'who', 'should', 'rate')
+      // Only check live surviving posts older than 1 hour (3600s)
+      let allowsCtaCaptions: boolean | null = null;
+      try {
+        const newUrl = `https://oauth.reddit.com/r/${encodeURIComponent(cleanSubreddit)}/new?limit=50`
+        const newRes = await fetch(newUrl, {
+          headers: { 
+            Authorization: `Bearer ${token}`, 
+            "User-Agent": process.env.REDDIT_USER_AGENT || "SubredditRequirementsChecker/1.0" 
+          }
+        })
+        if (newRes.ok) {
+          const newData = await newRes.json()
+          const posts = newData?.data?.children || []
+          const nowSecs = Math.floor(Date.now() / 1000)
+          
+          const maturedPosts = posts.filter((p: any) => {
+            const created = p.data?.created_utc || 0
+            return (nowSecs - created) >= 3600
+          })
 
-    const currentData = {
-      minPostKarma: minPostKarma === Infinity ? 0 : minPostKarma,
-      minPostKarmaUser,
-      minCommentKarma: minCommentKarma === Infinity ? 0 : minCommentKarma,
-      minCommentKarmaUser,
-      minTotalKarma: minTotalKarma === Infinity ? 0 : minTotalKarma,
-      minTotalKarmaUser,
-      minAccountAgeDays: minAgeDays === Infinity ? 0 : minAgeDays,
-      minAccountAgeUser: minAgeDaysUser,
-      analyzedAccounts: analyzedCount,
-      hot1Weekly,
-      hot2to5WeeklyAvg,
-      hot6to10WeeklyAvg,
-      hasBotBouncer,
-      requiresVerification
-    }
+          const ctaPattern = /\?|\b(would|how|what|do|or|who|should|rate)\b/i
+          let ctaCount = 0
+          maturedPosts.forEach((p: any) => {
+            const title = p.data?.title || ""
+            if (ctaPattern.test(title)) {
+              ctaCount++
+            }
+          })
 
-    let previousData = null
-    try {
-      const prevRows = await query<any>("SELECT * FROM subreddit_metrics_cache WHERE subreddit = ? LIMIT 1", [cleanSubreddit.toLowerCase()])
-      if (prevRows && prevRows.length > 0) {
-        const row = prevRows[0]
-        previousData = {
-          minPostKarma: row.min_post_karma,
-          minPostKarmaUser: row.min_post_karma_user,
-          minCommentKarma: row.min_comment_karma,
-          minCommentKarmaUser: row.min_comment_karma_user,
-          minTotalKarma: row.min_total_karma,
-          minTotalKarmaUser: row.min_total_karma_user,
-          minAccountAgeDays: row.min_account_age_days,
-          minAccountAgeUser: row.min_account_age_user,
-          analyzedAccounts: row.analyzed_accounts,
-          updatedAt: row.updated_at
+          if (maturedPosts.length >= 5) {
+            allowsCtaCaptions = ctaCount >= 2
+          } else if (maturedPosts.length > 0) {
+            allowsCtaCaptions = ctaCount >= 1
+          }
         }
+      } catch (e) {
+        console.error("Failed to check CTA Captions", e)
       }
 
-      await query(
-        `INSERT INTO subreddit_metrics_cache (
-          subreddit, min_post_karma, min_post_karma_user, min_comment_karma, min_comment_karma_user, min_total_karma, min_total_karma_user, min_account_age_days, min_account_age_user, analyzed_accounts, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-        ON DUPLICATE KEY UPDATE
-          min_post_karma_user = IF(VALUES(min_post_karma) < min_post_karma, VALUES(min_post_karma_user), min_post_karma_user),
-          min_post_karma = LEAST(min_post_karma, VALUES(min_post_karma)),
-          min_comment_karma_user = IF(VALUES(min_comment_karma) < min_comment_karma, VALUES(min_comment_karma_user), min_comment_karma_user),
-          min_comment_karma = LEAST(min_comment_karma, VALUES(min_comment_karma)),
-          min_total_karma_user = IF(VALUES(min_total_karma) < min_total_karma, VALUES(min_total_karma_user), min_total_karma_user),
-          min_total_karma = LEAST(min_total_karma, VALUES(min_total_karma)),
-          min_account_age_user = IF(VALUES(min_account_age_days) < min_account_age_days, VALUES(min_account_age_user), min_account_age_user),
-          min_account_age_days = LEAST(min_account_age_days, VALUES(min_account_age_days)),
-          analyzed_accounts = VALUES(analyzed_accounts),
-          updated_at = NOW()`,
-        [
-          cleanSubreddit.toLowerCase(),
-          currentData.minPostKarma, currentData.minPostKarmaUser,
-          currentData.minCommentKarma, currentData.minCommentKarmaUser,
-          currentData.minTotalKarma, currentData.minTotalKarmaUser,
-          currentData.minAccountAgeDays, currentData.minAccountAgeUser,
-          currentData.analyzedAccounts
-        ]
-      )
-      
-      // Upsert into master_subreddits too
-      await query(
-        `INSERT INTO master_subreddits (
-          subreddit_name, hot_1_weekly, hot_2_5_weekly_avg, hot_6_10_weekly_avg,
-          min_post_karma, min_comment_karma, min_combined_karma, min_account_age_days, status,
-          has_bot_bouncer, requires_verification
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?)
-        ON DUPLICATE KEY UPDATE
-          hot_1_weekly = VALUES(hot_1_weekly),
-          hot_2_5_weekly_avg = VALUES(hot_2_5_weekly_avg),
-          hot_6_10_weekly_avg = VALUES(hot_6_10_weekly_avg),
-          min_post_karma = LEAST(min_post_karma, VALUES(min_post_karma)),
-          min_comment_karma = LEAST(min_comment_karma, VALUES(min_comment_karma)),
-          min_combined_karma = LEAST(min_combined_karma, VALUES(min_combined_karma)),
-          min_account_age_days = LEAST(min_account_age_days, VALUES(min_account_age_days)),
-          has_bot_bouncer = VALUES(has_bot_bouncer),
-          requires_verification = VALUES(requires_verification)`,
-        [
-          cleanSubreddit.toLowerCase(),
-          hot1Weekly, hot2to5WeeklyAvg, hot6to10WeeklyAvg,
-          currentData.minPostKarma, currentData.minCommentKarma, currentData.minTotalKarma, currentData.minAccountAgeDays,
-          hasBotBouncer, requiresVerification
-        ]
-      )
-    } catch (dbErr) {
-      console.error("Database cache error:", dbErr)
-    }
+      const currentData = {
+        minPostKarma: minPostKarma === Infinity ? 0 : minPostKarma,
+        minPostKarmaUser,
+        minCommentKarma: minCommentKarma === Infinity ? 0 : minCommentKarma,
+        minCommentKarmaUser,
+        minTotalKarma: minTotalKarma === Infinity ? 0 : minTotalKarma,
+        minTotalKarmaUser,
+        minAccountAgeDays: minAgeDays === Infinity ? 0 : minAgeDays,
+        minAccountAgeUser: minAgeDaysUser,
+        analyzedAccounts: analyzedCount,
+        hot1Weekly,
+        hot2to5WeeklyAvg,
+        hot6to10WeeklyAvg,
+        hasBotBouncer,
+        requiresVerification,
+        allowsCtaCaptions
+      }
+
+      let previousData = null
+      try {
+        const prevRows = await query<any>("SELECT * FROM subreddit_metrics_cache WHERE subreddit = ? LIMIT 1", [cleanSubreddit.toLowerCase()])
+        if (prevRows && prevRows.length > 0) {
+          const row = prevRows[0]
+          previousData = {
+            minPostKarma: row.min_post_karma,
+            minPostKarmaUser: row.min_post_karma_user,
+            minCommentKarma: row.min_comment_karma,
+            minCommentKarmaUser: row.min_comment_karma_user,
+            minTotalKarma: row.min_total_karma,
+            minTotalKarmaUser: row.min_total_karma_user,
+            minAccountAgeDays: row.min_account_age_days,
+            minAccountAgeUser: row.min_account_age_user,
+            analyzedAccounts: row.analyzed_accounts,
+            updatedAt: row.updated_at
+          }
+        }
+
+        await query(
+          `INSERT INTO subreddit_metrics_cache (
+            subreddit, min_post_karma, min_post_karma_user, min_comment_karma, min_comment_karma_user, min_total_karma, min_total_karma_user, min_account_age_days, min_account_age_user, analyzed_accounts, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+          ON DUPLICATE KEY UPDATE
+            min_post_karma_user = IF(VALUES(min_post_karma) < min_post_karma, VALUES(min_post_karma_user), min_post_karma_user),
+            min_post_karma = LEAST(min_post_karma, VALUES(min_post_karma)),
+            min_comment_karma_user = IF(VALUES(min_comment_karma) < min_comment_karma, VALUES(min_comment_karma_user), min_comment_karma_user),
+            min_comment_karma = LEAST(min_comment_karma, VALUES(min_comment_karma)),
+            min_total_karma_user = IF(VALUES(min_total_karma) < min_total_karma, VALUES(min_total_karma_user), min_total_karma_user),
+            min_total_karma = LEAST(min_total_karma, VALUES(min_total_karma)),
+            min_account_age_user = IF(VALUES(min_account_age_days) < min_account_age_days, VALUES(min_account_age_user), min_account_age_user),
+            min_account_age_days = LEAST(min_account_age_days, VALUES(min_account_age_days)),
+            analyzed_accounts = VALUES(analyzed_accounts),
+            updated_at = NOW()`,
+          [
+            cleanSubreddit.toLowerCase(),
+            currentData.minPostKarma, currentData.minPostKarmaUser,
+            currentData.minCommentKarma, currentData.minCommentKarmaUser,
+            currentData.minTotalKarma, currentData.minTotalKarmaUser,
+            currentData.minAccountAgeDays, currentData.minAccountAgeUser,
+            currentData.analyzedAccounts
+          ]
+        )
+        
+        // Upsert into master_subreddits too
+        await query(
+          `INSERT INTO master_subreddits (
+            subreddit_name, hot_1_weekly, hot_2_5_weekly_avg, hot_6_10_weekly_avg,
+            min_post_karma, min_comment_karma, min_combined_karma, min_account_age_days, status,
+            has_bot_bouncer, requires_verification, allows_cta_captions
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            hot_1_weekly = VALUES(hot_1_weekly),
+            hot_2_5_weekly_avg = VALUES(hot_2_5_weekly_avg),
+            hot_6_10_weekly_avg = VALUES(hot_6_10_weekly_avg),
+            min_post_karma = LEAST(min_post_karma, VALUES(min_post_karma)),
+            min_comment_karma = LEAST(min_comment_karma, VALUES(min_comment_karma)),
+            min_combined_karma = LEAST(min_combined_karma, VALUES(min_combined_karma)),
+            min_account_age_days = LEAST(min_account_age_days, VALUES(min_account_age_days)),
+            has_bot_bouncer = VALUES(has_bot_bouncer),
+            requires_verification = VALUES(requires_verification),
+            allows_cta_captions = IF(VALUES(allows_cta_captions) IS NOT NULL, VALUES(allows_cta_captions), allows_cta_captions)`,
+          [
+            cleanSubreddit.toLowerCase(),
+            hot1Weekly, hot2to5WeeklyAvg, hot6to10WeeklyAvg,
+            currentData.minPostKarma, currentData.minCommentKarma, currentData.minTotalKarma, currentData.minAccountAgeDays,
+            hasBotBouncer, requiresVerification,
+            allowsCtaCaptions === null ? null : (allowsCtaCaptions ? 1 : 0)
+          ]
+        )
+      } catch (dbErr) {
+        console.error("Database cache error:", dbErr)
+      }
 
     // Record successful usage
     await fetch(usageUrl, {

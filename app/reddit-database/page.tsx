@@ -347,6 +347,16 @@ export default function RedditDatabasePage() {
                       <p className="font-medium">Minimum Account Age (days)</p>
                       <p>The required account age before a user can post.</p>
                     </div>
+
+                    <div>
+                      <p className="font-medium">Bot Bouncer</p>
+                      <p>Detects if moderation bots like BotBouncer or SafestBot are active in the subreddit mod team.</p>
+                    </div>
+
+                    <div>
+                      <p className="font-medium">CTA Captions</p>
+                      <p>Indicates whether call-to-action / question captions (e.g. '?', 'would', 'how', 'what', 'do', 'or') are permitted, verified by checking live surviving posts older than 1–2 hours.</p>
+                    </div>
                   </div>
                 }
               >
