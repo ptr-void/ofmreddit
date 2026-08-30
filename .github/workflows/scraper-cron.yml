@@ -2,8 +2,9 @@ name: Subreddit analytics sync
 
 on:
   schedule:
-    # Avoid the start-of-hour congestion window. GitHub schedules use UTC.
-    - cron: "17 */6 * * *"
+    # Process ten rows every ten minutes. Offset from the start of each hour,
+    # where GitHub scheduled workflows experience the most congestion.
+    - cron: "3,13,23,33,43,53 * * * *"
   workflow_dispatch:
     inputs:
       dry_run:

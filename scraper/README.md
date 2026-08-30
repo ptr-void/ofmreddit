@@ -66,7 +66,7 @@ Reports and checkpoints are written to `output/` and ignored by Git.
 
 ## GitHub Actions scheduler
 
-`.github/workflows/scraper-cron.yml` runs at minute 17 every six hours (UTC), avoiding the top-of-hour congestion window. It also supports manual dry runs.
+`.github/workflows/scraper-cron.yml` runs ten rows every ten minutes, at minutes 3, 13, 23, 33, 43, and 53 (UTC), avoiding the top-of-hour congestion window. At the current 867-row queue size, the initial full pass takes about 14.5 hours before Reddit/API delays. It also supports manual dry runs.
 
 Add these repository secrets:
 
