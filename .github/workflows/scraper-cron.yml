@@ -2,9 +2,9 @@ name: Subreddit analytics sync
 
 on:
   schedule:
-    # Process twenty rows every ten minutes. Offset from the start of each hour,
-    # where GitHub scheduled workflows experience the most congestion.
-    - cron: "3,13,23,33,43,53 * * * *"
+    # Process twenty rows every five minutes. The two-minute offset avoids the
+    # start of each hour, where GitHub scheduled workflows are most congested.
+    - cron: "2,7,12,17,22,27,32,37,42,47,52,57 * * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -16,7 +16,7 @@ on:
         description: "Maximum Sheet1 rows for this run"
         required: true
         type: number
-        default: 10
+        default: 20
       force:
         description: "Ignore successful seven-day freshness checkpoints"
         required: true
