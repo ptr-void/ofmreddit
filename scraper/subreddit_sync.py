@@ -756,13 +756,22 @@ def select_sources(
     maximum: int,
     force: bool,
     start_after_row: int,
+    retry_errors_after: timedelta = timedelta(hours=24),
 ) -> list[SourceRow]:
     cutoff = utc_now() - stale_after
+    error_cutoff = utc_now() - retry_errors_after
     candidates: list[SourceRow] = []
     for source in sources:
         state = states.get(source.key)
         fresh = bool(state and state.status == "success" and state.scraped_at and state.scraped_at >= cutoff)
-        if force or not fresh:
+        cooling_down = bool(
+            state
+            and state.status
+            and state.status != "success"
+            and state.scraped_at
+            and state.scraped_at >= error_cutoff
+        )
+        if force or (not fresh and not cooling_down):
             candidates.append(source)
     if not candidates:
         return []
@@ -794,6 +803,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--subreddit", action="append", default=[], help="Analyze only this subreddit; repeatable")
     parser.add_argument("--max-subreddits", type=int, default=int(os.getenv("MAX_SUBREDDITS_PER_RUN", "10")))
     parser.add_argument("--stale-after-hours", type=int, default=int(os.getenv("SYNC_STALE_AFTER_HOURS", "168")))
+    parser.add_argument(
+        "--retry-errors-after-hours",
+        type=int,
+        default=int(os.getenv("SYNC_ERROR_RETRY_AFTER_HOURS", "24")),
+        help="Wait this many hours before retrying a row whose latest scrape failed",
+    )
     parser.add_argument("--hot-limit", type=int, default=int(os.getenv("HOT_LIMIT", "25")))
     parser.add_argument("--new-limit", type=int, default=int(os.getenv("NEW_LIMIT", "25")))
     parser.add_argument("--exact-root-comments", action="store_true", help="Slower: fetch comment trees for an exact root-comment ratio")
@@ -853,6 +868,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         maximum=max(0, args.max_subreddits),
         force=args.force or bool(args.subreddit),
         start_after_row=int(checkpoint.get("last_source_row", 1) or 1),
+        retry_errors_after=timedelta(hours=max(0, args.retry_errors_after_hours)),
     )
     LOG.info("Run %s selected %s of %s source rows", run_id, len(selected), len(sources))
     for source in selected:

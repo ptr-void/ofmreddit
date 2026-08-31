@@ -2,7 +2,7 @@ name: Subreddit analytics sync
 
 on:
   schedule:
-    # Process ten rows every ten minutes. Offset from the start of each hour,
+    # Process twenty rows every ten minutes. Offset from the start of each hour,
     # where GitHub scheduled workflows experience the most congestion.
     - cron: "3,13,23,33,43,53 * * * *"
   workflow_dispatch:
@@ -48,8 +48,9 @@ jobs:
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
       DB_NAME: ${{ secrets.DB_NAME }}
       DB_SYNC_MODE: update-only
-      MAX_SUBREDDITS_PER_RUN: 10
+      MAX_SUBREDDITS_PER_RUN: 20
       SYNC_STALE_AFTER_HOURS: 168
+      SYNC_ERROR_RETRY_AFTER_HOURS: 24
       PYTHONUNBUFFERED: "1"
 
     steps:

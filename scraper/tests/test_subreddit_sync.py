@@ -91,6 +91,48 @@ class SubredditSyncTests(unittest.TestCase):
         )
         self.assertEqual([row.subreddit for row in selected], ["three", "one"])
 
+    def test_selection_skips_recent_errors_and_fills_batch_with_later_rows(self):
+        sources = [
+            SourceRow(2, "broken-one"),
+            SourceRow(3, "broken-two"),
+            SourceRow(4, "next-one"),
+            SourceRow(5, "next-two"),
+        ]
+        states = {
+            "broken-one": SheetState(status="error", scraped_at=utc_now()),
+            "broken-two": SheetState(status="error", scraped_at=utc_now()),
+        }
+
+        selected = select_sources(
+            sources,
+            states,
+            stale_after=timedelta(days=7),
+            retry_errors_after=timedelta(hours=24),
+            maximum=2,
+            force=False,
+            start_after_row=1,
+        )
+
+        self.assertEqual([row.subreddit for row in selected], ["next-one", "next-two"])
+
+    def test_selection_retries_error_after_cooldown(self):
+        sources = [SourceRow(2, "broken"), SourceRow(3, "next")]
+        states = {
+            "broken": SheetState(status="error", scraped_at=utc_now() - timedelta(hours=25)),
+        }
+
+        selected = select_sources(
+            sources,
+            states,
+            stale_after=timedelta(days=7),
+            retry_errors_after=timedelta(hours=24),
+            maximum=2,
+            force=False,
+            start_after_row=1,
+        )
+
+        self.assertEqual([row.subreddit for row in selected], ["broken", "next"])
+
     def test_ad_hoc_source_uses_non_sheet_row(self):
         source = SourceRow(0, "ad_hoc")
         self.assertEqual(source.sheet_row, 0)
