@@ -2,9 +2,9 @@ name: Subreddit analytics sync
 
 on:
   schedule:
-    # Process twenty rows every five minutes. The two-minute offset avoids the
-    # start of each hour, where GitHub scheduled workflows are most congested.
-    - cron: "2,7,12,17,22,27,32,37,42,47,52,57 * * * *"
+    # Recovery watchdog for the self-continuing production chain. The offset
+    # avoids the start of the hour, where scheduled workflows are congested.
+    - cron: "17 * * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -22,13 +22,19 @@ on:
         required: true
         type: boolean
         default: false
+      continue_chain:
+        description: "Queue the next production batch when this run finishes"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
+  actions: write
 
 concurrency:
   group: subreddit-analytics-sync
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   sync:
@@ -77,10 +83,12 @@ jobs:
             echo "RUN_DRY=${{ inputs.dry_run }}" >> "$GITHUB_ENV"
             echo "RUN_MAX=${{ inputs.max_subreddits }}" >> "$GITHUB_ENV"
             echo "RUN_FORCE=${{ inputs.force }}" >> "$GITHUB_ENV"
+            echo "RUN_CHAIN=${{ inputs.continue_chain }}" >> "$GITHUB_ENV"
           else
             echo "RUN_DRY=false" >> "$GITHUB_ENV"
             echo "RUN_MAX=${MAX_SUBREDDITS_PER_RUN}" >> "$GITHUB_ENV"
             echo "RUN_FORCE=false" >> "$GITHUB_ENV"
+            echo "RUN_CHAIN=true" >> "$GITHUB_ENV"
           fi
 
       - name: Scheduled or approved production sync
@@ -111,3 +119,17 @@ jobs:
           path: output/
           if-no-files-found: warn
           retention-days: 14
+
+      - name: Queue next production batch
+        if: always() && env.RUN_DRY == 'false' && env.RUN_CHAIN == 'true' && env.SYNC_ENABLED == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          curl --fail-with-body --silent --show-error --location \
+            --request POST \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/scraper-cron.yml/dispatches" \
+            --data '{"ref":"main","inputs":{"dry_run":"false","max_subreddits":"20","force":"false","continue_chain":"true"}}'
