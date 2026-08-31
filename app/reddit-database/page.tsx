@@ -312,7 +312,7 @@ export default function RedditDatabasePage() {
               <span>
                 Browse and filter curated subreddits based on niche, tags, and creator profile preferences. 
                 Use the Creator Profile button beside the auto refresh button to narrow results to only the subreddits that match your selected tags.
-                Single subreddit data is being refreshed approximately every 4 days.
+                The analytics scraper completes a full pass, rests for 24 hours, then starts the next pass.
               </span>
 
               <Tooltip
