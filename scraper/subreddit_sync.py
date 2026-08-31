@@ -60,6 +60,7 @@ EXTRA_SHEET3_HEADERS = [
 SHEET3_HEADERS = LEGACY_SHEET3_HEADERS + EXTRA_SHEET3_HEADERS
 CTA_PATTERN = re.compile(r"\?|\b(?:do|or|would|how|what)\b", re.IGNORECASE)
 BOT_BOUNCER_NAMES = ("botbouncer", "safestbot")
+CYCLE_METADATA_KEY = "ofmreddit_scraper_cycle_v1"
 
 try:
     from dotenv import load_dotenv
@@ -88,6 +89,10 @@ def parse_utc(value: str | None) -> datetime | None:
         return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
     except ValueError:
         return None
+
+
+def iso_utc(value: datetime | None) -> str:
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z") if value else ""
 
 
 def average_int(values: Sequence[int]) -> int:
@@ -245,6 +250,37 @@ class ScrapeResult:
 class SheetState:
     status: str = ""
     scraped_at: datetime | None = None
+
+
+@dataclass
+class CycleState:
+    phase: str
+    cycle_started_at: datetime
+    cycle_completed_at: datetime | None = None
+    next_cycle_at: datetime | None = None
+
+    @classmethod
+    def from_payload(cls, payload: Any) -> "CycleState | None":
+        if not isinstance(payload, dict):
+            return None
+        started_at = parse_utc(str(payload.get("cycle_started_at") or ""))
+        phase = str(payload.get("phase") or "").strip().lower()
+        if phase not in {"running", "resting"} or started_at is None:
+            return None
+        return cls(
+            phase=phase,
+            cycle_started_at=started_at,
+            cycle_completed_at=parse_utc(str(payload.get("cycle_completed_at") or "")),
+            next_cycle_at=parse_utc(str(payload.get("next_cycle_at") or "")),
+        )
+
+    def to_payload(self) -> dict[str, str]:
+        return {
+            "phase": self.phase,
+            "cycle_started_at": iso_utc(self.cycle_started_at),
+            "cycle_completed_at": iso_utc(self.cycle_completed_at),
+            "next_cycle_at": iso_utc(self.next_cycle_at),
+        }
 
 
 class RedditAnalyzer:
@@ -467,6 +503,7 @@ class GoogleSheetStore:
         except PermissionError as exc:
             cause = str(exc.__cause__ or exc)
             raise RuntimeError(f"Google Sheets service-account access failed: {cause}") from exc
+        self.workbook = workbook
         self.sheet1 = workbook.worksheet(os.getenv("SHEET1_NAME", "Sheet1"))
         try:
             self.sheet3 = workbook.worksheet(os.getenv("SHEET3_NAME", "Sheet3"))
@@ -476,6 +513,60 @@ class GoogleSheetStore:
             self.sheet3 = workbook.add_worksheet(title=os.getenv("SHEET3_NAME", "Sheet3"), rows=1000, cols=30)
         self._sheet3_values: list[list[str]] | None = None
         self._sheet3_headers: list[str] | None = None
+
+    def load_cycle_state(self) -> CycleState | None:
+        metadata = self.workbook.fetch_sheet_metadata(
+            params={
+                "includeGridData": "false",
+                "fields": "developerMetadata(metadataId,metadataKey,metadataValue)",
+            }
+        )
+        for entry in metadata.get("developerMetadata", []):
+            if entry.get("metadataKey") != CYCLE_METADATA_KEY:
+                continue
+            try:
+                return CycleState.from_payload(json.loads(entry.get("metadataValue") or "{}"))
+            except (TypeError, json.JSONDecodeError):
+                LOG.warning("Ignoring invalid scraper cycle metadata")
+                return None
+        return None
+
+    def save_cycle_state(self, state: CycleState) -> None:
+        value = json.dumps(state.to_payload(), separators=(",", ":"))
+        existing = self.workbook.fetch_sheet_metadata(
+            params={
+                "includeGridData": "false",
+                "fields": "developerMetadata(metadataId,metadataKey)",
+            }
+        )
+        metadata_id = next(
+            (
+                entry.get("metadataId")
+                for entry in existing.get("developerMetadata", [])
+                if entry.get("metadataKey") == CYCLE_METADATA_KEY
+            ),
+            None,
+        )
+        if metadata_id is None:
+            request = {
+                "createDeveloperMetadata": {
+                    "developerMetadata": {
+                        "metadataKey": CYCLE_METADATA_KEY,
+                        "metadataValue": value,
+                        "location": {"spreadsheet": True},
+                        "visibility": "DOCUMENT",
+                    }
+                }
+            }
+        else:
+            request = {
+                "updateDeveloperMetadata": {
+                    "dataFilters": [{"developerMetadataLookup": {"metadataId": metadata_id}}],
+                    "developerMetadata": {"metadataValue": value},
+                    "fields": "metadataValue",
+                }
+            }
+        self.workbook.batch_update({"requests": [request]})
 
     def source_rows(self) -> list[SourceRow]:
         values = self.sheet1.get_all_values()
@@ -781,6 +872,63 @@ def select_sources(
     return ordered[:maximum] if maximum > 0 else ordered
 
 
+def bootstrap_cycle_state(
+    sources: Sequence[SourceRow],
+    states: dict[str, SheetState],
+    *,
+    now: datetime | None = None,
+    active_window: timedelta = timedelta(hours=24),
+) -> CycleState:
+    """Adopt a currently active pass when upgrading an existing spreadsheet."""
+    now = now or utc_now()
+    timestamps = [
+        state.scraped_at
+        for source in sources
+        if (state := states.get(source.key)) and state.scraped_at is not None
+    ]
+    recent = [timestamp for timestamp in timestamps if timestamp >= now - active_window]
+    started_at = min(recent) if recent else now
+    return CycleState(phase="running", cycle_started_at=started_at)
+
+
+def activate_cycle_if_due(
+    state: CycleState,
+    *,
+    now: datetime | None = None,
+) -> CycleState:
+    now = now or utc_now()
+    if state.phase == "resting" and state.next_cycle_at and now >= state.next_cycle_at:
+        return CycleState(phase="running", cycle_started_at=now)
+    return state
+
+
+def select_cycle_sources(
+    sources: Sequence[SourceRow],
+    states: dict[str, SheetState],
+    *,
+    cycle_started_at: datetime,
+    maximum: int,
+) -> list[SourceRow]:
+    """Select ascending rows not yet attempted in the current complete pass."""
+    candidates = [
+        source
+        for source in sources
+        if not (states.get(source.key) and states[source.key].scraped_at and states[source.key].scraped_at >= cycle_started_at)
+    ]
+    return candidates[:maximum] if maximum > 0 else candidates
+
+
+def cycle_remaining_count(
+    sources: Sequence[SourceRow],
+    states: dict[str, SheetState],
+    cycle_started_at: datetime,
+) -> int:
+    return sum(
+        not (states.get(source.key) and states[source.key].scraped_at and states[source.key].scraped_at >= cycle_started_at)
+        for source in sources
+    )
+
+
 def load_checkpoint(path: Path) -> dict[str, Any]:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -804,6 +952,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-subreddits", type=int, default=int(os.getenv("MAX_SUBREDDITS_PER_RUN", "10")))
     parser.add_argument("--stale-after-hours", type=int, default=int(os.getenv("SYNC_STALE_AFTER_HOURS", "168")))
     parser.add_argument(
+        "--cycle-rest-hours",
+        type=float,
+        default=float(os.getenv("SYNC_CYCLE_REST_HOURS", "24")),
+        help="Rest this many hours after every source row has been attempted",
+    )
+    parser.add_argument(
         "--retry-errors-after-hours",
         type=int,
         default=int(os.getenv("SYNC_ERROR_RETRY_AFTER_HOURS", "24")),
@@ -822,6 +976,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--plan-only", action="store_true", help="List selected rows without calling Reddit or writing")
     parser.add_argument("--checkpoint", type=Path, default=Path(os.getenv("SYNC_CHECKPOINT", "output/subreddit_sync_checkpoint.json")))
     parser.add_argument("--report", type=Path, default=None)
+    parser.add_argument(
+        "--workflow-state",
+        type=Path,
+        default=Path(os.getenv("SYNC_WORKFLOW_STATE", "output/subreddit_sync_workflow.json")),
+        help="Small machine-readable file used by the chained workflow",
+    )
     parser.add_argument("--retry-attempts", type=int, default=int(os.getenv("RETRY_ATTEMPTS", "4")))
     parser.add_argument("--retry-base-delay", type=float, default=float(os.getenv("RETRY_BASE_DELAY", "3")))
     parser.add_argument("--log-level", choices=("DEBUG", "INFO", "WARNING", "ERROR"), default=os.getenv("LOG_LEVEL", "INFO"))
@@ -838,6 +998,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     run_id = uuid.uuid4().hex[:12]
     report_path = args.report or Path("output") / f"subreddit_sync_{run_id}.json"
     checkpoint = load_checkpoint(args.checkpoint)
+    cycle_state: CycleState | None = None
+    production_cycle = bool(args.write_sheets and not args.subreddit)
 
     spreadsheet_id = os.getenv("SPREADSHEET_ID", "").strip()
     sheet_store: GoogleSheetStore | None = None
@@ -861,26 +1023,70 @@ def main(argv: Sequence[str] | None = None) -> int:
         sources = sheet_store.source_rows()
         states = sheet_store.states()
 
-    selected = select_sources(
-        sources,
-        states,
-        stale_after=timedelta(hours=max(0, args.stale_after_hours)),
-        maximum=max(0, args.max_subreddits),
-        force=args.force or bool(args.subreddit),
-        start_after_row=int(checkpoint.get("last_source_row", 1) or 1),
-        retry_errors_after=timedelta(hours=max(0, args.retry_errors_after_hours)),
-    )
+    if production_cycle:
+        assert sheet_store is not None
+        cycle_state = sheet_store.load_cycle_state()
+        if cycle_state is None:
+            cycle_state = bootstrap_cycle_state(sources, states)
+            LOG.info("Initialized complete-pass cycle at %s", iso_utc(cycle_state.cycle_started_at))
+        cycle_state = activate_cycle_if_due(cycle_state)
+        sheet_store.save_cycle_state(cycle_state)
+        if cycle_state.phase == "resting":
+            selected = []
+        else:
+            selected = select_cycle_sources(
+                sources,
+                states,
+                cycle_started_at=cycle_state.cycle_started_at,
+                maximum=max(0, args.max_subreddits),
+            )
+    else:
+        selected = select_sources(
+            sources,
+            states,
+            stale_after=timedelta(hours=max(0, args.stale_after_hours)),
+            maximum=max(0, args.max_subreddits),
+            force=args.force or bool(args.subreddit),
+            start_after_row=int(checkpoint.get("last_source_row", 1) or 1),
+            retry_errors_after=timedelta(hours=max(0, args.retry_errors_after_hours)),
+        )
     LOG.info("Run %s selected %s of %s source rows", run_id, len(selected), len(sources))
     for source in selected:
         LOG.info("Selected Sheet1 row %s: r/%s", source.sheet_row, source.key)
 
     if args.plan_only:
         atomic_write_json(report_path, {"run_id": run_id, "mode": "plan", "selected": [asdict(row) for row in selected]})
+        atomic_write_json(args.workflow_state, {"queue_next_batch": False, "mode": "plan"})
         LOG.info("Plan report: %s", report_path.resolve())
         return 0
     if not selected:
-        atomic_write_json(report_path, {"run_id": run_id, "mode": "no-op", "selected": []})
-        LOG.info("Every row is fresh; report: %s", report_path.resolve())
+        mode = "no-op"
+        if production_cycle and cycle_state and sheet_store:
+            if cycle_state.phase == "running":
+                completed_at = utc_now()
+                cycle_state = CycleState(
+                    phase="resting",
+                    cycle_started_at=cycle_state.cycle_started_at,
+                    cycle_completed_at=completed_at,
+                    next_cycle_at=completed_at + timedelta(hours=max(0, args.cycle_rest_hours)),
+                )
+                sheet_store.save_cycle_state(cycle_state)
+                mode = "cycle-complete"
+            else:
+                mode = "resting"
+        cycle_payload = cycle_state.to_payload() if cycle_state else None
+        atomic_write_json(report_path, {"run_id": run_id, "mode": mode, "selected": [], "cycle": cycle_payload})
+        atomic_write_json(
+            args.workflow_state,
+            {
+                "queue_next_batch": False,
+                "mode": mode,
+                "cycle": cycle_payload,
+            },
+        )
+        if cycle_state and cycle_state.phase == "resting":
+            LOG.info("Complete pass is resting until %s", iso_utc(cycle_state.next_cycle_at))
+        LOG.info("No rows selected; report: %s", report_path.resolve())
         return 0
 
     analyzer = RedditAnalyzer(
@@ -942,6 +1148,29 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         LOG.info("MySQL dry-run: no rows changed")
 
+    remaining_rows: int | None = None
+    queue_next_batch = False
+    if production_cycle and cycle_state and sheet_store:
+        for result in results:
+            states[normalize_subreddit(result.subreddit)] = SheetState(
+                status=result.status,
+                scraped_at=parse_utc(result.scraped_at_utc),
+            )
+        remaining_rows = cycle_remaining_count(sources, states, cycle_state.cycle_started_at)
+        if remaining_rows == 0:
+            completed_at = utc_now()
+            cycle_state = CycleState(
+                phase="resting",
+                cycle_started_at=cycle_state.cycle_started_at,
+                cycle_completed_at=completed_at,
+                next_cycle_at=completed_at + timedelta(hours=max(0, args.cycle_rest_hours)),
+            )
+            LOG.info("Complete pass finished; resting until %s", iso_utc(cycle_state.next_cycle_at))
+        else:
+            queue_next_batch = True
+            LOG.info("Complete pass has %s source row(s) remaining", remaining_rows)
+        sheet_store.save_cycle_state(cycle_state)
+
     report = {
         "run_id": run_id,
         "started_from_checkpoint": checkpoint,
@@ -952,9 +1181,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         "db_counts": db_counts,
         "success_count": sum(result.status == "success" for result in results),
         "error_count": sum(result.status != "success" for result in results),
+        "cycle": cycle_state.to_payload() if cycle_state else None,
+        "cycle_remaining_rows": remaining_rows,
+        "queue_next_batch": queue_next_batch,
         "results": [asdict(result) for result in results],
     }
     atomic_write_json(report_path, report)
+    atomic_write_json(
+        args.workflow_state,
+        {
+            "queue_next_batch": queue_next_batch,
+            "mode": "running" if queue_next_batch else (cycle_state.phase if cycle_state else "single-run"),
+            "cycle_remaining_rows": remaining_rows,
+            "cycle": cycle_state.to_payload() if cycle_state else None,
+        },
+    )
     LOG.info("Verified report artifact: %s", report_path.resolve())
     if report["error_count"]:
         LOG.warning(

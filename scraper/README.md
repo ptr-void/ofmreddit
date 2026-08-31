@@ -26,7 +26,7 @@ The minimum karma and age fields are **observed successful-poster minima**, not 
 - Sheet1 writes are batched and limited to column D (`Total Members`) and column F (`Bot Bouncer Present`). Existing Verification and Niche values are preserved.
 - Failed scrapes update only status/error metadata; last successful analytics remain intact.
 - Individual unavailable/private subreddit errors are recorded without failing the whole batch, so successful rows remain committed. Use `--fail-on-row-error` when strict batch failure is required.
-- The checkpoint rotates through Sheet1 and Sheet3 `Sync Status` + `Scraped At UTC` provides durable cloud recovery.
+- Sheet3 `Sync Status` + `Scraped At UTC` records every attempted row. Invisible spreadsheet developer metadata stores the active cycle boundary and 24-hour rest deadline without adding control cells or another visible sheet.
 - MySQL uses one transaction and defaults to `update-only`, which skips names not already present in `master_subreddits`.
 - New DB rows require `--db-sync-mode upsert` and default to `pending`.
 - Schema DDL is separate and is never run by the scraper.
@@ -65,9 +65,11 @@ python scraper\subreddit_sync.py --write-sheets --write-db --db-sync-mode update
 
 Reports and checkpoints are written to `output/` and ignored by Git.
 
-## GitHub Actions scheduler
+## GitHub Actions complete-pass cycle
 
-`.github/workflows/scraper-cron.yml` runs ten rows every ten minutes, at minutes 3, 13, 23, 33, 43, and 53 (UTC), avoiding the top-of-hour congestion window. At the current 867-row queue size, the initial full pass takes about 14.5 hours before Reddit/API delays. It also supports manual dry runs.
+`.github/workflows/scraper-cron.yml` processes 20 ascending Sheet1 rows per batch. Each completed batch directly queues the next batch, so an active pass does not depend on GitHub's delayed cron delivery. A row counts as attempted for the pass whether Reddit returns data or a recorded error; this prevents unavailable subreddits from blocking later rows.
+
+When every unique Sheet1 subreddit has been attempted, the scraper stores the completion time in invisible spreadsheet metadata, stops the chain, and rests for 24 hours. An hourly off-peak watchdog checks that deadline. The first watchdog delivered after the deadline starts a new complete pass, and the self-continuing chain resumes. The watchdog may start later than the exact deadline if GitHub delays a scheduled event, but it never starts early.
 
 Add these repository secrets:
 
@@ -76,7 +78,7 @@ Add these repository secrets:
 - `SPREADSHEET_ID`, `GOOGLE_SERVICE_ACCOUNT_JSON`
 - `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`
 
-The scheduled write step remains gated until `SYNC_ENABLED=true`. The workflow uses `update-only`, has a single-run concurrency lock, runs tests first, and uploads reports for 14 days.
+The scheduled write step remains gated until `SYNC_ENABLED=true`. The workflow uses `update-only`, has a single-run concurrency lock plus duplicate-run suppression, runs tests first, and uploads reports for 14 days.
 
 Scheduled workflows run from the default branch, so merge/push the reviewed branch before expecting the cron trigger. GitHub may delay schedules under load; public repositories and private-plan quotas have different included Actions usage.
 

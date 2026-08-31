@@ -1,19 +1,24 @@
 import json
 import time
 import unittest
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from scraper.subreddit_sync import (
+    CycleState,
     GoogleSheetStore,
     ScrapeResult,
     SheetState,
     SourceRow,
+    activate_cycle_if_due,
+    bootstrap_cycle_state,
     build_parser,
     compact_top_posts,
     detect_cta_titles,
     normalize_subreddit,
+    parse_utc,
     select_sources,
+    select_cycle_sources,
     utc_now,
 )
 
@@ -36,6 +41,18 @@ class FakeWorksheet:
         self.col_count += count
 
 
+class FakeWorkbook:
+    def __init__(self, metadata=None):
+        self.metadata = list(metadata or [])
+        self.requests = []
+
+    def fetch_sheet_metadata(self, params=None):
+        return {"developerMetadata": self.metadata}
+
+    def batch_update(self, body):
+        self.requests.append(body)
+
+
 class SubredditSyncTests(unittest.TestCase):
     def test_row_errors_are_reported_without_failing_batch_by_default(self):
         self.assertFalse(build_parser().parse_args([]).fail_on_row_error)
@@ -44,6 +61,11 @@ class SubredditSyncTests(unittest.TestCase):
     def test_normalize_subreddit(self):
         self.assertEqual(normalize_subreddit("https://www.reddit.com/r/Test_Sub/"), "test_sub")
         self.assertEqual(normalize_subreddit("r/Test_Sub"), "test_sub")
+
+    def test_utc_timestamp_round_trip(self):
+        parsed = parse_utc("2026-08-31T06:10:29.459344Z")
+        self.assertIsNotNone(parsed)
+        self.assertEqual(parsed.tzinfo, timezone.utc)
 
     def test_cta_detection_uses_requested_forms_and_maturity(self):
         now = time.time()
@@ -132,6 +154,76 @@ class SubredditSyncTests(unittest.TestCase):
         )
 
         self.assertEqual([row.subreddit for row in selected], ["broken", "next"])
+
+    def test_complete_pass_attempts_each_row_once_in_ascending_order(self):
+        started = datetime(2026, 8, 31, 0, 0, tzinfo=timezone.utc)
+        sources = [SourceRow(2, "one"), SourceRow(3, "two"), SourceRow(4, "three")]
+        states = {
+            "one": SheetState(status="success", scraped_at=started + timedelta(minutes=1)),
+            "two": SheetState(status="error", scraped_at=started + timedelta(minutes=2)),
+            "three": SheetState(status="success", scraped_at=started - timedelta(minutes=1)),
+        }
+
+        selected = select_cycle_sources(
+            sources,
+            states,
+            cycle_started_at=started,
+            maximum=20,
+        )
+
+        self.assertEqual([row.subreddit for row in selected], ["three"])
+
+    def test_resting_cycle_restarts_only_after_24_hour_deadline(self):
+        completed = datetime(2026, 8, 31, 1, 0, tzinfo=timezone.utc)
+        resting = CycleState(
+            phase="resting",
+            cycle_started_at=completed - timedelta(hours=2),
+            cycle_completed_at=completed,
+            next_cycle_at=completed + timedelta(hours=24),
+        )
+
+        before = activate_cycle_if_due(resting, now=completed + timedelta(hours=23, minutes=59))
+        after = activate_cycle_if_due(resting, now=completed + timedelta(hours=24))
+
+        self.assertEqual(before.phase, "resting")
+        self.assertEqual(after.phase, "running")
+        self.assertEqual(after.cycle_started_at, completed + timedelta(hours=24))
+
+        restored = CycleState.from_payload(resting.to_payload())
+        self.assertIsNotNone(restored)
+        self.assertEqual(restored.next_cycle_at, resting.next_cycle_at)
+
+    def test_bootstrap_adopts_recent_in_progress_rows(self):
+        now = datetime(2026, 8, 31, 6, 0, tzinfo=timezone.utc)
+        sources = [SourceRow(2, "one"), SourceRow(3, "two")]
+        states = {
+            "one": SheetState(status="success", scraped_at=now - timedelta(hours=2)),
+            "two": SheetState(status="success", scraped_at=now - timedelta(minutes=5)),
+        }
+
+        cycle = bootstrap_cycle_state(sources, states, now=now)
+
+        self.assertEqual(cycle.phase, "running")
+        self.assertEqual(cycle.cycle_started_at, now - timedelta(hours=2))
+
+    def test_cycle_state_is_persisted_as_invisible_spreadsheet_metadata(self):
+        store = object.__new__(GoogleSheetStore)
+        store.workbook = FakeWorkbook()
+        state = CycleState(
+            phase="running",
+            cycle_started_at=datetime(2026, 8, 31, tzinfo=timezone.utc),
+        )
+
+        store.save_cycle_state(state)
+
+        request = store.workbook.requests[0]["requests"][0]["createDeveloperMetadata"]
+        self.assertEqual(request["developerMetadata"]["location"], {"spreadsheet": True})
+        self.assertEqual(request["developerMetadata"]["visibility"], "DOCUMENT")
+
+        store.workbook = FakeWorkbook([{"metadataId": 42, "metadataKey": "ofmreddit_scraper_cycle_v1"}])
+        store.save_cycle_state(state)
+        update = store.workbook.requests[0]["requests"][0]["updateDeveloperMetadata"]
+        self.assertEqual(update["dataFilters"][0]["developerMetadataLookup"]["metadataId"], 42)
 
     def test_ad_hoc_source_uses_non_sheet_row(self):
         source = SourceRow(0, "ad_hoc")
