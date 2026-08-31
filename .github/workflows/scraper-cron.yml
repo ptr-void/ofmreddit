@@ -1,10 +1,6 @@
 name: Subreddit analytics sync
 
 on:
-  schedule:
-    # Recovery watchdog for the self-continuing production chain. The offset
-    # avoids the start of the hour, where scheduled workflows are congested.
-    - cron: "17 * * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -34,7 +30,7 @@ permissions:
 
 concurrency:
   group: subreddit-analytics-sync
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   sync:
@@ -121,7 +117,7 @@ jobs:
           retention-days: 14
 
       - name: Queue next production batch
-        if: always() && env.RUN_DRY == 'false' && env.RUN_CHAIN == 'true' && env.SYNC_ENABLED == 'true'
+        if: (success() || failure()) && env.RUN_DRY == 'false' && env.RUN_CHAIN == 'true' && env.SYNC_ENABLED == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
