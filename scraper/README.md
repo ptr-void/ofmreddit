@@ -23,7 +23,8 @@ The minimum karma and age fields are **observed successful-poster minima**, not 
 
 - No Google Sheet or MySQL writes occur without `--write-sheets` or `--write-db`.
 - Sheet3 is matched by normalized subreddit name. Duplicate Sheet3 rows receive the same update; a different subreddit is never overwritten because its row number changed.
-- Sheet1 writes are batched and limited to column D (`Total Members`) and column F (`Bot Bouncer Present`). Existing Verification and Niche values are preserved.
+- Sheet1 writes are batched and limited to column D (`Total Members`). Existing Verification, Niche, and Link values are preserved. Bot Bouncer is stored once in Sheet3 and joined into the website response there.
+- Sheet3 keeps only website-facing analytics plus `Scraped At UTC`, `Sync Status`, and `Sync Error`. Raw evidence and duplicate values still flow to MySQL where applicable, but are not duplicated into visible Google Sheet columns.
 - Failed scrapes update only status/error metadata; last successful analytics remain intact.
 - Individual unavailable/private subreddit errors are recorded without failing the whole batch, so successful rows remain committed. Use `--fail-on-row-error` when strict batch failure is required.
 - Sheet3 `Sync Status` + `Scraped At UTC` records every attempted row. Invisible spreadsheet developer metadata stores the active cycle boundary and 24-hour rest deadline without adding control cells or another visible sheet.

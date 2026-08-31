@@ -39,19 +39,13 @@ LEGACY_SHEET3_HEADERS = [
 ]
 
 EXTRA_SHEET3_HEADERS = [
-    "Total Members",
     "Minimum Combined Karma",
-    "Observed Accounts",
     "Bot Bouncer Present",
     "Requires Verification",
     "Weekly Top 1 Upvotes",
     "Weekly Top 2-5 Avg Upvotes",
     "Weekly Top 6-10 Avg Upvotes",
-    "Weekly Top 10 Posts",
     "CTA Captions",
-    "CTA Match Count",
-    "CTA Sample Size",
-    "Comment Ratio Basis",
     "Scraped At UTC",
     "Sync Status",
     "Sync Error",
@@ -227,19 +221,13 @@ class ScrapeResult:
             "Minimum Post Karma": self.min_post_karma,
             "Minimum Comment Karma": self.min_comment_karma,
             "Minimum Account Age (days)": self.min_account_age_days,
-            "Total Members": self.subscribers,
             "Minimum Combined Karma": self.min_combined_karma,
-            "Observed Accounts": self.observed_accounts,
             "Bot Bouncer Present": bool_label(self.has_bot_bouncer),
             "Requires Verification": bool_label(self.requires_verification),
             "Weekly Top 1 Upvotes": self.weekly_top_1_upvotes,
             "Weekly Top 2-5 Avg Upvotes": self.weekly_top_2_5_avg_upvotes,
             "Weekly Top 6-10 Avg Upvotes": self.weekly_top_6_10_avg_upvotes,
-            "Weekly Top 10 Posts": json.dumps(self.weekly_top_10_posts, ensure_ascii=False, separators=(",", ":")),
             "CTA Captions": bool_label(self.allows_cta_captions),
-            "CTA Match Count": self.cta_match_count,
-            "CTA Sample Size": self.cta_sample_size,
-            "Comment Ratio Basis": self.comment_ratio_basis,
             "Scraped At UTC": self.scraped_at_utc,
             "Sync Status": self.status,
             "Sync Error": self.error,
@@ -695,11 +683,6 @@ class GoogleSheetStore:
                 continue
             if result.subscribers is not None:
                 sheet1_updates.append({"range": f"D{result.source_row}", "values": [[result.subscribers]]})
-            if result.has_bot_bouncer is not None:
-                sheet1_updates.append({
-                    "range": f"F{result.source_row}",
-                    "values": [["yes" if result.has_bot_bouncer else "no"]],
-                })
         if sheet1_updates:
             self.sheet1.batch_update(sheet1_updates, value_input_option="RAW")
 

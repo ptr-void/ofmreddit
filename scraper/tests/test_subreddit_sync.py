@@ -247,8 +247,8 @@ class SubredditSyncTests(unittest.TestCase):
         store.write_results([result])
 
         self.assertEqual(store.sheet1.batch_updates, [])
-        self.assertEqual(store.sheet3.col_count, 23)
-        self.assertEqual(store.sheet3.added_cols, [16])
+        self.assertEqual(store.sheet3.col_count, 17)
+        self.assertEqual(store.sheet3.added_cols, [10])
         written_ranges = {
             item["range"]
             for batch, _ in store.sheet3.batch_updates
@@ -257,6 +257,29 @@ class SubredditSyncTests(unittest.TestCase):
         self.assertIn("A3", written_ranges)
         self.assertIn("A4", written_ranges)
         self.assertNotIn("A2", written_ranges)
+
+    def test_sheet1_writer_only_updates_total_members(self):
+        store = object.__new__(GoogleSheetStore)
+        store.sheet1 = FakeWorksheet()
+        store.sheet3 = FakeWorksheet(col_count=17)
+        store._sheet3_values = [["Subreddit"], ["target"]]
+        store._sheet3_headers = ["Subreddit"]
+        result = ScrapeResult(
+            subreddit="Target",
+            source_row=2,
+            scraped_at_utc="2026-09-01T00:00:00Z",
+            subscribers=456,
+            has_bot_bouncer=True,
+        )
+
+        store.write_results([result])
+
+        sheet1_ranges = {
+            item["range"]
+            for batch, _ in store.sheet1.batch_updates
+            for item in batch
+        }
+        self.assertEqual(sheet1_ranges, {"D2"})
 
 
 if __name__ == "__main__":
