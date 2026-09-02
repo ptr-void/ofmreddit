@@ -22,6 +22,11 @@ function normalize(value: string) {
   return value.trim().toLowerCase().replace(/^r\//, "").replace(/\/$/, "")
 }
 
+function redditUrl(value: string) {
+  const name = value.trim().replace(/^r\//i, "").replace(/^\/+|\/+$/g, "")
+  return name ? `https://www.reddit.com/r/${name}/` : ""
+}
+
 function yesNo(value: unknown) {
   if (value === 1 || value === true) return "Yes"
   if (value === 0 || value === false) return "No"
@@ -91,6 +96,22 @@ export async function GET() {
         const key = normalize(String(cached.subreddit_name ?? ""))
         if (!key || existing.has(key)) return
         mainSheet.rows.push(mainSheet.headers.map((header) => cachedValue(header, cached)))
+      })
+    }
+
+    const linkIndex = mainSheet.headers.findIndex(
+      (header) => header.trim().toLowerCase() === "link",
+    )
+    if (subredditIndex !== -1 && linkIndex !== -1) {
+      const keepIndices = mainSheet.headers
+        .map((_, index) => (index === subredditIndex ? -1 : index))
+        .filter((index) => index !== -1)
+      mainSheet.headers = keepIndices.map((index) =>
+        index === linkIndex ? "Subreddit Name" : mainSheet.headers[index],
+      )
+      mainSheet.rows = mainSheet.rows.map((row) => {
+        const link = row[linkIndex] || redditUrl(row[subredditIndex] || "")
+        return keepIndices.map((index) => (index === linkIndex ? link : row[index] || ""))
       })
     }
 
