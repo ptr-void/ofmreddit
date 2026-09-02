@@ -10,6 +10,7 @@ type Tier = {
   weekly_database_limit: number
   saved_username_limit: number
   saved_profile_limit: number
+  daily_subreddit_checker_limit: number
 }
 
 type AssertOk = { ok: true; usage?: number; cap?: number }
@@ -27,7 +28,8 @@ export async function getActiveTierForUser(userId: number): Promise<Tier | null>
       t.weekly_caption_limit,
       t.weekly_database_limit, 
       t.saved_username_limit,
-      t.saved_profile_limit
+      t.saved_profile_limit,
+      t.daily_subreddit_checker_limit
     FROM user_subscriptions us
     JOIN subscription_tiers t ON t.id = us.tier_id AND t.is_active = 1
     WHERE us.user_id = ?
@@ -112,8 +114,8 @@ export async function assertDailySubredditCheckerLimit(
   } else {
     // Look at their active tier limit
     const tier = await getActiveTierForUser(userId)
-    if (tier && (tier as any).daily_subreddit_checker_limit !== undefined) {
-      cap = (tier as any).daily_subreddit_checker_limit
+    if (tier) {
+      cap = tier.daily_subreddit_checker_limit
     }
   }
 

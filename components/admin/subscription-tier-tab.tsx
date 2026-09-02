@@ -119,6 +119,10 @@ export function SubscriptionTierTab() {
       weekly_database_limit: tier.limits.weekly_database_limit === "" ? 0 : Number(tier.limits.weekly_database_limit),
       saved_username_limit: tier.limits.saved_username_limit === "" ? 0 : Number(tier.limits.saved_username_limit),
       saved_profile_limit: tier.limits.saved_profile_limit === "" ? 0 : Number(tier.limits.saved_profile_limit),
+      daily_subreddit_checker_limit:
+        tier.limits.daily_subreddit_checker_limit === ""
+          ? 0
+          : Number(tier.limits.daily_subreddit_checker_limit),
     }
 
     const res = await fetch("/api/admin/subscription-tiers", {
