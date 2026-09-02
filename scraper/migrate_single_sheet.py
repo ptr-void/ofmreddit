@@ -159,6 +159,7 @@ def apply_single_table(workbook: Any, matrix: list[list[str]], delete_extra_shee
     if normalized_read_back != matrix:
         raise RuntimeError("Sheet1 read-back did not match the migration matrix; extra tabs were preserved")
 
+    sheet1.resize(rows=len(matrix), cols=len(SHEET1_REQUIRED_HEADERS))
     sheet1.freeze(rows=1)
     sheet1.format(
         f"A1:{end_column}1",
