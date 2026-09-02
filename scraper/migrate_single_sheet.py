@@ -14,7 +14,10 @@ from typing import Any
 import gspread
 from google.oauth2.service_account import Credentials
 
-from subreddit_sync import SHEET1_REQUIRED_HEADERS, _service_account_info, normalize_subreddit
+try:
+    from .subreddit_sync import SHEET1_REQUIRED_HEADERS, _service_account_info, normalize_subreddit
+except ImportError:
+    from subreddit_sync import SHEET1_REQUIRED_HEADERS, _service_account_info, normalize_subreddit
 
 
 ANALYTICS_ALIASES = {
@@ -148,7 +151,12 @@ def apply_single_table(workbook: Any, matrix: list[list[str]], delete_extra_shee
     sheet1.update(matrix, range_name=f"A1:{end_column}{len(matrix)}", value_input_option="RAW")
 
     read_back = sheet1.get(f"A1:{end_column}{len(matrix)}")
-    if read_back != matrix:
+    normalized_read_back = [
+        list(row[: len(SHEET1_REQUIRED_HEADERS)])
+        + [""] * max(0, len(SHEET1_REQUIRED_HEADERS) - len(row))
+        for row in read_back
+    ]
+    if normalized_read_back != matrix:
         raise RuntimeError("Sheet1 read-back did not match the migration matrix; extra tabs were preserved")
 
     sheet1.freeze(rows=1)
