@@ -35,3 +35,4 @@ next-env.d.ts
 
 # scraper runtime artifacts
 /output/
+/outputs/

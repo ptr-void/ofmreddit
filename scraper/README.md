@@ -20,13 +20,14 @@ The minimum karma and age fields are **observed successful-poster minima**, not 
 ## Safety and recovery behavior
 
 - No Google Sheet or MySQL writes occur without `--write-sheets` or `--write-db`.
-- Sheet3 is matched by normalized subreddit name. Duplicate Sheet3 rows receive the same update; a different subreddit is never overwritten because its row number changed.
-- Sheet1 writes are batched and header-matched to `Total Members` and scraper-managed `Verification`. Existing Niche and Link values are preserved. Bot Bouncer is stored once in Sheet3 and joined into the website response there.
-- Sheet3 keeps only website-facing analytics plus `Scraped At UTC`, `Sync Status`, and `Sync Error`. Raw evidence and duplicate values still flow to MySQL where applicable, but are not duplicated into visible Google Sheet columns.
+- Sheet1 is the only table. Base fields, consolidated niche tags, website-facing analytics, and recovery checkpoints are matched by normalized subreddit name and batch-written by header.
+- Existing Subreddit, Link, and Niche values are preserved during scraper updates. The scraper never creates a Sheet row for an ad-hoc or missing subreddit.
+- `Scraped At UTC`, `Sync Status`, and `Sync Error` remain hidden columns in Sheet1 so recovery does not require another visible tab.
 - Failed scrapes update only status/error metadata; last successful analytics remain intact.
 - Individual unavailable/private subreddit errors are recorded without failing the whole batch, so successful rows remain committed. Use `--fail-on-row-error` when strict batch failure is required.
-- Sheet3 `Sync Status` + `Scraped At UTC` records every attempted row. Invisible spreadsheet developer metadata stores the active cycle boundary and 24-hour rest deadline without adding control cells or another visible sheet.
+- Invisible spreadsheet developer metadata stores the active cycle boundary and 24-hour rest deadline without adding control cells or another visible sheet.
 - MySQL uses one transaction and defaults to `update-only`, which skips names not already present in `master_subreddits`.
+- A temporary MySQL connectivity failure is recorded in the run report after Sheet1 commits, but it no longer discards progress or breaks the complete-pass chain. Use `--fail-on-db-error` only when a strict DB mirror is required.
 - New DB rows require `--db-sync-mode upsert` and default to `pending`.
 - Schema DDL is separate and is never run by the scraper.
 
@@ -46,7 +47,7 @@ The Google Sheets API must be enabled in the service account's Google Cloud proj
 ```powershell
 python -m unittest discover -s scraper\tests -v
 python scraper\subreddit_sync.py --plan-only --max-subreddits 10
-python scraper\subreddit_sync.py --subreddit asianhotties --hot-limit 3 --new-limit 3
+python scraper\subreddit_sync.py --subreddit asianhotties --new-limit 3
 python scraper\migrate_schema.py
 ```
 
@@ -63,6 +64,15 @@ python scraper\subreddit_sync.py --write-sheets --write-db --db-sync-mode update
 ```
 
 Reports and checkpoints are written to `output/` and ignored by Git.
+
+### One-table Google Sheet migration
+
+`migrate_single_sheet.py` combines existing Sheet1 base values, Sheet2 niche tags, and the latest matching Sheet3 analytics into Sheet1. It writes a timestamped JSON backup and validates the full table before deleting the extra tabs.
+
+```powershell
+python scraper\migrate_single_sheet.py
+python scraper\migrate_single_sheet.py --apply --delete-extra-sheets
+```
 
 ## GitHub Actions complete-pass cycle
 

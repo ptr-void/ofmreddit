@@ -27,35 +27,28 @@ LOG = logging.getLogger("subreddit_sync")
 UTC = timezone.utc
 T = TypeVar("T")
 
-SHEET3_HEADERS = [
-    "Subreddit",
-    "Minimum Post Karma",
-    "Minimum Comment Karma",
-    "Minimum Account Age (days)",
-    "Minimum Combined Karma",
-    "Bot Bouncer Present",
-    "Weekly Top 1 Upvotes",
-    "Weekly Top 2-5 Avg Upvotes",
-    "Weekly Top 6-10 Avg Upvotes",
+SHEET1_ANALYTICS_HEADERS = [
+    "Min Post Karma",
+    "Min Comment Karma",
+    "Min Total Karma",
+    "Min Account Age",
+    "Bot Bouncer",
+    "Hot 1 (Weekly)",
+    "Hot 2-5 Avg (Weekly)",
+    "Hot 6-10 Avg (Weekly)",
     "CTA Captions",
     "Scraped At UTC",
     "Sync Status",
     "Sync Error",
 ]
 
-REMOVED_SHEET3_HEADERS = {
-    "barrier to visibility (btv)",
-    "top slot diversity index (tsdi)",
-    "upvote to root comment ratio",
-    "total members",
-    "observed accounts",
-    "requires verification",
-    "weekly top 10 posts",
-    "cta match count",
-    "cta sample size",
-    "comment ratio basis",
-}
-REMOVED_SHEET1_HEADERS = {"bot bouncer", "bot bouncer present"}
+SHEET1_REQUIRED_HEADERS = [
+    "Subreddit",
+    "Link",
+    "Verification",
+    "Total Members",
+    "Niche",
+] + SHEET1_ANALYTICS_HEADERS
 CTA_PATTERN = re.compile(r"\?|\b(?:do|or|would|how|what)\b", re.IGNORECASE)
 VERIFICATION_PATTERN = re.compile(r"\b(?:verification|verify|verified|unverified)\b", re.IGNORECASE)
 NO_VERIFICATION_PATTERNS = (
@@ -235,14 +228,16 @@ class ScrapeResult:
         bool_label = lambda value: "Unknown" if value is None else ("Yes" if value else "No")
         return {
             "Subreddit": self.subreddit,
-            "Minimum Post Karma": self.min_post_karma,
-            "Minimum Comment Karma": self.min_comment_karma,
-            "Minimum Account Age (days)": self.min_account_age_days,
-            "Minimum Combined Karma": self.min_combined_karma,
-            "Bot Bouncer Present": bool_label(self.has_bot_bouncer),
-            "Weekly Top 1 Upvotes": self.weekly_top_1_upvotes,
-            "Weekly Top 2-5 Avg Upvotes": self.weekly_top_2_5_avg_upvotes,
-            "Weekly Top 6-10 Avg Upvotes": self.weekly_top_6_10_avg_upvotes,
+            "Verification": bool_label(self.requires_verification),
+            "Total Members": self.subscribers,
+            "Min Post Karma": self.min_post_karma,
+            "Min Comment Karma": self.min_comment_karma,
+            "Min Total Karma": self.min_combined_karma,
+            "Min Account Age": self.min_account_age_days,
+            "Bot Bouncer": bool_label(self.has_bot_bouncer),
+            "Hot 1 (Weekly)": self.weekly_top_1_upvotes,
+            "Hot 2-5 Avg (Weekly)": self.weekly_top_2_5_avg_upvotes,
+            "Hot 6-10 Avg (Weekly)": self.weekly_top_6_10_avg_upvotes,
             "CTA Captions": bool_label(self.allows_cta_captions),
             "Scraped At UTC": self.scraped_at_utc,
             "Sync Status": self.status,
@@ -501,15 +496,8 @@ class GoogleSheetStore:
             raise RuntimeError(f"Google Sheets service-account access failed: {cause}") from exc
         self.workbook = workbook
         self.sheet1 = workbook.worksheet(os.getenv("SHEET1_NAME", "Sheet1"))
-        try:
-            self.sheet3 = workbook.worksheet(os.getenv("SHEET3_NAME", "Sheet3"))
-        except gspread.WorksheetNotFound:
-            if not allow_create:
-                raise RuntimeError("Sheet3 is missing; pass --write-sheets to permit creating it")
-            self.sheet3 = workbook.add_worksheet(title=os.getenv("SHEET3_NAME", "Sheet3"), rows=1000, cols=30)
-        self._sheet3_values: list[list[str]] | None = None
-        self._sheet3_headers: list[str] | None = None
         self._sheet1_values: list[list[str]] | None = None
+        self._sheet1_headers: list[str] | None = None
 
     def load_cycle_state(self) -> CycleState | None:
         metadata = self.workbook.fetch_sheet_metadata(
@@ -566,15 +554,17 @@ class GoogleSheetStore:
         self.workbook.batch_update({"requests": [request]})
 
     def source_rows(self) -> list[SourceRow]:
-        if self._sheet1_values is None:
-            self._sheet1_values = self.sheet1.get_all_values()
-        values = self._sheet1_values
+        headers, values = self._load_sheet1()
         if not values:
             return []
+        lookup = {header.strip().lower(): index for index, header in enumerate(headers)}
+        subreddit_index = lookup.get("subreddit")
+        if subreddit_index is None:
+            raise RuntimeError("Sheet1 must contain a 'Subreddit' column")
         result: list[SourceRow] = []
         seen: set[str] = set()
         for row_number, row in enumerate(values[1:], start=2):
-            name = row[0].strip() if row else ""
+            name = row[subreddit_index].strip() if subreddit_index < len(row) else ""
             key = normalize_subreddit(name)
             if not key or key in seen:
                 continue
@@ -582,18 +572,20 @@ class GoogleSheetStore:
             result.append(SourceRow(row_number, name))
         return result
 
-    def _load_sheet3(self) -> tuple[list[str], list[list[str]]]:
-        if self._sheet3_values is None:
-            self._sheet3_values = self.sheet3.get_all_values()
-        values = self._sheet3_values
+    def _load_sheet1(self) -> tuple[list[str], list[list[str]]]:
+        if self._sheet1_values is None:
+            self._sheet1_values = self.sheet1.get_all_values()
+        values = self._sheet1_values
         headers = list(values[0]) if values else []
-        self._sheet3_headers = headers
+        self._sheet1_headers = headers
         return headers, values
 
     def states(self) -> dict[str, SheetState]:
-        headers, values = self._load_sheet3()
+        headers, values = self._load_sheet1()
         lookup = {header.strip().lower(): index for index, header in enumerate(headers)}
-        subreddit_index = lookup.get("subreddit", 0)
+        subreddit_index = lookup.get("subreddit")
+        if subreddit_index is None:
+            raise RuntimeError("Sheet1 must contain a 'Subreddit' column")
         status_index = lookup.get("sync status")
         scraped_index = lookup.get("scraped at utc")
         states: dict[str, SheetState] = {}
@@ -611,157 +603,75 @@ class GoogleSheetStore:
         return states
 
     def ensure_headers(self) -> list[str]:
-        headers, values = self._load_sheet3()
+        headers, values = self._load_sheet1()
         if not headers:
-            headers = list(SHEET3_HEADERS)
-            self._ensure_sheet3_width(len(headers))
-            self.sheet3.update(values=[headers], range_name=f"A1:{column_letters(len(headers))}1")
-            self._sheet3_values = [headers]
-            self._sheet3_headers = headers
+            headers = list(SHEET1_REQUIRED_HEADERS)
+            self._ensure_sheet1_width(len(headers))
+            self.sheet1.update(values=[headers], range_name=f"A1:{column_letters(len(headers))}1")
+            self._sheet1_values = [headers]
+            self._sheet1_headers = headers
             return headers
-        if normalize_subreddit(headers[0]) != "subreddit":
-            raise RuntimeError("Sheet3 column A must be 'Subreddit'; no data was written")
+        if "subreddit" not in {header.strip().lower() for header in headers}:
+            raise RuntimeError("Sheet1 must contain a 'Subreddit' column; no data was written")
         lower = {header.strip().lower() for header in headers}
-        additions = [header for header in SHEET3_HEADERS if header.lower() not in lower]
+        additions = [header for header in SHEET1_REQUIRED_HEADERS if header.lower() not in lower]
         if additions:
             start = len(headers) + 1
             end = len(headers) + len(additions)
-            self._ensure_sheet3_width(end)
-            self.sheet3.update(
+            self._ensure_sheet1_width(end)
+            self.sheet1.update(
                 values=[additions],
                 range_name=f"{column_letters(start)}1:{column_letters(end)}1",
             )
             headers.extend(additions)
-            if self._sheet3_values:
-                self._sheet3_values[0] = headers
-        self._sheet3_headers = headers
+            if self._sheet1_values:
+                self._sheet1_values[0] = headers
+        self._sheet1_headers = headers
         return headers
 
-    def _ensure_sheet3_width(self, required_columns: int) -> None:
+    def _ensure_sheet1_width(self, required_columns: int) -> None:
         """Expand the physical grid before writing newly managed columns."""
-        current_columns = int(getattr(self.sheet3, "col_count", 0) or 0)
+        current_columns = int(getattr(self.sheet1, "col_count", 0) or 0)
         if current_columns < required_columns:
-            self.sheet3.add_cols(required_columns - current_columns)
-
-    def _delete_columns_by_header(
-        self,
-        worksheet: Any,
-        removed_headers: set[str],
-        values: list[list[str]],
-    ) -> list[str]:
-        headers = list(values[0]) if values else []
-        indexes = [
-            index
-            for index, header in enumerate(headers)
-            if header.strip().lower() in removed_headers
-        ]
-        for index in sorted(indexes, reverse=True):
-            worksheet.delete_columns(index + 1)
-            for row in values:
-                if index < len(row):
-                    row.pop(index)
-            headers.pop(index)
-        return headers
-
-    def _migrate_legacy_verification_to_sheet1(
-        self,
-        sheet1_values: list[list[str]],
-        sheet3_values: list[list[str]],
-    ) -> None:
-        if not sheet1_values or not sheet3_values:
-            return
-        sheet1_lookup = {
-            header.strip().lower(): index for index, header in enumerate(sheet1_values[0])
-        }
-        sheet3_lookup = {
-            header.strip().lower(): index for index, header in enumerate(sheet3_values[0])
-        }
-        sheet1_subreddit = sheet1_lookup.get("subreddit")
-        sheet1_verification = sheet1_lookup.get("verification")
-        sheet3_subreddit = sheet3_lookup.get("subreddit")
-        sheet3_verification = sheet3_lookup.get("requires verification")
-        if None in {
-            sheet1_subreddit,
-            sheet1_verification,
-            sheet3_subreddit,
-            sheet3_verification,
-        }:
-            return
-
-        source_values: dict[str, str] = {}
-        for row in sheet3_values[1:]:
-            if sheet3_subreddit >= len(row) or sheet3_verification >= len(row):
-                continue
-            key = normalize_subreddit(row[sheet3_subreddit])
-            value = row[sheet3_verification].strip().lower()
-            if key and value in {"yes", "no", "true", "false", "1", "0"}:
-                source_values[key] = "yes" if value in {"yes", "true", "1"} else "no"
-
-        updates: dict[str, dict[str, Any]] = {}
-        for row_number, row in enumerate(sheet1_values[1:], start=2):
-            if sheet1_subreddit >= len(row):
-                continue
-            value = source_values.get(normalize_subreddit(row[sheet1_subreddit]))
-            if value is None:
-                continue
-            cell = f"{column_letters(sheet1_verification + 1)}{row_number}"
-            updates[cell] = {"range": cell, "values": [[value]]}
-            while len(row) <= sheet1_verification:
-                row.append("")
-            row[sheet1_verification] = value
-
-        pending = list(updates.values())
-        for start in range(0, len(pending), 400):
-            self.sheet1.batch_update(pending[start:start + 400], value_input_option="RAW")
-
-    def ensure_managed_schema(self) -> tuple[list[str], list[str]]:
-        if self._sheet1_values is None:
-            self._sheet1_values = self.sheet1.get_all_values()
-        _, sheet3_values = self._load_sheet3()
-        self._migrate_legacy_verification_to_sheet1(self._sheet1_values, sheet3_values)
-        sheet1_headers = self._delete_columns_by_header(
-            self.sheet1,
-            REMOVED_SHEET1_HEADERS,
-            self._sheet1_values,
-        )
-        sheet3_headers = self._delete_columns_by_header(
-            self.sheet3,
-            REMOVED_SHEET3_HEADERS,
-            sheet3_values,
-        )
-        self._sheet3_headers = sheet3_headers
-        return sheet1_headers, self.ensure_headers()
+            self.sheet1.add_cols(required_columns - current_columns)
 
     def write_results(self, results: Sequence[ScrapeResult]) -> None:
         if not results:
             return
-        sheet1_headers, headers = self.ensure_managed_schema()
-        _, values = self._load_sheet3()
+        headers = self.ensure_headers()
+        _, values = self._load_sheet1()
         header_lookup = {header.strip().lower(): index + 1 for index, header in enumerate(headers)}
         row_map: dict[str, list[int]] = {}
+        subreddit_column = header_lookup["subreddit"] - 1
         for row_number, row in enumerate(values[1:], start=2):
-            key = normalize_subreddit(row[0] if row else "")
+            key = normalize_subreddit(row[subreddit_column] if subreddit_column < len(row) else "")
             if key:
                 row_map.setdefault(key, []).append(row_number)
-        next_row = max(2, len(values) + 1)
         updates: list[dict[str, Any]] = []
 
         for result in results:
+            if result.source_row < 2:
+                LOG.warning("Skipping Sheet1 write for ad-hoc subreddit r/%s", result.subreddit)
+                continue
             key = normalize_subreddit(result.subreddit)
             target_rows = row_map.get(key)
             if not target_rows:
-                target_rows = [next_row]
-                row_map[key] = target_rows
-                next_row += 1
+                LOG.warning("Skipping Sheet1 write for missing source row r/%s", result.subreddit)
+                continue
 
             managed = result.sheet_values()
             if result.status != "success":
                 managed = {
-                    "Subreddit": result.subreddit,
                     "Scraped At UTC": result.scraped_at_utc,
                     "Sync Status": result.status,
                     "Sync Error": result.error,
                 }
+            else:
+                if result.requires_verification is None:
+                    managed.pop("Verification", None)
+                if result.subscribers is None:
+                    managed.pop("Total Members", None)
+                managed.pop("Subreddit", None)
             for target_row in target_rows:
                 for header, value in managed.items():
                     column = header_lookup.get(header.lower())
@@ -773,29 +683,7 @@ class GoogleSheetStore:
                     })
 
         for start in range(0, len(updates), 400):
-            self.sheet3.batch_update(updates[start:start + 400], value_input_option="RAW")
-
-        sheet1_lookup = {header.strip().lower(): index + 1 for index, header in enumerate(sheet1_headers)}
-        member_column = sheet1_lookup.get("total members")
-        verification_column = sheet1_lookup.get("verification")
-        sheet1_updates: list[dict[str, Any]] = []
-        for result in results:
-            if result.status != "success":
-                continue
-            if result.source_row < 2:
-                continue
-            if result.subscribers is not None and member_column is not None:
-                sheet1_updates.append({
-                    "range": f"{column_letters(member_column)}{result.source_row}",
-                    "values": [[result.subscribers]],
-                })
-            if result.requires_verification is not None and verification_column is not None:
-                sheet1_updates.append({
-                    "range": f"{column_letters(verification_column)}{result.source_row}",
-                    "values": [["yes" if result.requires_verification else "no"]],
-                })
-        if sheet1_updates:
-            self.sheet1.batch_update(sheet1_updates, value_input_option="RAW")
+            self.sheet1.batch_update(updates[start:start + 400], value_input_option="RAW")
 
 
 class MySQLStore:
@@ -1036,7 +924,7 @@ def atomic_write_json(path: Path, payload: Any) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--write-sheets", action="store_true", help="Batch-write Sheet1 and Sheet3")
+    parser.add_argument("--write-sheets", action="store_true", help="Batch-write the consolidated Sheet1 table")
     parser.add_argument("--write-db", action="store_true", help="Write master_subreddits in one transaction")
     parser.add_argument("--db-sync-mode", choices=("update-only", "upsert"), default=os.getenv("DB_SYNC_MODE", "update-only"))
     parser.add_argument("--subreddit", action="append", default=[], help="Analyze only this subreddit; repeatable")
@@ -1061,6 +949,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=os.getenv("FAIL_ON_ROW_ERROR", "false").lower() == "true",
         help="Return a non-zero exit code when individual subreddits are unavailable",
+    )
+    parser.add_argument(
+        "--fail-on-db-error",
+        action="store_true",
+        default=os.getenv("FAIL_ON_DB_ERROR", "false").lower() == "true",
+        help="Return a non-zero exit code if the optional MySQL mirror is unavailable after Sheets are committed",
     )
     parser.add_argument("--plan-only", action="store_true", help="List selected rows without calling Reddit or writing")
     parser.add_argument("--checkpoint", type=Path, default=Path(os.getenv("SYNC_CHECKPOINT", "output/subreddit_sync_checkpoint.json")))
@@ -1224,14 +1118,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         LOG.info("Google Sheets dry-run: no values changed")
 
     db_counts = {"updated": 0, "inserted": 0}
+    db_error = ""
     if args.write_db:
-        database = MySQLStore(args.db_sync_mode)
+        database: MySQLStore | None = None
         try:
+            database = MySQLStore(args.db_sync_mode)
             updated, inserted = database.write_results(results)
             db_counts = {"updated": updated, "inserted": inserted}
             LOG.info("MySQL transaction committed: updated=%s inserted=%s", updated, inserted)
+        except Exception as exc:
+            db_error = str(exc)
+            LOG.error(
+                "MySQL mirror unavailable after the Google Sheets commit: %s; preserving Sheet progress and continuing the cycle",
+                exc,
+            )
         finally:
-            database.close()
+            if database is not None:
+                database.close()
     else:
         LOG.info("MySQL dry-run: no rows changed")
 
@@ -1266,6 +1169,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "write_db": args.write_db,
         "db_sync_mode": args.db_sync_mode,
         "db_counts": db_counts,
+        "db_error": db_error,
         "success_count": sum(result.status == "success" for result in results),
         "error_count": sum(result.status != "success" for result in results),
         "cycle": cycle_state.to_payload() if cycle_state else None,
@@ -1289,6 +1193,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "Batch completed with %s subreddit error(s); successful rows were committed and details are in the report",
             report["error_count"],
         )
+    if db_error and args.fail_on_db_error:
+        return 1
     return 1 if report["error_count"] and args.fail_on_row_error else 0
 
 

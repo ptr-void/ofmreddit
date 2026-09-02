@@ -68,6 +68,10 @@ class SubredditSyncTests(unittest.TestCase):
         self.assertFalse(build_parser().parse_args([]).fail_on_row_error)
         self.assertTrue(build_parser().parse_args(["--fail-on-row-error"]).fail_on_row_error)
 
+    def test_database_mirror_errors_are_recoverable_by_default(self):
+        self.assertFalse(build_parser().parse_args([]).fail_on_db_error)
+        self.assertTrue(build_parser().parse_args(["--fail-on-db-error"]).fail_on_db_error)
+
     def test_normalize_subreddit(self):
         self.assertEqual(normalize_subreddit("https://www.reddit.com/r/Test_Sub/"), "test_sub")
         self.assertEqual(normalize_subreddit("r/Test_Sub"), "test_sub")
@@ -251,11 +255,12 @@ class SubredditSyncTests(unittest.TestCase):
 
     def test_sheet_writer_matches_name_and_never_uses_ad_hoc_sheet1_row(self):
         store = object.__new__(GoogleSheetStore)
-        store.sheet1 = FakeWorksheet(values=[["Subreddit", "Link", "Verification", "Total Members", "Niche"]])
-        store.sheet3 = FakeWorksheet(col_count=7, values=[["Subreddit"], ["other"], ["target"], ["target"]])
+        store.sheet1 = FakeWorksheet(
+            col_count=5,
+            values=[["Subreddit", "Link", "Verification", "Total Members", "Niche"], ["target"]],
+        )
         store._sheet1_values = store.sheet1.values
-        store._sheet3_values = [["Subreddit"], ["other"], ["target"], ["target"]]
-        store._sheet3_headers = ["Subreddit"]
+        store._sheet1_headers = list(store.sheet1.values[0])
         result = ScrapeResult(
             subreddit="Target",
             source_row=0,
@@ -267,24 +272,20 @@ class SubredditSyncTests(unittest.TestCase):
         store.write_results([result])
 
         self.assertEqual(store.sheet1.batch_updates, [])
-        self.assertEqual(store.sheet3.col_count, 13)
-        self.assertEqual(store.sheet3.added_cols, [6])
-        written_ranges = {
-            item["range"]
-            for batch, _ in store.sheet3.batch_updates
-            for item in batch
-        }
-        self.assertIn("A3", written_ranges)
-        self.assertIn("A4", written_ranges)
-        self.assertNotIn("A2", written_ranges)
+        self.assertEqual(store.sheet1.col_count, 17)
+        self.assertEqual(store.sheet1.added_cols, [12])
 
     def test_sheet1_writer_updates_members_and_scraped_verification_by_header(self):
         store = object.__new__(GoogleSheetStore)
-        store.sheet1 = FakeWorksheet(values=[["Subreddit", "Link", "Verification", "Total Members", "Niche"]])
-        store.sheet3 = FakeWorksheet(col_count=13, values=[["Subreddit"], ["target"]])
+        store.sheet1 = FakeWorksheet(
+            col_count=5,
+            values=[
+                ["Subreddit", "Link", "Verification", "Total Members", "Niche"],
+                ["target", "https://reddit.com/r/target", "", "", "general"],
+            ],
+        )
         store._sheet1_values = store.sheet1.values
-        store._sheet3_values = [["Subreddit"], ["target"]]
-        store._sheet3_headers = ["Subreddit"]
+        store._sheet1_headers = list(store.sheet1.values[0])
         result = ScrapeResult(
             subreddit="Target",
             source_row=2,
@@ -292,6 +293,7 @@ class SubredditSyncTests(unittest.TestCase):
             subscribers=456,
             has_bot_bouncer=True,
             requires_verification=True,
+            min_post_karma=12,
         )
 
         store.write_results([result])
@@ -301,45 +303,31 @@ class SubredditSyncTests(unittest.TestCase):
             for batch, _ in store.sheet1.batch_updates
             for item in batch
         }
-        self.assertEqual(sheet1_ranges, {"C2", "D2"})
+        self.assertIn("C2", sheet1_ranges)
+        self.assertIn("D2", sheet1_ranges)
+        self.assertIn("F2", sheet1_ranges)
+        self.assertIn("Q2", sheet1_ranges)
 
-    def test_managed_schema_deletes_redundant_sheet_columns(self):
+    def test_states_and_headers_use_only_the_consolidated_sheet1_table(self):
         store = object.__new__(GoogleSheetStore)
-        store.sheet1 = FakeWorksheet(values=[
-            ["Subreddit", "Link", "Verification", "Total Members", "Niche", "Bot Bouncer Present"],
-            ["target", "https://reddit.com/r/target", "manual", "123", "general", "yes"],
-        ])
-        store.sheet3 = FakeWorksheet(values=[
-            [
-                "Subreddit",
-                "Barrier to Visibility (BTV)",
-                "Top Slot Diversity Index (TSDI)",
-                "Upvote to Root Comment Ratio",
-                "Minimum Post Karma",
-                "Requires Verification",
-                "Sync Status",
+        store.sheet1 = FakeWorksheet(
+            col_count=7,
+            values=[
+                ["Subreddit", "Link", "Verification", "Total Members", "Niche", "Scraped At UTC", "Sync Status"],
+                ["target", "", "yes", "123", "general", "2026-09-02T00:00:00Z", "success"],
             ],
-            ["target", "4", "31", "39.67", "10", "yes", "success"],
-        ])
+        )
         store._sheet1_values = store.sheet1.values
-        store._sheet3_values = store.sheet3.values
-        store._sheet3_headers = list(store.sheet3.values[0])
+        store._sheet1_headers = list(store.sheet1.values[0])
 
-        sheet1_headers, sheet3_headers = store.ensure_managed_schema()
+        states = store.states()
+        headers = store.ensure_headers()
 
-        self.assertNotIn("Bot Bouncer Present", sheet1_headers)
-        self.assertNotIn("Barrier to Visibility (BTV)", sheet3_headers)
-        self.assertNotIn("Top Slot Diversity Index (TSDI)", sheet3_headers)
-        self.assertNotIn("Upvote to Root Comment Ratio", sheet3_headers)
-        self.assertNotIn("Requires Verification", sheet3_headers)
-        self.assertIn("Minimum Post Karma", sheet3_headers)
-        self.assertIn("Sync Status", sheet3_headers)
-        migrated = {
-            item["range"]: item["values"][0][0]
-            for batch, _ in store.sheet1.batch_updates
-            for item in batch
-        }
-        self.assertEqual(migrated["C2"], "yes")
+        self.assertEqual(states["target"].status, "success")
+        self.assertEqual(states["target"].scraped_at, datetime(2026, 9, 2, tzinfo=timezone.utc))
+        self.assertIn("Min Post Karma", headers)
+        self.assertIn("Sync Error", headers)
+        self.assertEqual(store.sheet1.col_count, 17)
 
 
 if __name__ == "__main__":
