@@ -14,6 +14,7 @@ from scraper.subreddit_sync import (
     bootstrap_cycle_state,
     build_parser,
     compact_top_posts,
+    detect_bot_bouncer,
     detect_cta_titles,
     detect_verification_requirement,
     normalize_subreddit,
@@ -108,6 +109,10 @@ class SubredditSyncTests(unittest.TestCase):
             "No verification is required to post here.",
         ]))
         self.assertFalse(detect_verification_requirement(["Be respectful and follow Reddit rules."]))
+
+    def test_bot_bouncer_detection_does_not_treat_other_bots_as_botbouncer(self):
+        self.assertTrue(detect_bot_bouncer(["AutoModerator", "Bot-Bouncer"]))
+        self.assertFalse(detect_bot_bouncer(["AutoModerator", "SafestBot"]))
 
     def test_compact_weekly_top_ten(self):
         posts = [

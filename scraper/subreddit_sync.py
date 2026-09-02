@@ -57,7 +57,7 @@ NO_VERIFICATION_PATTERNS = (
     re.compile(r"\b(?:do\s+not|don['’]t)\s+need\s+to\s+verify\b", re.IGNORECASE),
     re.compile(r"\bno\s+need\s+to\s+verify\b", re.IGNORECASE),
 )
-BOT_BOUNCER_NAMES = ("botbouncer", "safestbot")
+BOT_BOUNCER_NAME = "botbouncer"
 CYCLE_METADATA_KEY = "ofmreddit_scraper_cycle_v1"
 
 try:
@@ -133,6 +133,11 @@ def detect_verification_requirement(texts: Iterable[str]) -> bool:
         if VERIFICATION_PATTERN.search(without_negatives):
             return True
     return False
+
+
+def detect_bot_bouncer(moderators: Iterable[Any]) -> bool:
+    moderator_names = [re.sub(r"[^a-z0-9]+", "", str(moderator).lower()) for moderator in moderators]
+    return any(BOT_BOUNCER_NAME in name for name in moderator_names)
 
 
 def compact_top_posts(posts: Sequence[Any]) -> list[dict[str, Any]]:
@@ -367,10 +372,7 @@ class RedditAnalyzer:
 
         try:
             moderators = self._call(lambda: list(subreddit.moderator()), f"r/{source.key} moderators")
-            moderator_names = [re.sub(r"[^a-z0-9]+", "", str(mod).lower()) for mod in moderators]
-            has_bot_bouncer: bool | None = any(
-                marker in name for name in moderator_names for marker in BOT_BOUNCER_NAMES
-            )
+            has_bot_bouncer: bool | None = detect_bot_bouncer(moderators)
         except Exception as exc:
             LOG.warning("r/%s moderator list unavailable: %s", source.key, exc)
             has_bot_bouncer = None

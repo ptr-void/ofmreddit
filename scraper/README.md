@@ -10,7 +10,7 @@
 
 - Members/subscribers
 - Observed minimum post, comment, and combined karma plus account age
-- BotBouncer/SafestBot moderator detection, including names such as `bot-bouncer`
+- BotBouncer moderator detection, including names such as `bot-bouncer`
 - Creator verification requirement detection from subreddit rules and descriptions
 - Weekly top 10 post details and the 1 / 2-5 / 6-10 upvote summaries
 - CTA title evidence for `?`, `do`, `or`, `would`, `how`, and `what` after a one-hour survival window

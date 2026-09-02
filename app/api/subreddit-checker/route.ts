@@ -212,7 +212,7 @@ export async function POST(request: NextRequest) {
         const mods = modsData.data?.children || []
         hasBotBouncer = mods.some((m: any) => {
           const normalized = String(m.name || "").toLowerCase().replace(/[^a-z0-9]/g, "")
-          return normalized.includes("botbouncer") || normalized.includes("safestbot")
+          return normalized.includes("botbouncer")
         });
       }
 
