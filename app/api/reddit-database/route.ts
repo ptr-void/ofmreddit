@@ -18,7 +18,6 @@ const ADVANCED_HEADERS = [
   "Hot 2-5 Avg (Weekly)",
   "Hot 6-10 Avg (Weekly)",
   "Bot Bouncer",
-  "Requires Verification",
   "CTA Captions",
 ]
 
@@ -81,7 +80,6 @@ function mergedAdvancedValues(
     value("Weekly Top 2-5 Avg Upvotes", cached?.hot_2_5_weekly_avg),
     value("Weekly Top 6-10 Avg Upvotes", cached?.hot_6_10_weekly_avg),
     yesNo(sheetCell(analyticsRow, analyticsLookup, "Bot Bouncer Present"), cached?.has_bot_bouncer),
-    yesNo(sheetCell(analyticsRow, analyticsLookup, "Requires Verification"), cached?.requires_verification),
     yesNo(sheetCell(analyticsRow, analyticsLookup, "CTA Captions"), cached?.allows_cta_captions),
   ]
 }
@@ -132,13 +130,23 @@ export async function GET() {
       (header) => header.trim().toLowerCase() === "subreddit",
     )
     if (subredditIndex !== -1) {
+      const verificationIndex = mainSheet.headers.findIndex(
+        (header) => header.trim().toLowerCase() === "verification",
+      )
       mainSheet.headers.push(...ADVANCED_HEADERS)
       const existing = new Set<string>()
 
       mainSheet.rows = mainSheet.rows.map((row) => {
         const key = normalize(row[subredditIndex] || "")
         existing.add(key)
-        row.push(...mergedAdvancedValues(analyticsMap.get(key)?.row, analyticsLookup, cacheMap.get(key)))
+        const analyticsRow = analyticsMap.get(key)?.row
+        const cached = cacheMap.get(key)
+        const scrapedVerification = yesNo(
+          sheetCell(analyticsRow, analyticsLookup, "Requires Verification"),
+          cached?.requires_verification,
+        )
+        if (verificationIndex !== -1 && scrapedVerification) row[verificationIndex] = scrapedVerification
+        row.push(...mergedAdvancedValues(analyticsRow, analyticsLookup, cached))
         return row
       })
 
@@ -152,6 +160,9 @@ export async function GET() {
           ["tags", "niche"].includes(header.trim().toLowerCase()),
         )
         if (nicheIndex !== -1 && cached.niche_tags) row[nicheIndex] = cached.niche_tags
+        if (verificationIndex !== -1) {
+          row[verificationIndex] = yesNo("", cached.requires_verification)
+        }
         const advanced = mergedAdvancedValues(analyticsMap.get(key)?.row, analyticsLookup, cached)
         advanced.forEach((value, index) => {
           row[mainSheet.headers.length - ADVANCED_HEADERS.length + index] = value

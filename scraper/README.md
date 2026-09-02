@@ -3,17 +3,15 @@
 ## Confirmed legacy lineage
 
 - `fred - sheet 1.py` is the newest Fred file by modification time (March 1, 2026, 08:25) and updates Sheet1 `Total Members`.
-- `fred - sheet 3.py` is the advanced analyzer that created the seven current Sheet3 columns. `fred - sheet 3 errors.py` is its newer March 1 retry utility, not a different analytics model.
+- `fred - sheet 3.py` is the legacy advanced analyzer. Its unused BTV, TSDI, and upvote/comment fields have been retired; the maintained sync writes only fields used by the website plus recovery checkpoints.
 - `scraper/subreddit_sync.py` replaces those three execution paths with one resumable command.
 
 ## What the v2 command collects
 
 - Members/subscribers
-- BTV and TSDI
-- Upvote/comment ratio (`total comments` by default; pass `--exact-root-comments` for the slower legacy basis)
 - Observed minimum post, comment, and combined karma plus account age
 - BotBouncer/SafestBot moderator detection, including names such as `bot-bouncer`
-- Restricted/private verification signal
+- Creator verification requirement detection from subreddit rules and descriptions
 - Weekly top 10 post details and the 1 / 2-5 / 6-10 upvote summaries
 - CTA title evidence for `?`, `do`, `or`, `would`, `how`, and `what` after a one-hour survival window
 
@@ -23,7 +21,7 @@ The minimum karma and age fields are **observed successful-poster minima**, not 
 
 - No Google Sheet or MySQL writes occur without `--write-sheets` or `--write-db`.
 - Sheet3 is matched by normalized subreddit name. Duplicate Sheet3 rows receive the same update; a different subreddit is never overwritten because its row number changed.
-- Sheet1 writes are batched and limited to column D (`Total Members`). Existing Verification, Niche, and Link values are preserved. Bot Bouncer is stored once in Sheet3 and joined into the website response there.
+- Sheet1 writes are batched and header-matched to `Total Members` and scraper-managed `Verification`. Existing Niche and Link values are preserved. Bot Bouncer is stored once in Sheet3 and joined into the website response there.
 - Sheet3 keeps only website-facing analytics plus `Scraped At UTC`, `Sync Status`, and `Sync Error`. Raw evidence and duplicate values still flow to MySQL where applicable, but are not duplicated into visible Google Sheet columns.
 - Failed scrapes update only status/error metadata; last successful analytics remain intact.
 - Individual unavailable/private subreddit errors are recorded without failing the whole batch, so successful rows remain committed. Use `--fail-on-row-error` when strict batch failure is required.

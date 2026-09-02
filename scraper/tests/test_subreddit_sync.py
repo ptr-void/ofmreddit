@@ -15,6 +15,7 @@ from scraper.subreddit_sync import (
     build_parser,
     compact_top_posts,
     detect_cta_titles,
+    detect_verification_requirement,
     normalize_subreddit,
     parse_utc,
     select_sources,
@@ -24,11 +25,13 @@ from scraper.subreddit_sync import (
 
 
 class FakeWorksheet:
-    def __init__(self, col_count=26):
+    def __init__(self, col_count=26, values=None):
         self.updates = []
         self.batch_updates = []
         self.col_count = col_count
         self.added_cols = []
+        self.deleted_cols = []
+        self.values = [list(row) for row in (values or [])]
 
     def update(self, **kwargs):
         self.updates.append(kwargs)
@@ -39,6 +42,13 @@ class FakeWorksheet:
     def add_cols(self, count):
         self.added_cols.append(count)
         self.col_count += count
+
+    def get_all_values(self):
+        return self.values
+
+    def delete_columns(self, index):
+        self.deleted_cols.append(index)
+        self.col_count -= 1
 
 
 class FakeWorkbook:
@@ -85,6 +95,15 @@ class SubredditSyncTests(unittest.TestCase):
         allowed, matches, sample = detect_cta_titles([])
         self.assertIsNone(allowed)
         self.assertEqual((matches, sample), (0, 0))
+
+    def test_verification_requirement_detection_uses_rules_and_ignores_explicit_negative(self):
+        self.assertTrue(detect_verification_requirement([
+            "Rule 4: Creators must complete verification before posting.",
+        ]))
+        self.assertFalse(detect_verification_requirement([
+            "No verification is required to post here.",
+        ]))
+        self.assertFalse(detect_verification_requirement(["Be respectful and follow Reddit rules."]))
 
     def test_compact_weekly_top_ten(self):
         posts = [
@@ -232,8 +251,9 @@ class SubredditSyncTests(unittest.TestCase):
 
     def test_sheet_writer_matches_name_and_never_uses_ad_hoc_sheet1_row(self):
         store = object.__new__(GoogleSheetStore)
-        store.sheet1 = FakeWorksheet()
-        store.sheet3 = FakeWorksheet(col_count=7)
+        store.sheet1 = FakeWorksheet(values=[["Subreddit", "Link", "Verification", "Total Members", "Niche"]])
+        store.sheet3 = FakeWorksheet(col_count=7, values=[["Subreddit"], ["other"], ["target"], ["target"]])
+        store._sheet1_values = store.sheet1.values
         store._sheet3_values = [["Subreddit"], ["other"], ["target"], ["target"]]
         store._sheet3_headers = ["Subreddit"]
         result = ScrapeResult(
@@ -247,8 +267,8 @@ class SubredditSyncTests(unittest.TestCase):
         store.write_results([result])
 
         self.assertEqual(store.sheet1.batch_updates, [])
-        self.assertEqual(store.sheet3.col_count, 17)
-        self.assertEqual(store.sheet3.added_cols, [10])
+        self.assertEqual(store.sheet3.col_count, 13)
+        self.assertEqual(store.sheet3.added_cols, [6])
         written_ranges = {
             item["range"]
             for batch, _ in store.sheet3.batch_updates
@@ -258,10 +278,11 @@ class SubredditSyncTests(unittest.TestCase):
         self.assertIn("A4", written_ranges)
         self.assertNotIn("A2", written_ranges)
 
-    def test_sheet1_writer_only_updates_total_members(self):
+    def test_sheet1_writer_updates_members_and_scraped_verification_by_header(self):
         store = object.__new__(GoogleSheetStore)
-        store.sheet1 = FakeWorksheet()
-        store.sheet3 = FakeWorksheet(col_count=17)
+        store.sheet1 = FakeWorksheet(values=[["Subreddit", "Link", "Verification", "Total Members", "Niche"]])
+        store.sheet3 = FakeWorksheet(col_count=13, values=[["Subreddit"], ["target"]])
+        store._sheet1_values = store.sheet1.values
         store._sheet3_values = [["Subreddit"], ["target"]]
         store._sheet3_headers = ["Subreddit"]
         result = ScrapeResult(
@@ -270,6 +291,7 @@ class SubredditSyncTests(unittest.TestCase):
             scraped_at_utc="2026-09-01T00:00:00Z",
             subscribers=456,
             has_bot_bouncer=True,
+            requires_verification=True,
         )
 
         store.write_results([result])
@@ -279,7 +301,45 @@ class SubredditSyncTests(unittest.TestCase):
             for batch, _ in store.sheet1.batch_updates
             for item in batch
         }
-        self.assertEqual(sheet1_ranges, {"D2"})
+        self.assertEqual(sheet1_ranges, {"C2", "D2"})
+
+    def test_managed_schema_deletes_redundant_sheet_columns(self):
+        store = object.__new__(GoogleSheetStore)
+        store.sheet1 = FakeWorksheet(values=[
+            ["Subreddit", "Link", "Verification", "Total Members", "Niche", "Bot Bouncer Present"],
+            ["target", "https://reddit.com/r/target", "manual", "123", "general", "yes"],
+        ])
+        store.sheet3 = FakeWorksheet(values=[
+            [
+                "Subreddit",
+                "Barrier to Visibility (BTV)",
+                "Top Slot Diversity Index (TSDI)",
+                "Upvote to Root Comment Ratio",
+                "Minimum Post Karma",
+                "Requires Verification",
+                "Sync Status",
+            ],
+            ["target", "4", "31", "39.67", "10", "yes", "success"],
+        ])
+        store._sheet1_values = store.sheet1.values
+        store._sheet3_values = store.sheet3.values
+        store._sheet3_headers = list(store.sheet3.values[0])
+
+        sheet1_headers, sheet3_headers = store.ensure_managed_schema()
+
+        self.assertNotIn("Bot Bouncer Present", sheet1_headers)
+        self.assertNotIn("Barrier to Visibility (BTV)", sheet3_headers)
+        self.assertNotIn("Top Slot Diversity Index (TSDI)", sheet3_headers)
+        self.assertNotIn("Upvote to Root Comment Ratio", sheet3_headers)
+        self.assertNotIn("Requires Verification", sheet3_headers)
+        self.assertIn("Minimum Post Karma", sheet3_headers)
+        self.assertIn("Sync Status", sheet3_headers)
+        migrated = {
+            item["range"]: item["values"][0][0]
+            for batch, _ in store.sheet1.batch_updates
+            for item in batch
+        }
+        self.assertEqual(migrated["C2"], "yes")
 
 
 if __name__ == "__main__":

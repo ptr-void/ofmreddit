@@ -1,13 +1,11 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Database, BarChart3, User, Bookmark } from "lucide-react"
 import { RefreshIcon, WarningIcon } from "@/components/reddit-database/icons"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select2"
 import CreatorProfile, { type CreatorProfileValues } from "@/components/reddit-database/creator-profile"
 import SavedProfiles from "@/components/reddit-database/saved-profile"
 import DatabaseTable from "@/components/reddit-database/database-table"
-import AnalysisTable from "@/components/reddit-database/analysis-table"
 import SubscriptionTiers from "@/components/subscription/tiers"
 import SubmitSubredditModal from "@/components/reddit-database/submit-subreddit-modal"
 import { saveCreatorProfile, loadCreatorProfile } from "@/lib/session-cache/creator-profile-cache"
@@ -85,7 +83,6 @@ export default function RedditDatabasePage() {
   const [normalizedProfile, setNormalizedProfile] = useState<any | null>(null)
   const [currentProfile, setCurrentProfile] = useState<CreatorProfileValues | null>(null)
   const [cachedProfile, setCachedProfile] = useState<CreatorProfileValues | null>(null)
-  const [activeTab, setActiveTab] = useState<"database" | "analysis">("database")
   const [showTiers, setShowTiers] = useState(false)
   const [showMinReqs, setShowMinReqs] = useState(false)
 
@@ -319,21 +316,6 @@ export default function RedditDatabasePage() {
                 text={
                   <div className="space-y-2 text-foreground">
                     <div>
-                      <p className="font-medium">Barrier to Visibility (BTV)</p>
-                      <p>Indicates how difficult it is to get exposure in the subreddit. Higher values mean stronger competition or stricter posting dynamics.</p>
-                    </div>
-
-                    <div>
-                      <p className="font-medium">TSDI</p>
-                      <p>Top Slot Diversity Index. Measures how concentrated top-performing posts are. Lower diversity means fewer creators dominate visibility.</p>
-                    </div>
-
-                    <div>
-                      <p className="font-medium">Upvote / Comment Ratio</p>
-                      <p>Shows engagement behavior. Higher ratios suggest passive consumption, while lower ratios suggest more discussion.</p>
-                    </div>
-
-                    <div>
                       <p className="font-medium">Minimum Post Karma</p>
                       <p>The minimum required post karma to publish in the subreddit.</p>
                     </div>
@@ -462,54 +444,22 @@ export default function RedditDatabasePage() {
                 </div>
               </div>
 
-              <div className="flex gap-2 border-b border-border">
+              <div className="flex justify-end gap-2 border-b border-border pb-2">
                 <button
                   type="button"
-                  onClick={() => setActiveTab("database")}
-                  className={`inline-flex items-center gap-2 px-3 py-2 text-xs font-medium transition ${
-                    activeTab === "database"
-                      ? "border-b-2 border-primary text-foreground"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
+                  onClick={() => setShowMinReqs(!showMinReqs)}
+                  className="inline-flex items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition"
                 >
-                  <Database className="h-4 w-4" />
-                  Subreddit Database
+                  {showMinReqs ? "Hide Min Reqs" : "Show Min Reqs"}
                 </button>
-
-                {/* Hidden / Commented out for now as requested by Fred
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("analysis")}
-                  className={`inline-flex items-center gap-2 px-3 py-2 text-xs font-medium transition ${
-                    activeTab === "analysis"
-                      ? "border-b-2 border-primary text-foreground"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  <BarChart3 className="h-4 w-4" />
-                  Subreddit Analysis
-                </button>
-                */}
-
-                {activeTab === "database" && (
-                  <div className="ml-auto flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowMinReqs(!showMinReqs)}
-                      className="inline-flex items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition"
-                    >
-                      {showMinReqs ? "Hide Min Reqs" : "Show Min Reqs"}
-                    </button>
-                    <SubmitSubredditModal>
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-md transition"
-                      >
-                        Submit a Subreddit
-                      </button>
-                    </SubmitSubredditModal>
-                  </div>
-                )}
+                <SubmitSubredditModal>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-md transition"
+                  >
+                    Submit a Subreddit
+                  </button>
+                </SubmitSubredditModal>
               </div>
 
               <div className="px-1 text-xs text-muted-foreground">
@@ -524,38 +474,30 @@ export default function RedditDatabasePage() {
                 })()}
               </div>
 
-              {activeTab === "database" ? (
-                (() => {
-                  let renderHeaders = sheetData.headers
-                  let renderRows = filteredRows
+              {(() => {
+                let renderHeaders = sheetData.headers
+                let renderRows = filteredRows
 
-                  if (!showMinReqs) {
-                    const hideCols = new Set(["Min Post Karma", "Min Comment Karma", "Min Total Karma", "Min Account Age"])
-                    const keepIndices = renderHeaders
-                      .map((h, i) => hideCols.has(h) ? -1 : i)
-                      .filter(i => i !== -1)
-                    
-                    renderHeaders = renderHeaders.filter((_, i) => keepIndices.includes(i))
-                    renderRows = renderRows.map(row => row.filter((_, i) => keepIndices.includes(i)))
-                  }
+                if (!showMinReqs) {
+                  const hideCols = new Set(["Min Post Karma", "Min Comment Karma", "Min Total Karma", "Min Account Age"])
+                  const keepIndices = renderHeaders
+                    .map((h, i) => hideCols.has(h) ? -1 : i)
+                    .filter(i => i !== -1)
 
-                  return (
-                    <DatabaseTable 
-                      headers={renderHeaders} 
-                      rows={renderRows} 
-                      sortState={sortState} 
-                      onSort={handleSort} 
-                      subredditNicheMap={subredditNicheMapRef.current}
-                    />
-                  )
-                })()
-              ) : (
-                <AnalysisTable 
-                  sortState={sortState} 
-                  onSort={handleSort} 
-                  onShowTiers={() => setShowTiers(true)}
-                />
-              )}
+                  renderHeaders = renderHeaders.filter((_, i) => keepIndices.includes(i))
+                  renderRows = renderRows.map(row => row.filter((_, i) => keepIndices.includes(i)))
+                }
+
+                return (
+                  <DatabaseTable
+                    headers={renderHeaders}
+                    rows={renderRows}
+                    sortState={sortState}
+                    onSort={handleSort}
+                    subredditNicheMap={subredditNicheMapRef.current}
+                  />
+                )
+              })()}
             </section>
           )
         )}

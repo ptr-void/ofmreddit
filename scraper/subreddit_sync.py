@@ -14,7 +14,6 @@ import logging
 import os
 import random
 import re
-import statistics
 import sys
 import time
 import uuid
@@ -28,20 +27,13 @@ LOG = logging.getLogger("subreddit_sync")
 UTC = timezone.utc
 T = TypeVar("T")
 
-LEGACY_SHEET3_HEADERS = [
+SHEET3_HEADERS = [
     "Subreddit",
-    "Barrier to Visibility (BTV)",
-    "Top Slot Diversity Index (TSDI)",
-    "Upvote to Root Comment Ratio",
     "Minimum Post Karma",
     "Minimum Comment Karma",
     "Minimum Account Age (days)",
-]
-
-EXTRA_SHEET3_HEADERS = [
     "Minimum Combined Karma",
     "Bot Bouncer Present",
-    "Requires Verification",
     "Weekly Top 1 Upvotes",
     "Weekly Top 2-5 Avg Upvotes",
     "Weekly Top 6-10 Avg Upvotes",
@@ -51,8 +43,27 @@ EXTRA_SHEET3_HEADERS = [
     "Sync Error",
 ]
 
-SHEET3_HEADERS = LEGACY_SHEET3_HEADERS + EXTRA_SHEET3_HEADERS
+REMOVED_SHEET3_HEADERS = {
+    "barrier to visibility (btv)",
+    "top slot diversity index (tsdi)",
+    "upvote to root comment ratio",
+    "total members",
+    "observed accounts",
+    "requires verification",
+    "weekly top 10 posts",
+    "cta match count",
+    "cta sample size",
+    "comment ratio basis",
+}
+REMOVED_SHEET1_HEADERS = {"bot bouncer", "bot bouncer present"}
 CTA_PATTERN = re.compile(r"\?|\b(?:do|or|would|how|what)\b", re.IGNORECASE)
+VERIFICATION_PATTERN = re.compile(r"\b(?:verification|verify|verified|unverified)\b", re.IGNORECASE)
+NO_VERIFICATION_PATTERNS = (
+    re.compile(r"\bno\s+verification\s+(?:is\s+)?required\b", re.IGNORECASE),
+    re.compile(r"\bverification\s+is\s+not\s+required\b", re.IGNORECASE),
+    re.compile(r"\b(?:do\s+not|don['’]t)\s+need\s+to\s+verify\b", re.IGNORECASE),
+    re.compile(r"\bno\s+need\s+to\s+verify\b", re.IGNORECASE),
+)
 BOT_BOUNCER_NAMES = ("botbouncer", "safestbot")
 CYCLE_METADATA_KEY = "ofmreddit_scraper_cycle_v1"
 
@@ -118,6 +129,19 @@ def detect_cta_titles(
     return matches >= threshold, matches, sample_size
 
 
+def detect_verification_requirement(texts: Iterable[str]) -> bool:
+    for text in texts:
+        clean = re.sub(r"\s+", " ", str(text or "")).strip()
+        if not clean or not VERIFICATION_PATTERN.search(clean):
+            continue
+        without_negatives = clean
+        for pattern in NO_VERIFICATION_PATTERNS:
+            without_negatives = pattern.sub("", without_negatives)
+        if VERIFICATION_PATTERN.search(without_negatives):
+            return True
+    return False
+
+
 def compact_top_posts(posts: Sequence[Any]) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     for rank, post in enumerate(posts[:10], start=1):
@@ -181,10 +205,6 @@ class ScrapeResult:
     status: str = "success"
     error: str = ""
     subscribers: int | None = None
-    btv: int | None = None
-    tsdi: int | None = None
-    upvote_comment_ratio: float | None = None
-    comment_ratio_basis: str = "total comments"
     min_post_karma: int | None = None
     min_comment_karma: int | None = None
     min_combined_karma: int | None = None
@@ -215,15 +235,11 @@ class ScrapeResult:
         bool_label = lambda value: "Unknown" if value is None else ("Yes" if value else "No")
         return {
             "Subreddit": self.subreddit,
-            "Barrier to Visibility (BTV)": self.btv,
-            "Top Slot Diversity Index (TSDI)": self.tsdi,
-            "Upvote to Root Comment Ratio": self.upvote_comment_ratio,
             "Minimum Post Karma": self.min_post_karma,
             "Minimum Comment Karma": self.min_comment_karma,
             "Minimum Account Age (days)": self.min_account_age_days,
             "Minimum Combined Karma": self.min_combined_karma,
             "Bot Bouncer Present": bool_label(self.has_bot_bouncer),
-            "Requires Verification": bool_label(self.requires_verification),
             "Weekly Top 1 Upvotes": self.weekly_top_1_upvotes,
             "Weekly Top 2-5 Avg Upvotes": self.weekly_top_2_5_avg_upvotes,
             "Weekly Top 6-10 Avg Upvotes": self.weekly_top_6_10_avg_upvotes,
@@ -275,9 +291,7 @@ class RedditAnalyzer:
     def __init__(
         self,
         *,
-        hot_limit: int,
         new_limit: int,
-        exact_root_comments: bool,
         retry_attempts: int,
         retry_base_delay: float,
     ) -> None:
@@ -310,9 +324,7 @@ class RedditAnalyzer:
         self.reddit = praw.Reddit(
             **reddit_options,
         )
-        self.hot_limit = hot_limit
         self.new_limit = new_limit
-        self.exact_root_comments = exact_root_comments
         self.retry_attempts = retry_attempts
         self.retry_base_delay = retry_base_delay
 
@@ -337,8 +349,26 @@ class RedditAnalyzer:
         now_epoch = time.time()
 
         subscribers = int(getattr(subreddit, "subscribers", 0) or 0)
-        subreddit_type = str(getattr(subreddit, "subreddit_type", "") or "").lower()
-        requires_verification = subreddit_type in {"restricted", "private"}
+        verification_texts = [
+            str(getattr(subreddit, "public_description", "") or ""),
+            str(getattr(subreddit, "description", "") or ""),
+        ]
+        try:
+            rules = self._call(lambda: list(subreddit.rules), f"r/{source.key} rules")
+            for rule in rules:
+                verification_texts.extend([
+                    str(getattr(rule, "short_name", "") or ""),
+                    str(getattr(rule, "description", "") or ""),
+                    str(getattr(rule, "violation_reason", "") or ""),
+                ])
+            requires_verification: bool | None = detect_verification_requirement(verification_texts)
+        except Exception as exc:
+            LOG.warning("r/%s rules unavailable: %s", source.key, exc)
+            requires_verification = (
+                detect_verification_requirement(verification_texts)
+                if any(text.strip() for text in verification_texts)
+                else None
+            )
 
         try:
             moderators = self._call(lambda: list(subreddit.moderator()), f"r/{source.key} moderators")
@@ -355,24 +385,6 @@ class RedditAnalyzer:
             f"r/{source.key} weekly top",
         )
         weekly_scores = [int(getattr(post, "score", 0) or 0) for post in weekly_posts]
-
-        hot_posts = self._call(lambda: list(subreddit.hot(limit=self.hot_limit)), f"r/{source.key} hot")
-        hot_scores = [int(getattr(post, "score", 0) or 0) for post in hot_posts]
-        btv = int(statistics.median(hot_scores)) if hot_scores else 0
-        tsdi = len({str(post.author).lower() for post in hot_posts if getattr(post, "author", None)})
-
-        if self.exact_root_comments:
-            root_comments = 0
-            for post in hot_posts:
-                self._call(lambda post=post: post.comments.replace_more(limit=0), f"post {post.id} comments")
-                root_comments += len(post.comments)
-            comment_count = root_comments
-            ratio_basis = "root comments"
-        else:
-            comment_count = sum(int(getattr(post, "num_comments", 0) or 0) for post in hot_posts)
-            ratio_basis = "total comments"
-        score_total = sum(hot_scores)
-        ratio = round(score_total / comment_count, 2) if comment_count else float(score_total)
 
         new_posts = self._call(lambda: list(subreddit.new(limit=self.new_limit)), f"r/{source.key} new")
         cta_allowed, cta_matches, cta_sample = detect_cta_titles(new_posts, now_epoch=now_epoch)
@@ -414,10 +426,6 @@ class RedditAnalyzer:
             source_row=source.sheet_row,
             scraped_at_utc=scraped_at,
             subscribers=subscribers,
-            btv=btv,
-            tsdi=tsdi,
-            upvote_comment_ratio=ratio,
-            comment_ratio_basis=ratio_basis,
             min_post_karma=min(post_karma) if post_karma else None,
             min_comment_karma=min(comment_karma) if comment_karma else None,
             min_combined_karma=min(combined_karma) if combined_karma else None,
@@ -501,6 +509,7 @@ class GoogleSheetStore:
             self.sheet3 = workbook.add_worksheet(title=os.getenv("SHEET3_NAME", "Sheet3"), rows=1000, cols=30)
         self._sheet3_values: list[list[str]] | None = None
         self._sheet3_headers: list[str] | None = None
+        self._sheet1_values: list[list[str]] | None = None
 
     def load_cycle_state(self) -> CycleState | None:
         metadata = self.workbook.fetch_sheet_metadata(
@@ -557,7 +566,9 @@ class GoogleSheetStore:
         self.workbook.batch_update({"requests": [request]})
 
     def source_rows(self) -> list[SourceRow]:
-        values = self.sheet1.get_all_values()
+        if self._sheet1_values is None:
+            self._sheet1_values = self.sheet1.get_all_values()
+        values = self._sheet1_values
         if not values:
             return []
         result: list[SourceRow] = []
@@ -632,10 +643,99 @@ class GoogleSheetStore:
         if current_columns < required_columns:
             self.sheet3.add_cols(required_columns - current_columns)
 
+    def _delete_columns_by_header(
+        self,
+        worksheet: Any,
+        removed_headers: set[str],
+        values: list[list[str]],
+    ) -> list[str]:
+        headers = list(values[0]) if values else []
+        indexes = [
+            index
+            for index, header in enumerate(headers)
+            if header.strip().lower() in removed_headers
+        ]
+        for index in sorted(indexes, reverse=True):
+            worksheet.delete_columns(index + 1)
+            for row in values:
+                if index < len(row):
+                    row.pop(index)
+            headers.pop(index)
+        return headers
+
+    def _migrate_legacy_verification_to_sheet1(
+        self,
+        sheet1_values: list[list[str]],
+        sheet3_values: list[list[str]],
+    ) -> None:
+        if not sheet1_values or not sheet3_values:
+            return
+        sheet1_lookup = {
+            header.strip().lower(): index for index, header in enumerate(sheet1_values[0])
+        }
+        sheet3_lookup = {
+            header.strip().lower(): index for index, header in enumerate(sheet3_values[0])
+        }
+        sheet1_subreddit = sheet1_lookup.get("subreddit")
+        sheet1_verification = sheet1_lookup.get("verification")
+        sheet3_subreddit = sheet3_lookup.get("subreddit")
+        sheet3_verification = sheet3_lookup.get("requires verification")
+        if None in {
+            sheet1_subreddit,
+            sheet1_verification,
+            sheet3_subreddit,
+            sheet3_verification,
+        }:
+            return
+
+        source_values: dict[str, str] = {}
+        for row in sheet3_values[1:]:
+            if sheet3_subreddit >= len(row) or sheet3_verification >= len(row):
+                continue
+            key = normalize_subreddit(row[sheet3_subreddit])
+            value = row[sheet3_verification].strip().lower()
+            if key and value in {"yes", "no", "true", "false", "1", "0"}:
+                source_values[key] = "yes" if value in {"yes", "true", "1"} else "no"
+
+        updates: dict[str, dict[str, Any]] = {}
+        for row_number, row in enumerate(sheet1_values[1:], start=2):
+            if sheet1_subreddit >= len(row):
+                continue
+            value = source_values.get(normalize_subreddit(row[sheet1_subreddit]))
+            if value is None:
+                continue
+            cell = f"{column_letters(sheet1_verification + 1)}{row_number}"
+            updates[cell] = {"range": cell, "values": [[value]]}
+            while len(row) <= sheet1_verification:
+                row.append("")
+            row[sheet1_verification] = value
+
+        pending = list(updates.values())
+        for start in range(0, len(pending), 400):
+            self.sheet1.batch_update(pending[start:start + 400], value_input_option="RAW")
+
+    def ensure_managed_schema(self) -> tuple[list[str], list[str]]:
+        if self._sheet1_values is None:
+            self._sheet1_values = self.sheet1.get_all_values()
+        _, sheet3_values = self._load_sheet3()
+        self._migrate_legacy_verification_to_sheet1(self._sheet1_values, sheet3_values)
+        sheet1_headers = self._delete_columns_by_header(
+            self.sheet1,
+            REMOVED_SHEET1_HEADERS,
+            self._sheet1_values,
+        )
+        sheet3_headers = self._delete_columns_by_header(
+            self.sheet3,
+            REMOVED_SHEET3_HEADERS,
+            sheet3_values,
+        )
+        self._sheet3_headers = sheet3_headers
+        return sheet1_headers, self.ensure_headers()
+
     def write_results(self, results: Sequence[ScrapeResult]) -> None:
         if not results:
             return
-        headers = self.ensure_headers()
+        sheet1_headers, headers = self.ensure_managed_schema()
         _, values = self._load_sheet3()
         header_lookup = {header.strip().lower(): index + 1 for index, header in enumerate(headers)}
         row_map: dict[str, list[int]] = {}
@@ -675,14 +775,25 @@ class GoogleSheetStore:
         for start in range(0, len(updates), 400):
             self.sheet3.batch_update(updates[start:start + 400], value_input_option="RAW")
 
+        sheet1_lookup = {header.strip().lower(): index + 1 for index, header in enumerate(sheet1_headers)}
+        member_column = sheet1_lookup.get("total members")
+        verification_column = sheet1_lookup.get("verification")
         sheet1_updates: list[dict[str, Any]] = []
         for result in results:
             if result.status != "success":
                 continue
             if result.source_row < 2:
                 continue
-            if result.subscribers is not None:
-                sheet1_updates.append({"range": f"D{result.source_row}", "values": [[result.subscribers]]})
+            if result.subscribers is not None and member_column is not None:
+                sheet1_updates.append({
+                    "range": f"{column_letters(member_column)}{result.source_row}",
+                    "values": [[result.subscribers]],
+                })
+            if result.requires_verification is not None and verification_column is not None:
+                sheet1_updates.append({
+                    "range": f"{column_letters(verification_column)}{result.source_row}",
+                    "values": [["yes" if result.requires_verification else "no"]],
+                })
         if sheet1_updates:
             self.sheet1.batch_update(sheet1_updates, value_input_option="RAW")
 
@@ -690,9 +801,6 @@ class GoogleSheetStore:
 class MySQLStore:
     FIELD_MAP = {
         "subscribers": "subscribers",
-        "btv": "btv",
-        "tsdi": "tsdi",
-        "upvote_comment_ratio": "upvote_comment_ratio",
         "min_post_karma": "min_post_karma",
         "min_comment_karma": "min_comment_karma",
         "min_combined_karma": "min_combined_karma",
@@ -946,9 +1054,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=int(os.getenv("SYNC_ERROR_RETRY_AFTER_HOURS", "24")),
         help="Wait this many hours before retrying a row whose latest scrape failed",
     )
-    parser.add_argument("--hot-limit", type=int, default=int(os.getenv("HOT_LIMIT", "25")))
     parser.add_argument("--new-limit", type=int, default=int(os.getenv("NEW_LIMIT", "25")))
-    parser.add_argument("--exact-root-comments", action="store_true", help="Slower: fetch comment trees for an exact root-comment ratio")
     parser.add_argument("--force", action="store_true", help="Ignore successful freshness checkpoints")
     parser.add_argument(
         "--fail-on-row-error",
@@ -1073,9 +1179,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     analyzer = RedditAnalyzer(
-        hot_limit=max(1, min(args.hot_limit, 100)),
         new_limit=max(1, min(args.new_limit, 100)),
-        exact_root_comments=args.exact_root_comments,
         retry_attempts=max(1, args.retry_attempts),
         retry_base_delay=max(0.1, args.retry_base_delay),
     )
@@ -1086,10 +1190,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         try:
             result = analyzer.analyze(source)
             LOG.info(
-                "r/%s success: members=%s btv=%s weekly_top1=%s observed_accounts=%s",
+                "r/%s success: members=%s verification=%s weekly_top1=%s observed_accounts=%s",
                 source.key,
                 result.subscribers,
-                result.btv,
+                result.requires_verification,
                 result.weekly_top_1_upvotes,
                 result.observed_accounts,
             )
