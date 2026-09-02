@@ -35,6 +35,8 @@ ANALYTICS_ALIASES = {
     "Sync Error": "Sync Error",
 }
 
+COLUMN_WIDTHS = [190, 270, 110, 130, 220, 135, 145, 135, 135, 125, 145, 165, 165, 125, 180, 110, 260]
+
 
 def lookup(headers: list[str]) -> dict[str, int]:
     return {header.strip().lower(): index for index, header in enumerate(headers)}
@@ -160,6 +162,48 @@ def apply_single_table(workbook: Any, matrix: list[list[str]], delete_extra_shee
         raise RuntimeError("Sheet1 read-back did not match the migration matrix; extra tabs were preserved")
 
     sheet1.resize(rows=len(matrix), cols=len(SHEET1_REQUIRED_HEADERS))
+    metadata = workbook.fetch_sheet_metadata(
+        params={"includeGridData": "false", "fields": "sheets(properties(sheetId),tables(tableId))"}
+    )
+    sheet_metadata = next(
+        item for item in metadata.get("sheets", []) if item.get("properties", {}).get("sheetId") == sheet1.id
+    )
+    table_range = {
+        "sheetId": sheet1.id,
+        "startRowIndex": 0,
+        "endRowIndex": len(matrix),
+        "startColumnIndex": 0,
+        "endColumnIndex": len(SHEET1_REQUIRED_HEADERS),
+    }
+    tables = sheet_metadata.get("tables", [])
+    requests: list[dict[str, Any]] = []
+    if tables:
+        requests.append(
+            {
+                "updateTable": {
+                    "table": {"tableId": tables[0]["tableId"], "range": table_range},
+                    "fields": "range",
+                }
+            }
+        )
+    else:
+        requests.append({"addTable": {"table": {"name": "SubredditDatabase", "range": table_range}}})
+    for index, width in enumerate(COLUMN_WIDTHS):
+        requests.append(
+            {
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": sheet1.id,
+                        "dimension": "COLUMNS",
+                        "startIndex": index,
+                        "endIndex": index + 1,
+                    },
+                    "properties": {"pixelSize": width},
+                    "fields": "pixelSize",
+                }
+            }
+        )
+    workbook.batch_update({"requests": requests})
     sheet1.freeze(rows=1)
     sheet1.format(
         f"A1:{end_column}1",
