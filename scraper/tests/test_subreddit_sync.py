@@ -18,6 +18,7 @@ from scraper.subreddit_sync import (
     detect_cta_titles,
     detect_verification_requirement,
     normalize_subreddit,
+    parse_subscriber_count,
     parse_utc,
     select_sources,
     select_cycle_sources,
@@ -29,6 +30,7 @@ class FakeWorksheet:
     def __init__(self, col_count=26, values=None):
         self.updates = []
         self.batch_updates = []
+        self.formats = []
         self.col_count = col_count
         self.added_cols = []
         self.deleted_cols = []
@@ -39,6 +41,9 @@ class FakeWorksheet:
 
     def batch_update(self, data, **kwargs):
         self.batch_updates.append((data, kwargs))
+
+    def batch_format(self, formats):
+        self.formats.extend(formats)
 
     def add_cols(self, count):
         self.added_cols.append(count)
@@ -65,6 +70,52 @@ class FakeWorkbook:
 
 
 class SubredditSyncTests(unittest.TestCase):
+    def test_subscriber_counts_do_not_turn_missing_data_into_zero(self):
+        for value in [None, "", False, True, -1, "unknown", 5.5]:
+            self.assertIsNone(parse_subscriber_count(value))
+        self.assertEqual(parse_subscriber_count(0), 0)
+        self.assertEqual(parse_subscriber_count(947687), 947687)
+        self.assertEqual(parse_subscriber_count("947687"), 947687)
+
+    def test_sheet_writer_reloads_names_after_rows_move(self):
+        from scraper.subreddit_sync import SHEET1_REQUIRED_HEADERS
+        store = object.__new__(GoogleSheetStore)
+        headers = list(SHEET1_REQUIRED_HEADERS)
+        store._sheet1_values = [headers, ["target"], ["other"]]
+        store._sheet1_headers = headers
+        store.sheet1 = FakeWorksheet(values=[headers, ["inserted"], ["other"], ["target"]])
+        store.write_results([ScrapeResult(
+            subreddit="Target", source_row=2, scraped_at_utc="2026-09-03T00:00:00Z", subscribers=947687,
+        )])
+        updates = {item["range"]: item["values"][0][0] for batch, _ in store.sheet1.batch_updates for item in batch}
+        self.assertEqual(updates["D4"], 947687)
+        self.assertNotIn("D2", updates)
+        self.assertNotIn("D3", updates)
+        self.assertTrue(all(item["format"]["numberFormat"]["pattern"] == "#,##0" for item in store.sheet1.formats))
+
+    def test_sheet_writer_skips_removed_row_instead_of_overwriting_neighbor(self):
+        from scraper.subreddit_sync import SHEET1_REQUIRED_HEADERS
+        store = object.__new__(GoogleSheetStore)
+        headers = list(SHEET1_REQUIRED_HEADERS)
+        store._sheet1_values = [headers, ["target"], ["other"]]
+        store._sheet1_headers = headers
+        store.sheet1 = FakeWorksheet(values=[headers, ["other"]])
+        store.write_results([ScrapeResult(
+            subreddit="Target", source_row=2, scraped_at_utc="2026-09-03T00:00:00Z", subscribers=947687,
+        )])
+        self.assertEqual(store.sheet1.batch_updates, [])
+
+    def test_failed_refresh_preserves_metrics_and_rows(self):
+        from scraper.subreddit_sync import SHEET1_REQUIRED_HEADERS
+        store = object.__new__(GoogleSheetStore)
+        headers = list(SHEET1_REQUIRED_HEADERS)
+        store._sheet1_values = None
+        store.sheet1 = FakeWorksheet(values=[headers, ["target", "", "", "500"]])
+        store.write_results([ScrapeResult.failed(SourceRow(2, "target"), RuntimeError("429"))])
+        updates = {item["range"] for batch, _ in store.sheet1.batch_updates for item in batch}
+        self.assertEqual(updates, {"O2", "P2", "Q2"})
+        self.assertEqual(store.sheet1.deleted_cols, [])
+
     def test_row_errors_are_reported_without_failing_batch_by_default(self):
         self.assertFalse(build_parser().parse_args([]).fail_on_row_error)
         self.assertTrue(build_parser().parse_args(["--fail-on-row-error"]).fail_on_row_error)

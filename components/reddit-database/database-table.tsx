@@ -4,6 +4,7 @@ import { useMemo, useState, useRef, useCallback } from "react"
 import { Info } from "lucide-react"
 import { SortIcon } from "@/components/reddit-database/icons"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { databaseColumnLabel, formatDatabaseMetric, subredditKey, type RowHealth } from "@/lib/reddit-database-display"
 
 type SortDirection = "asc" | "desc" | null
 
@@ -17,12 +18,13 @@ type Props = {
   rows: string[][]
   sortState: SortState
   onSort: (index: number) => void
+  rowHealth?: Record<string, RowHealth>
 }
 
 const COLUMN_INFO: Record<string, string> = {
   "subreddit name": "Clickable subreddit name. Use the copy icon to copy its Reddit link.",
   verification: "Yes when the scraper detects a creator verification requirement in the subreddit rules or description. The value is refreshed automatically.",
-  "total members": "Current subscriber count fetched from Reddit during each scraper pass.",
+  "total members": "Reddit subscriber count at the last successful refresh, not weekly visitors. Stale rows retain previously stored values.",
   niche: "Manually entered niche tags.",
   "min post karma": "Lowest post karma observed among recent surviving post authors sampled by the scraper. It is not a direct AutoModerator rule lookup.",
   "min comment karma": "Lowest comment karma observed among recent surviving post authors sampled by the scraper. It is not a direct AutoModerator rule lookup.",
@@ -64,7 +66,7 @@ function parseSortableValue(value: string) {
   return { type: "string" as const, value: value.toLowerCase() }
 }
 
-export default function DatabaseTable({ headers, rows, sortState, onSort }: Props) {
+export default function DatabaseTable({ headers, rows, sortState, onSort, rowHealth = {} }: Props) {
   const [columnWidths, setColumnWidths] = useState<Record<number, number>>({})
   const isResizingRef = useRef(false)
 
@@ -167,14 +169,14 @@ export default function DatabaseTable({ headers, rows, sortState, onSort }: Prop
                       }}
                       className="group inline-flex min-w-0 flex-1 items-center gap-1 overflow-hidden text-left"
                     >
-                      <span className="truncate">{h}</span>
+                      <span className="truncate">{databaseColumnLabel(h)}</span>
                       <SortIcon direction={direction} />
                     </button>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <button
                           type="button"
-                          aria-label={`About ${h}`}
+                          aria-label={`About ${databaseColumnLabel(h)}`}
                           onClick={(event) => event.stopPropagation()}
                           className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                         >
@@ -182,7 +184,7 @@ export default function DatabaseTable({ headers, rows, sortState, onSort }: Prop
                         </button>
                       </TooltipTrigger>
                       <TooltipContent side="top" align="center" className="max-w-xs text-xs leading-relaxed">
-                        <p className="font-semibold">{h}</p>
+                        <p className="font-semibold">{databaseColumnLabel(h)}</p>
                         <p className="mt-1 font-normal opacity-90">{columnInfo(h)}</p>
                       </TooltipContent>
                     </Tooltip>
@@ -214,8 +216,10 @@ export default function DatabaseTable({ headers, rows, sortState, onSort }: Prop
               key={ri}
               className="border-b border-border/60 last:border-b-0 odd:bg-background even:bg-muted/30 hover:bg-primary/5"
             >
-              {headers.map((_, ci) => {
+              {headers.map((header, ci) => {
                 const displayValue = row[ci] ?? ""
+                const formattedValue = formatDatabaseMetric(header, displayValue)
+                const health = header === "Subreddit Name" ? rowHealth[subredditKey(displayValue)] : undefined
 
                 let isLink = false;
                 if (typeof displayValue === "string" && displayValue.startsWith("http")) {
@@ -235,6 +239,16 @@ export default function DatabaseTable({ headers, rows, sortState, onSort }: Prop
                         >
                           {displaySubredditName(displayValue)}
                         </a>
+                        {health && (
+                          <span
+                            className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-700 dark:text-amber-400"
+                            title={health.status === "stale"
+                              ? `Latest refresh failed${health.lastAttemptAt ? ` (${health.lastAttemptAt})` : ""}. Showing stored data; this does not confirm the subreddit is dead.`
+                              : "This row has no successful scrape checkpoint. Values have not been verified by the current scraper."}
+                          >
+                            {health.status === "stale" ? "Stale" : "Unverified"}
+                          </span>
+                        )}
                         <button
                           onClick={() => {
                             navigator.clipboard.writeText(displayValue);
@@ -250,8 +264,8 @@ export default function DatabaseTable({ headers, rows, sortState, onSort }: Prop
                 }
 
                 return (
-                  <td key={ci} className="truncate px-4 py-2 text-xs md:text-sm" title={displayValue}>
-                    {displayValue}
+                  <td key={ci} className="truncate px-4 py-2 text-xs md:text-sm" title={formattedValue}>
+                    {formattedValue}
                   </td>
                 );
               })}

@@ -16,6 +16,8 @@
 - CTA title evidence for `?`, `do`, `or`, `would`, `how`, and `what` after a one-hour survival window
 
 The minimum karma and age fields are **observed successful-poster minima**, not a direct read of hidden AutoModerator rules.
+The website labels them **Observed Minimums**; a high sampled value is not a verified posting threshold.
+Subscriber totals are distinct from Reddit's weekly visitor metric.
 
 ## Safety and recovery behavior
 
@@ -24,6 +26,9 @@ The minimum karma and age fields are **observed successful-poster minima**, not 
 - Existing Subreddit, Link, and Niche values are preserved during scraper updates. The scraper never creates a Sheet row for an ad-hoc or missing subreddit.
 - `Scraped At UTC`, `Sync Status`, and `Sync Error` remain hidden columns in Sheet1 so recovery does not require another visible tab.
 - Failed scrapes update only status/error metadata; last successful analytics remain intact.
+- The website flags failed-refresh rows as **Stale**, rather than presenting retained values as newly verified data. A failed request is not proof that a subreddit is permanently dead.
+- The writer reloads the table immediately before resolving destination rows by name, so rows moved/deleted during a long scrape are not written using selection-time positions. Avoid editing/sorting the source during the brief write itself; Sheets values writes are not conditional transactions.
+- Missing Reddit subscriber counts are kept unknown rather than replaced with zero. Numeric sheet columns use comma-separated number formats.
 - Individual unavailable/private subreddit errors are recorded without failing the whole batch, so successful rows remain committed. Use `--fail-on-row-error` when strict batch failure is required.
 - Invisible spreadsheet developer metadata stores the active cycle boundary and 24-hour rest deadline without adding control cells or another visible sheet.
 - MySQL uses one transaction and defaults to `update-only`, which skips names not already present in `master_subreddits`.
@@ -49,9 +54,16 @@ python -m unittest discover -s scraper\tests -v
 python scraper\subreddit_sync.py --plan-only --max-subreddits 10
 python scraper\subreddit_sync.py --subreddit asianhotties --new-limit 3
 python scraper\migrate_schema.py
+node --test tests/reddit-database-display.test.cjs
 ```
 
 `migrate_schema.py` is read-only unless `--apply` is supplied.
+
+### Targeted member-count audit and repair
+
+`audit_member_counts.py --subreddit NAME` compares explicitly selected rows with Reddit's subscriber counter without changing the table. Repeat `--subreddit` to audit more names. Adding `--apply` saves a full value backup in `output/`, rechecks row identity and concurrent edits, writes only verified Total Members cells, and reads them back. It does not change MySQL, other analytics, rows, or cycle checkpoints. Failed/404 results are retained without inventing a count or deleting a row.
+
+Restore an affected member cell from the backup only after checking that its current value is still the repair value; do not restore an entire table over newer scraper/user edits. Automatic deletion and automatic discovery are not enabled by this maintenance tool.
 
 ### Controlled writes
 

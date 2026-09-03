@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { query } from "@/lib/db"
 import { createWorkbookReader, parseSpreadsheetUrl } from "@/lib/google-sheets-reader"
+import { sourceRowHealth } from "@/lib/reddit-database-display"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -61,6 +62,7 @@ export async function GET() {
   try {
     const reader = await createWorkbookReader(parsed.spreadsheetId)
     const sourceSheet = await reader.readByGid(parsed.gid)
+    const rowHealth = sourceRowHealth(sourceSheet.headers, sourceSheet.rows)
     const keepIndices = sourceSheet.headers
       .map((header, index) => (INTERNAL_HEADERS.has(header.trim().toLowerCase()) ? -1 : index))
       .filter((index) => index !== -1)
@@ -116,7 +118,7 @@ export async function GET() {
     }
 
     return NextResponse.json(
-      { mainSheet },
+      { mainSheet, rowHealth },
       { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } },
     )
   } catch (error) {

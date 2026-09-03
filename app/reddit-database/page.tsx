@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import DatabaseTable from "@/components/reddit-database/database-table"
 import SubmitSubredditModal from "@/components/reddit-database/submit-subreddit-modal"
 import s from "@/styles/scraper.module.css"
+import type { RowHealth } from "@/lib/reddit-database-display"
 
 type SheetData = {
   title: string
@@ -13,7 +14,7 @@ type SheetData = {
   rows: string[][]
 }
 
-type ApiResponse = { mainSheet: SheetData }
+type ApiResponse = { mainSheet: SheetData; rowHealth?: Record<string, RowHealth> }
 type SortDirection = "asc" | "desc" | null
 type SortState = { columnIndex: number; direction: SortDirection }
 
@@ -53,6 +54,7 @@ function splitNiches(value: string) {
 
 export default function RedditDatabasePage() {
   const [sheetData, setSheetData] = useState<SheetData | null>(null)
+  const [rowHealth, setRowHealth] = useState<Record<string, RowHealth>>({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(false)
@@ -80,8 +82,9 @@ export default function RedditDatabasePage() {
         } catch {}
         throw new Error(message)
       }
-      const { mainSheet }: ApiResponse = await response.json()
+      const { mainSheet, rowHealth: health }: ApiResponse = await response.json()
       setSheetData(mainSheet)
+      setRowHealth(health ?? {})
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "An unknown error occurred while fetching the sheet.")
       setSheetData(null)
@@ -223,10 +226,13 @@ export default function RedditDatabasePage() {
             <div className="flex justify-end gap-2 border-b border-border pb-2">
               <button
                 type="button"
-                onClick={() => setShowMinReqs((visible) => !visible)}
+                onClick={() => {
+                  setShowMinReqs((visible) => !visible)
+                  setSortState({ columnIndex: -1, direction: null })
+                }}
                 className="inline-flex items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground transition hover:text-foreground"
               >
-                {showMinReqs ? "Hide Min Reqs" : "Show Min Reqs"}
+                {showMinReqs ? "Hide Observed Minimums" : "Show Observed Minimums"}
               </button>
               <SubmitSubredditModal>
                 <button type="button" className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition hover:bg-primary/90">
@@ -239,7 +245,17 @@ export default function RedditDatabasePage() {
               Showing {filteredRows.length.toLocaleString()} of {sheetData.rows.length.toLocaleString()} subreddits •{" "}
               {renderHeaders.length.toLocaleString()} columns
             </div>
-            <DatabaseTable headers={renderHeaders} rows={renderRows} sortState={sortState} onSort={handleSort} />
+            {Object.keys(rowHealth).length > 0 && (
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                Stale or unverified rows contain stored values that may be out of date. A failed refresh does not prove a subreddit is dead.
+              </p>
+            )}
+            {showMinReqs && (
+              <p className="text-xs text-muted-foreground">
+                Observed minimums come from sampled authors, not verified posting requirements. Small samples can produce unusually high values.
+              </p>
+            )}
+            <DatabaseTable headers={renderHeaders} rows={renderRows} sortState={sortState} onSort={handleSort} rowHealth={rowHealth} />
           </section>
         )}
 

@@ -49,6 +49,10 @@ SHEET1_REQUIRED_HEADERS = [
     "Total Members",
     "Niche",
 ] + SHEET1_ANALYTICS_HEADERS
+NUMERIC_SHEET_HEADERS = {
+    "total members", "min post karma", "min comment karma", "min total karma",
+    "min account age", "hot 1 (weekly)", "hot 2-5 avg (weekly)", "hot 6-10 avg (weekly)",
+}
 CTA_PATTERN = re.compile(r"\?|\b(?:do|or|would|how|what)\b", re.IGNORECASE)
 VERIFICATION_PATTERN = re.compile(r"\b(?:verification|verify|verified|unverified)\b", re.IGNORECASE)
 NO_VERIFICATION_PATTERNS = (
@@ -95,6 +99,17 @@ def iso_utc(value: datetime | None) -> str:
 
 def average_int(values: Sequence[int]) -> int:
     return round(sum(values) / len(values)) if values else 0
+
+
+def parse_subscriber_count(value: Any) -> int | None:
+    """Missing or malformed API counts are unknown, not an empty community."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    if isinstance(value, str) and re.fullmatch(r"\d+", value.strip()):
+        return int(value)
+    return None
 
 
 def detect_cta_titles(
@@ -346,9 +361,11 @@ class RedditAnalyzer:
     def analyze(self, source: SourceRow) -> ScrapeResult:
         subreddit = self.reddit.subreddit(source.key)
         self._call(subreddit._fetch, f"r/{source.key} about")
+        if normalize_subreddit(str(getattr(subreddit, "display_name", ""))) != source.key:
+            raise RuntimeError(f"Reddit returned a different subreddit for r/{source.key}; no metrics accepted")
         now_epoch = time.time()
 
-        subscribers = int(getattr(subreddit, "subscribers", 0) or 0)
+        subscribers = parse_subscriber_count(getattr(subreddit, "subscribers", None))
         verification_texts = [
             str(getattr(subreddit, "public_description", "") or ""),
             str(getattr(subreddit, "description", "") or ""),
@@ -640,6 +657,9 @@ class GoogleSheetStore:
     def write_results(self, results: Sequence[ScrapeResult]) -> None:
         if not results:
             return
+        # A batch may take minutes. Discard the selection-time snapshot so an
+        # inserted, moved, deleted, or sorted row is resolved by its current name.
+        self._sheet1_values = None
         headers = self.ensure_headers()
         _, values = self._load_sheet1()
         header_lookup = {header.strip().lower(): index + 1 for index, header in enumerate(headers)}
@@ -686,6 +706,20 @@ class GoogleSheetStore:
 
         for start in range(0, len(updates), 400):
             self.sheet1.batch_update(updates[start:start + 400], value_input_option="RAW")
+        if updates:
+            self.format_numeric_columns(headers)
+
+    def format_numeric_columns(self, headers: Sequence[str]) -> None:
+        formats = [
+            {
+                "range": f"{column_letters(index)}2:{column_letters(index)}",
+                "format": {"numberFormat": {"type": "NUMBER", "pattern": "#,##0"}},
+            }
+            for index, header in enumerate(headers, start=1)
+            if header.strip().lower() in NUMERIC_SHEET_HEADERS
+        ]
+        if formats:
+            self.sheet1.batch_format(formats)
 
 
 class MySQLStore:
