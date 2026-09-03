@@ -108,6 +108,17 @@ jobs:
           if [[ "$RUN_FORCE" == "true" ]]; then args+=(--force); fi
           python scraper/subreddit_sync.py "${args[@]}"
 
+      - name: Maintain availability and discovery review queue
+        id: maintenance
+        if: env.RUN_DRY == 'false' && env.SYNC_ENABLED == 'true'
+        # Maintenance errors stay visible but must not interrupt the main pass chain.
+        continue-on-error: true
+        run: python scraper/subreddit_maintenance.py --apply --max-checks 20 --discovery-limit 5
+
+      - name: Report deferred maintenance
+        if: always() && steps.maintenance.outcome == 'failure'
+        run: echo "::warning::Some maintenance work was deferred. Inspect the maintenance report; the main scraper cycle continues."
+
       - name: Explain disabled production sync
         if: env.RUN_DRY == 'false' && env.SYNC_ENABLED != 'true'
         run: echo "Production sync is gated. Add the repository secret SYNC_ENABLED=true after the dry-run report is approved."

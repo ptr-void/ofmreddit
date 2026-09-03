@@ -540,7 +540,7 @@ export default function AdminPage() {
           <TabsList className="flex w-full items-center justify-start gap-2 overflow-x-auto whitespace-nowrap px-1 lg:justify-between lg:overflow-visible lg:px-1">
             <TabsTrigger className="flex-none px-4 lg:flex-1 lg:justify-center" value="prompts">Prompts & Docs</TabsTrigger>
             <TabsTrigger className="flex-none px-4 lg:flex-1 lg:justify-center" value="users">Users</TabsTrigger>
-            <TabsTrigger className="flex-none px-4 lg:flex-1 lg:justify-center" value="pending_subs">Pending Subs</TabsTrigger>
+            <TabsTrigger className="flex-none px-4 lg:flex-1 lg:justify-center" value="pending_subs">Subreddit Review</TabsTrigger>
             <TabsTrigger className="flex-none px-4 lg:flex-1 lg:justify-center" value="subscriptions">User Subscription</TabsTrigger>
             <TabsTrigger className="flex-none px-4 lg:flex-1 lg:justify-center" value="tiers">Subscription Tier</TabsTrigger>
             <TabsTrigger className="flex-none px-4 lg:flex-1 lg:justify-center" value="analytics">Copied Captions</TabsTrigger>

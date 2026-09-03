@@ -583,6 +583,9 @@ class GoogleSheetStore:
         result: list[SourceRow] = []
         seen: set[str] = set()
         for row_number, row in enumerate(values[1:], start=2):
+            status_index = lookup.get("sync status")
+            if status_index is not None and status_index < len(row) and row[status_index].strip().lower() == "archived":
+                continue
             name = row[subreddit_index].strip() if subreddit_index < len(row) else ""
             key = normalize_subreddit(name)
             if not key or key in seen:
@@ -666,6 +669,9 @@ class GoogleSheetStore:
         row_map: dict[str, list[int]] = {}
         subreddit_column = header_lookup["subreddit"] - 1
         for row_number, row in enumerate(values[1:], start=2):
+            status_column = header_lookup.get("sync status", 0) - 1
+            if status_column >= 0 and status_column < len(row) and row[status_column].strip().lower() == "archived":
+                continue
             key = normalize_subreddit(row[subreddit_column] if subreddit_column < len(row) else "")
             if key:
                 row_map.setdefault(key, []).append(row_number)

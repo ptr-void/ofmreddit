@@ -9,7 +9,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Subreddit name is required" }, { status: 400 })
     }
 
-    const cleanSubreddit = subreddit.replace(/^r\//, '').trim()
+    const cleanSubreddit = String(subreddit).trim().replace(/^r\//i, '')
+    if (!/^[a-z0-9_]{2,21}$/i.test(cleanSubreddit)) {
+      return NextResponse.json({ error: "Invalid subreddit name" }, { status: 400 })
+    }
 
     // Scrape Reddit to check if it's NSFW and exists
     const redditRes = await fetch(`https://www.reddit.com/r/${cleanSubreddit}/about.json`, {
@@ -31,7 +34,7 @@ export async function POST(req: Request) {
     await query(
       `INSERT INTO master_subreddits (subreddit_name, niche_tags, is_nsfw, status, subscribers)
        VALUES (?, ?, 1, 'pending', ?)
-       ON DUPLICATE KEY UPDATE status = 'pending'`,
+       ON DUPLICATE KEY UPDATE subreddit_name = subreddit_name`,
       [cleanSubreddit, tags || "", redditData.data.subscribers || 0]
     )
 

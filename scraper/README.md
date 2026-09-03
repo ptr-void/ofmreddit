@@ -126,3 +126,84 @@ Legacy Fred files contained a Google service-account private key in source. Othe
 ## Hosting choice
 
 GitHub Actions is the implemented scheduler because this batch can take longer than a typical serverless request. Vercel Cron is suited to short HTTP-triggered functions and is not used to launch this long Python batch. The existing Next.js app continues to read Sheet/MySQL results.
+
+## Availability cleanup and discovery review
+
+`subreddit_maintenance.py` is an independent, bounded maintenance stage in the
+existing GitHub workflow. It does not change the full-pass/24-hour-rest metadata.
+Dry-run is the default; production explicitly passes `--apply`.
+
+```powershell
+python scraper/backup_master_subreddits.py
+python scraper/migrate_maintenance.py
+python scraper/migrate_maintenance.py --apply
+python scraper/subreddit_maintenance.py --max-checks 20 --discovery-limit 5
+python scraper/subreddit_maintenance.py --apply --max-checks 20 --discovery-limit 5
+```
+
+The migration only creates three maintenance bookkeeping tables; it does not
+alter subscription, user, or existing subreddit tables.
+
+### Restorable archival
+
+* Only errored/previously archived rows receive availability probes. Healthy
+  successful rows are not judged by low members or low activity.
+* A public API canary must work. A candidate needs an explicit Reddit `banned`
+  response, or a 404 plus an independent exact-name lookup with no match.
+* Three observations, each at least 24 hours apart and spanning at least 48
+  hours, are required. 403/private, 429, 5xx, timeouts, and uncertain responses
+  never qualify and reset an unarchived candidate's evidence streak.
+* At most five communities are archived per run. First-run evidence is not
+  backdated from historical errors. No immediate bulk deletion occurs.
+* A full row snapshot is saved to MySQL before archival. Original Sheet values
+  stay in the same table, with the row hidden and internal status `archived`.
+  The website excludes archives from both Sheets and the approved DB mirror.
+  The normal scraper neither selects nor overwrites archived rows.
+* **Admin > Subreddit Review > Restore** queues restoration. A subsequent
+  maintenance run unhides the row and clears its scraper checkpoint. A live
+  response during the daily archived-row recheck also restores it. Restores
+  receive a 72-hour grace period. Saved snapshots are retained.
+
+### Discovery and admission
+
+* Once per 24 hours, rotate through existing manually entered niche vocabulary.
+  Search at most 25 results; queue at most five eligible new communities.
+* Default eligibility: public, adult-designated, at least 100 subscribers and
+  a surviving recent post within 30 days. Override with `DISCOVERY_MIN_MEMBERS`
+  and `DISCOVERY_MAX_POST_AGE_DAYS`. These are candidate filters, NOT deletion
+  criteria. Admin review determines suitability.
+* Normalize/deduplicate against Sheets, every master row (including rejected),
+  and the archive registry. Never replace curated niche tags or reset rejected
+  and approved decisions. New niche values are blank until manually assigned.
+* **Admin > Subreddit Review > Approve** queues an addition, rather than
+  publishing immediately. The worker verifies live identity, appends by name,
+  extends the existing styled table, verifies readback, then approves the DB
+  row. Retrying after a partial write does not append a duplicate.
+* Pending/rejected discoveries are excluded from the public database.
+* Admin review endpoints require an admin JWT. Queue decisions share a MySQL
+  named lock with the worker to avoid approve/reject races. Maintenance errors
+  produce a workflow warning/report, not an interruption of the main pass chain.
+
+### Audits and rollback
+
+```powershell
+python scraper/audit_member_counts.py --all
+python scraper/audit_member_counts.py --all --apply
+python scraper/audit_table.py
+```
+
+Member repair writes only counts backed by matching Reddit metadata. It saves
+an entire values snapshot first, rematches names immediately before writing,
+checks for changed source counts, updates duplicates consistently, and verifies
+readback. Unavailable results never become zero. The structural audit is
+read-only: it identifies duplicates, mismatched links, nonnumeric cells, stale
+values, and unusually high **observed** karma samples. A high sample is not
+proof of an actual subreddit posting requirement.
+
+Reports/snapshots are under ignored `output/` and workflow artifacts. Do not
+restore entire old grids over newer manual edits; use the normalized name and
+specific backed-up cell. To roll back availability behavior, queue and process
+restores for archived rows before reverting the feature. Stop maintenance by
+removing only its workflow stage; retain archive snapshots and the public
+archive filter until any needed restores finish. No destructive table drop or
+production row deletion is part of this feature.

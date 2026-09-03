@@ -24,6 +24,7 @@ export function subredditKey(value: string): string {
     .replace(/^https?:\/\/(?:www\.)?reddit\.com\//, "")
     .replace(/^\/?r\//, "")
     .replace(/[?#].*$/, "")
+    .replace(/\/(?:hot|new|top|rising|controversial)(?:\/.*)?$/, "")
     .replace(/\/+$/, "")
 }
 

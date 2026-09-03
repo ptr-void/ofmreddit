@@ -48,4 +48,5 @@ test("failed rows are marked stale, not dead or deleted", () => {
   assert.equal(JSON.stringify(rows), before)
   assert.equal(subredditKey("https://www.reddit.com/r/Example/?x=1"), "example")
   assert.equal(subredditKey("r/Example/"), "example")
+  assert.equal(subredditKey("https://www.reddit.com/r/Example/hot/"), "example")
 })

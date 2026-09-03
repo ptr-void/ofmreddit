@@ -24,7 +24,9 @@ except ModuleNotFoundError:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--subreddit", action="append", required=True)
+    selection = parser.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--subreddit", action="append")
+    selection.add_argument("--all", action="store_true", help="Audit every existing named row, including duplicates")
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args()
     store = GoogleSheetStore(os.environ["SPREADSHEET_ID"])
@@ -37,7 +39,11 @@ def main() -> int:
     }
     analyzer = RedditAnalyzer(new_limit=25, retry_attempts=4, retry_base_delay=3)
     results = []
-    for name in dict.fromkeys(normalize_subreddit(n) for n in args.subreddit):
+    stamp = utc_now().strftime("%Y%m%dT%H%M%S%fZ")
+    report_path = Path("output") / f"member-count-audit-{stamp}.json"
+    requested = list(by_name) if args.all else args.subreddit
+    report = {"checked_at": utc_now().isoformat(), "apply": args.apply, "total_names": len(requested), "results": results}
+    for name in dict.fromkeys(normalize_subreddit(n) for n in requested):
         row = by_name.get(name)
         if row is None:
             raise RuntimeError(f"r/{name} is not in the existing table")
@@ -54,10 +60,9 @@ def main() -> int:
         except Exception as exc:
             item["error"] = str(exc)
         results.append(item)
-
-    stamp = utc_now().strftime("%Y%m%dT%H%M%S%fZ")
-    report_path = Path("output") / f"member-count-audit-{stamp}.json"
-    report = {"checked_at": utc_now().isoformat(), "apply": args.apply, "results": results}
+        atomic_write_json(report_path, report)
+        if len(results) % 50 == 0:
+            print(f"Audited {len(results)}/{len(requested)} names", flush=True)
     atomic_write_json(report_path, report)
     if args.apply:
         # Durable pre-write snapshot. It also preserves every unrelated value.
@@ -74,25 +79,31 @@ def main() -> int:
                 continue
             matches = [(i, row) for i, row in enumerate(fresh[1:], 2)
                        if len(row) > ni and normalize_subreddit(row[ni]) == item["subreddit"]]
-            if len(matches) != 1:
-                raise RuntimeError("Source rows changed or contain duplicates; repeat the audit")
-            i, row = matches[0]
-            if (row[ci] if len(row) > ci else "") != item["before"]:
-                raise RuntimeError("A member count changed during the audit; repeat before applying")
-            updates.append({"range": f"{column_letters(ci + 1)}{i}", "values": [[item["after"]]]})
+            original = [row[count_index] if len(row) > count_index else "" for row in matrix[1:]
+                        if len(row) > name_index and normalize_subreddit(row[name_index]) == item["subreddit"]]
+            current = [row[ci] if len(row) > ci else "" for _, row in matches]
+            if not matches or sorted(current) != sorted(original):
+                raise RuntimeError("Source rows or member counts changed during the audit; repeat before applying")
+            for i, row in matches:
+                updates.append({"range": f"{column_letters(ci + 1)}{i}", "values": [[item["after"]]]})
         if updates:
+            # One atomic Sheets values request after all names are revalidated.
             store.sheet1.batch_update(updates, value_input_option="RAW")
             store.format_numeric_columns(fresh_headers)
             store._sheet1_values = None
             verified_headers, verified = store._load_sheet1()
             vi = {h.strip().lower(): i for i, h in enumerate(verified_headers)}
-            readback = {normalize_subreddit(row[vi["subreddit"]]): row for row in verified[1:]
-                        if len(row) > vi["subreddit"]}
+            readback = {}
+            for row in verified[1:]:
+                if len(row) > vi["subreddit"]:
+                    readback.setdefault(normalize_subreddit(row[vi["subreddit"]]), []).append(row)
             for item in results:
                 if "after" not in item:
                     continue
-                value = readback[item["subreddit"]][vi["total members"]]
-                item["verified"] = int(value.replace(",", "")) == item["after"]
+                matches = readback.get(item["subreddit"], [])
+                item["verified"] = bool(matches) and all(
+                    int(row[vi["total members"]].replace(",", "")) == item["after"] for row in matches
+                )
                 if not item["verified"]:
                     raise RuntimeError("Member count readback mismatch; inspect backup and report")
         atomic_write_json(report_path, report)

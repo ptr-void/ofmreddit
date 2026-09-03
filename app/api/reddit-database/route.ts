@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { query } from "@/lib/db"
 import { createWorkbookReader, parseSpreadsheetUrl } from "@/lib/google-sheets-reader"
-import { sourceRowHealth } from "@/lib/reddit-database-display"
+import { sourceRowHealth, subredditKey } from "@/lib/reddit-database-display"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -20,7 +20,7 @@ const CACHE_FIELDS: Record<string, string> = {
 }
 
 function normalize(value: string) {
-  return value.trim().toLowerCase().replace(/^r\//, "").replace(/\/$/, "")
+  return subredditKey(value)
 }
 
 function redditUrl(value: string) {
@@ -62,6 +62,17 @@ export async function GET() {
   try {
     const reader = await createWorkbookReader(parsed.spreadsheetId)
     const sourceSheet = await reader.readByGid(parsed.gid)
+    // Neither a stale Sheet snapshot nor the optional DB mirror may restore archives.
+    const archivedRows = await query<{ subreddit_name: string }>(
+      "SELECT subreddit_name FROM subreddit_maintenance WHERE state = 'archived'",
+    )
+    const archived = new Set(archivedRows.map(row => normalize(row.subreddit_name)))
+    const statusIndex = sourceSheet.headers.findIndex(header => header.trim().toLowerCase() === "sync status")
+    const nameIndex = sourceSheet.headers.findIndex(header => header.trim().toLowerCase() === "subreddit")
+    sourceSheet.rows.forEach(row => {
+      if (String(row[statusIndex] || "").trim().toLowerCase() === "archived") archived.add(normalize(row[nameIndex] || ""))
+    })
+    sourceSheet.rows = sourceSheet.rows.filter(row => !archived.has(normalize(row[nameIndex] || "")))
     const rowHealth = sourceRowHealth(sourceSheet.headers, sourceSheet.rows)
     const keepIndices = sourceSheet.headers
       .map((header, index) => (INTERNAL_HEADERS.has(header.trim().toLowerCase()) ? -1 : index))
@@ -75,6 +86,7 @@ export async function GET() {
     let cacheRows: any[] = []
     try {
       cacheRows = await query<any>("SELECT * FROM master_subreddits WHERE status = 'approved'")
+      cacheRows = cacheRows.filter(row => !archived.has(normalize(String(row.subreddit_name || ""))))
     } catch (error) {
       console.error("Failed to read optional master_subreddits mirror:", error)
     }
