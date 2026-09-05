@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
-type Candidate = { id: number; subreddit_name: string; subscribers: number | null; niche_tags: string | null; discovery_json: string | null; requested_action: string | null }
+type Candidate = { id: number; subreddit_name: string; subscribers: number | null; niche_tags: string | null; discovery_json: string | null; requested_action: string | null; submitted_by: string | null }
 type Availability = { subreddit_name: string; state: string; dead_checks: number; last_evidence: string | null; last_checked_at: string | null; requested_action: string | null }
 function discovery(value: string | null) {
   try { return value ? JSON.parse(value) : null } catch { return null }
@@ -56,7 +56,7 @@ export function PendingSubredditsTab() {
     {!subreddits.length ? <p className="text-sm text-muted-foreground">No pending candidates.</p> : <div className="overflow-x-auto rounded-md border">
       <Table>
         <TableHeader><TableRow>
-          <TableHead>Subreddit</TableHead><TableHead>Members</TableHead><TableHead>Source / Latest Post</TableHead><TableHead>Niche</TableHead><TableHead>Actions</TableHead>
+          <TableHead>Subreddit</TableHead><TableHead>Members</TableHead><TableHead>Source / Latest Post</TableHead><TableHead>Submitted By</TableHead><TableHead>Niche</TableHead><TableHead>Actions</TableHead>
         </TableRow></TableHeader>
         <TableBody>{subreddits.map(sub => {
           const found = discovery(sub.discovery_json)
@@ -64,6 +64,7 @@ export function PendingSubredditsTab() {
             <TableCell><a className="text-blue-500" href={`https://www.reddit.com/r/${encodeURIComponent(sub.subreddit_name)}/`} target="_blank" rel="noreferrer">{sub.subreddit_name}</a></TableCell>
             <TableCell>{sub.subscribers == null ? "Unknown" : Number(sub.subscribers).toLocaleString("en-US")}</TableCell>
             <TableCell>{found ? `Discovery / ${found.latest_post_utc ? new Date(found.latest_post_utc * 1000).toLocaleDateString() : "Unknown"}` : "User submission"}</TableCell>
+            <TableCell className="max-w-xs text-sm">{sub.submitted_by || (found ? "Automatic discovery" : "Unknown user")}</TableCell>
             <TableCell>{sub.niche_tags || "Not assigned"}</TableCell>
             <TableCell className="space-x-2 whitespace-nowrap">
               {sub.requested_action === "add" ? <span className="text-muted-foreground text-sm">Addition queued</span> : <Button size="sm" disabled={busy} onClick={() => handleAction("approve", sub)}>Approve</Button>}

@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { verifyToken } from "@/lib/auth"
 import { query } from "@/lib/db"
 
 interface RedditTokenResponse {
@@ -36,10 +37,29 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 export async function POST(request: NextRequest) {
   try {
-    const { subreddit, limit = 100 } = await request.json()
+    const { subreddit, niche, tags, limit = 100 } = await request.json()
     
     if (!subreddit) {
       return NextResponse.json({ error: "Subreddit name is required" }, { status: 400 })
+    }
+
+    const cleanSubreddit = String(subreddit).replace(/^r\//i, '').trim().toLowerCase()
+    if (!/^[a-z0-9_]{2,21}$/i.test(cleanSubreddit)) {
+      return NextResponse.json({ error: "Invalid subreddit name" }, { status: 400 })
+    }
+
+    const nicheTags = String(niche || tags || "").trim()
+    if (!nicheTags) {
+      return NextResponse.json({ error: "At least one niche tag is required" }, { status: 400 })
+    }
+    if (nicheTags.length > 500) {
+      return NextResponse.json({ error: "Niche tags must be 500 characters or fewer" }, { status: 400 })
+    }
+
+    const authToken = (request.headers.get("authorization") || "").replace(/^Bearer\s+/i, "")
+    const user = authToken ? verifyToken(authToken) : null
+    if (!user?.userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
     const usageUrl = new URL("/api/usage", request.url).toString()
@@ -59,7 +79,6 @@ export async function POST(request: NextRequest) {
     }
 
     const maxPosts = Math.min(Math.max(10, Number(limit) || 100), 200) // cap between 10 and 200
-    const cleanSubreddit = subreddit.replace(/^r\//i, '').trim()
     let token = await getAccessToken()
 
     // 1. Fetch recent posts from the subreddit
@@ -188,6 +207,7 @@ export async function POST(request: NextRequest) {
     let hasBotBouncer = false;
     let requiresVerification = false;
     let allowsCtaCaptions: boolean | null = null;
+    let subscriberCount: number | null = null;
     
     try {
       // Check Subreddit About for Restricted (Verification)
@@ -197,6 +217,9 @@ export async function POST(request: NextRequest) {
       })
       if (aboutRes.ok) {
         const aboutData = await aboutRes.json()
+        subscriberCount = Number.isFinite(Number(aboutData.data?.subscribers))
+          ? Number(aboutData.data.subscribers)
+          : null
         if (aboutData.data?.subreddit_type === "restricted") {
           requiresVerification = true;
         }
@@ -353,8 +376,8 @@ export async function POST(request: NextRequest) {
           `INSERT INTO master_subreddits (
             subreddit_name, hot_1_weekly, hot_2_5_weekly_avg, hot_6_10_weekly_avg,
             min_post_karma, min_comment_karma, min_combined_karma, min_account_age_days, status,
-            has_bot_bouncer, requires_verification, allows_cta_captions
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+            has_bot_bouncer, requires_verification, allows_cta_captions, niche_tags, subscribers
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)
           ON DUPLICATE KEY UPDATE
             hot_1_weekly = VALUES(hot_1_weekly),
             hot_2_5_weekly_avg = VALUES(hot_2_5_weekly_avg),
@@ -365,21 +388,34 @@ export async function POST(request: NextRequest) {
             min_account_age_days = VALUES(min_account_age_days),
             has_bot_bouncer = VALUES(has_bot_bouncer),
             requires_verification = VALUES(requires_verification),
-            allows_cta_captions = IF(VALUES(allows_cta_captions) IS NOT NULL, VALUES(allows_cta_captions), allows_cta_captions)`,
+            allows_cta_captions = IF(VALUES(allows_cta_captions) IS NOT NULL, VALUES(allows_cta_captions), allows_cta_captions),
+            niche_tags = IF(status = 'pending' AND TRIM(COALESCE(niche_tags, '')) = '', VALUES(niche_tags), niche_tags),
+            subscribers = IF(VALUES(subscribers) IS NOT NULL, VALUES(subscribers), subscribers)`,
           [
             cleanSubreddit.toLowerCase(),
             hot1Weekly, hot2to5WeeklyAvg, hot6to10WeeklyAvg,
             currentData.minPostKarma, currentData.minCommentKarma, currentData.minTotalKarma, currentData.minAccountAgeDays,
             hasBotBouncer, requiresVerification,
-            allowsCtaCaptions === null ? null : (allowsCtaCaptions ? 1 : 0)
+            allowsCtaCaptions === null ? null : (allowsCtaCaptions ? 1 : 0),
+            nicheTags, subscriberCount
           ]
+        )
+
+        await query(
+          `INSERT INTO subreddit_submission_attempts (subreddit_name, user_id, source, niche_tags)
+           SELECT ?, ?, 'requirements_checker', ?
+           FROM master_subreddits
+           WHERE LOWER(subreddit_name) = ? AND status = 'pending'
+           ON DUPLICATE KEY UPDATE
+             source = VALUES(source), niche_tags = VALUES(niche_tags), updated_at = CURRENT_TIMESTAMP`,
+          [cleanSubreddit, user.userId, nicheTags, cleanSubreddit]
         )
       } catch (dbErr) {
         console.error("Database cache error:", dbErr)
       }
 
     // Record successful usage
-    await fetch(usageUrl, {
+    const usageRecord = await fetch(usageUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -387,7 +423,14 @@ export async function POST(request: NextRequest) {
         authorization: request.headers.get("authorization") || ""
       },
       body: JSON.stringify({ feature: "subreddit_checker", op: "record", meta: { subreddit: cleanSubreddit } })
-    }).catch(() => {})
+    })
+    if (!usageRecord.ok) {
+      const detail = await usageRecord.json().catch(() => ({}))
+      return NextResponse.json(
+        { error: detail?.error || "Usage could not be recorded. Please retry." },
+        { status: usageRecord.status }
+      )
+    }
 
     return NextResponse.json({
       success: true,

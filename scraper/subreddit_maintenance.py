@@ -134,6 +134,23 @@ class Maintenance:
         self.sql('INSERT INTO subreddit_maintenance_events (subreddit_name, action, detail_json) VALUES (%s,%s,%s)',
                  (name, action, json_text(detail)))
 
+    def reward_submitters(self, name):
+        pending = self.sql(
+            'SELECT COUNT(*) AS count FROM subreddit_submission_attempts '
+            'WHERE subreddit_name=%s AND rewarded_at IS NULL', (name,),
+        )
+        count = int(pending[0]['count']) if pending else 0
+        if not count:
+            return 0
+        # One atomic, idempotent update awards each submitter once and marks the award consumed.
+        self.sql(
+            'UPDATE users u JOIN subreddit_submission_attempts a ON a.user_id=u.id '
+            'SET u.subreddit_checker_credits=u.subreddit_checker_credits+1, a.rewarded_at=UTC_TIMESTAMP() '
+            'WHERE a.subreddit_name=%s AND a.rewarded_at IS NULL', (name,),
+        )
+        self.report['actions'].append({'subreddit': name, 'action': 'checker_credit_awarded', 'users': count})
+        return count
+
     def table(self):
         self.store._sheet1_values = None
         headers, matrix = self.store._load_sheet1()
@@ -250,6 +267,7 @@ class Maintenance:
                         self.report['errors'].append(f'r/{name}: approval waits for matching live metadata')
                         continue
                     self.append_row(name, {'Total Members': sub['subscribers'], 'Niche': sub.get('niche_tags') or ''})
+                    self.reward_submitters(name)
                     self.sql("UPDATE master_subreddits SET status='approved' WHERE id=%s AND status='pending'", (sub['id'],))
                     self.sql("UPDATE subreddit_maintenance SET requested_action=NULL, state='active' WHERE subreddit_name=%s", (name,))
                     self.event(name, 'approved_and_added', {})

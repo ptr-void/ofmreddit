@@ -184,6 +184,20 @@ class MaintenanceTests(unittest.TestCase):
         self.assertEqual(worker.sql.call_count, 1)
         self.assertEqual(worker.report['actions'][0]['queued'], 'add')
 
+    def test_submitter_rewards_are_one_atomic_idempotent_update(self):
+        worker = Maintenance(None, None, None, apply=True)
+        statements = []
+        def sql(statement, params=()):
+            statements.append((statement, params))
+            if statement.startswith('SELECT COUNT(*)'):
+                return [{'count': 2}]
+            return []
+        worker.sql = sql
+        self.assertEqual(worker.reward_submitters('example'), 2)
+        self.assertIn('subreddit_checker_credits=u.subreddit_checker_credits+1', statements[1][0])
+        self.assertIn('a.rewarded_at IS NULL', statements[1][0])
+        self.assertEqual(worker.report['actions'][-1]['users'], 2)
+
     def test_structural_audit_accepts_negative_karma_and_sorted_subreddit_urls(self):
         from scraper.audit_table import audit_table
         report = audit_table([['Subreddit', 'Link', 'Min Comment Karma', 'Total Members'],

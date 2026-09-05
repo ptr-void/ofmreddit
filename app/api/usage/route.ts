@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { verifyToken } from "@/lib/auth"
 import { queryOne } from "@/lib/db"
-import { assertWithinLimits, assertCooldown, recordUsage, listSavedScrapes, loadSavedScrape, saveSnapshotWithPrune, deleteSaved, assertDailySubredditCheckerLimit } from "@/lib/limits"
+import { assertWithinLimits, assertCooldown, recordUsage, recordSubredditCheckerUsage, listSavedScrapes, loadSavedScrape, saveSnapshotWithPrune, deleteSaved, assertDailySubredditCheckerLimit } from "@/lib/limits"
 
 function tokenFromReq(req: Request): string | null {
     const h = req.headers.get("authorization") || ""
@@ -88,7 +88,8 @@ export async function POST(req: Request) {
                           error: `${timeWindow} limit reached (${anyWithin.cap} uses per ${perTime}).`, 
                           showTiers: showTiersFlag,
                           usage: anyWithin.weekly,
-                          cap: anyWithin.cap
+                          cap: anyWithin.cap,
+                          bonusCredits: anyWithin.bonusCredits || 0
                         },
                         { status: 429 }
                     )
@@ -103,10 +104,22 @@ export async function POST(req: Request) {
                 }
             }
 
-            return NextResponse.json({ ok: true, usage: within?.usage, cap: within?.cap })
+            return NextResponse.json({ ok: true, usage: within?.usage, cap: within?.cap, bonusCredits: within?.bonusCredits || 0 })
         }
 
         if (op === "record") {
+            if (feature === "subreddit_checker") {
+                const recorded = await recordSubredditCheckerUsage(userId, meta || null)
+                if (!recorded.ok) {
+                    return NextResponse.json({
+                        error: `Daily limit reached (${recorded.cap} uses per day).`,
+                        usage: recorded.weekly,
+                        cap: recorded.cap,
+                        bonusCredits: recorded.bonusCredits || 0,
+                    }, { status: 429 })
+                }
+                return NextResponse.json(recorded)
+            }
             await recordUsage(userId, feature, meta || null)
             return NextResponse.json({ ok: true })
         }

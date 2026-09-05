@@ -31,12 +31,13 @@ type CheckerResult = {
 export default function SubredditCheckerPage() {
   const { toast } = useToast()
   const [subreddit, setSubreddit] = useState("")
+  const [niche, setNiche] = useState("")
   const [postLimit, setPostLimit] = useState(50)
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<CheckerResult | null>(null)
   const [previousResult, setPreviousResult] = useState<CheckerResult | null>(null)
   const [errorDialog, setErrorDialog] = useState<string | null>(null)
-  const [usageInfo, setUsageInfo] = useState<{ usage: number; cap: number } | null>(null)
+  const [usageInfo, setUsageInfo] = useState<{ usage: number; cap: number; bonusCredits: number } | null>(null)
   const router = useRouter()
 
   const fetchUsage = async () => {
@@ -51,7 +52,7 @@ export default function SubredditCheckerPage() {
       const data = await res.json()
       if (res.ok || res.status === 429) {
         if (data.cap !== undefined) {
-          setUsageInfo({ usage: data.usage || 0, cap: data.cap })
+          setUsageInfo({ usage: data.usage || 0, cap: data.cap, bonusCredits: data.bonusCredits || 0 })
         }
       }
     } catch (e) {}
@@ -73,6 +74,10 @@ export default function SubredditCheckerPage() {
       toast({ title: "Error", description: "Please enter a subreddit name", variant: "destructive" })
       return
     }
+    if (!niche.trim()) {
+      toast({ title: "Error", description: "Please enter at least one niche tag", variant: "destructive" })
+      return
+    }
 
     try {
       setLoading(true)
@@ -85,7 +90,7 @@ export default function SubredditCheckerPage() {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`
         },
-        body: JSON.stringify({ subreddit: subreddit.trim(), limit: postLimit })
+        body: JSON.stringify({ subreddit: subreddit.trim(), niche: niche.trim(), limit: postLimit })
       })
 
       const data = await res.json()
@@ -142,6 +147,24 @@ export default function SubredditCheckerPage() {
                 {loading ? "Scanning..." : "Check"}
               </Button>
             </div>
+
+            <div className="space-y-2">
+              <label htmlFor="niche" className="text-sm font-medium text-muted-foreground">
+                Niche / Tags (comma separated) *
+              </label>
+              <Input
+                id="niche"
+                value={niche}
+                onChange={(e) => setNiche(e.target.value)}
+                placeholder="e.g. fitness, cosplay"
+                maxLength={500}
+                required
+                disabled={loading}
+              />
+              <span className="text-xs text-muted-foreground">
+                Required so new subreddits can enter the review queue with useful tags.
+              </span>
+            </div>
             
             <div className="flex flex-col space-y-2 mt-2">
               <label className="text-sm font-medium text-muted-foreground flex justify-between">
@@ -167,6 +190,7 @@ export default function SubredditCheckerPage() {
           {usageInfo && (
             <div className="mt-4 text-center text-sm font-medium text-muted-foreground bg-muted/50 p-2 rounded-lg">
               Daily Scrapes Used: <span className="text-foreground">{usageInfo.usage} / {usageInfo.cap}</span>
+              {usageInfo.bonusCredits > 0 && <span> · Free Credits: <span className="text-foreground">{usageInfo.bonusCredits}</span></span>}
             </div>
           )}
         </CardContent>
@@ -344,4 +368,3 @@ export default function SubredditCheckerPage() {
     </div>
   )
 }
-

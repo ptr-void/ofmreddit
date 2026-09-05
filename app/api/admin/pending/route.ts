@@ -12,9 +12,22 @@ export async function GET(req: Request) {
   try {
     const subreddits = await query(`
       SELECT m.id, m.subreddit_name, m.subscribers, m.niche_tags,
-             s.discovery_json, s.requested_action
+             s.discovery_json, s.requested_action, attempts.submitted_by
         FROM master_subreddits m LEFT JOIN subreddit_maintenance s
           ON LOWER(m.subreddit_name) = s.subreddit_name
+        LEFT JOIN (
+          SELECT a.subreddit_name,
+                 GROUP_CONCAT(
+                   DISTINCT CONCAT(
+                     COALESCE(NULLIF(u.telegram_username, ''), NULLIF(u.username, ''), u.email, CONCAT('User #', a.user_id)),
+                     ' via ', REPLACE(a.source, '_', ' ')
+                   )
+                   ORDER BY a.created_at SEPARATOR ', '
+                 ) AS submitted_by
+            FROM subreddit_submission_attempts a
+            LEFT JOIN users u ON u.id = a.user_id
+           GROUP BY a.subreddit_name
+        ) attempts ON attempts.subreddit_name = LOWER(m.subreddit_name)
        WHERE m.status = 'pending' AND COALESCE(s.state, 'active') != 'archived'
        ORDER BY m.created_at DESC`)
     const availability = await query(`

@@ -137,12 +137,15 @@ Dry-run is the default; production explicitly passes `--apply`.
 python scraper/backup_master_subreddits.py
 python scraper/migrate_maintenance.py
 python scraper/migrate_maintenance.py --apply
+python scraper/migrate_submission_rewards.py
+python scraper/migrate_submission_rewards.py --apply
 python scraper/subreddit_maintenance.py --max-checks 20 --discovery-limit 5
 python scraper/subreddit_maintenance.py --apply --max-checks 20 --discovery-limit 5
 ```
 
-The migration only creates three maintenance bookkeeping tables; it does not
-alter subscription, user, or existing subreddit tables.
+The maintenance migration only creates three bookkeeping tables. The separate
+submission-rewards migration adds a zero-default checker-credit counter and an
+attribution table; it does not rewrite existing users or subreddit rows.
 
 ### Restorable archival
 
@@ -179,6 +182,9 @@ alter subscription, user, or existing subreddit tables.
   publishing immediately. The worker verifies live identity, appends by name,
   extends the existing styled table, verifies readback, then approves the DB
   row. Retrying after a partial write does not append a duplicate.
+* Signed-in user submissions and new requirements-checker entries require niche
+  tags and record the submitter for admin review. After the verified Sheet append,
+  each submitter receives one idempotent free requirements-checker credit.
 * Pending/rejected discoveries are excluded from the public database.
 * Admin review endpoints require an admin JWT. Queue decisions share a MySQL
   named lock with the worker to avoid approve/reject races. Maintenance errors

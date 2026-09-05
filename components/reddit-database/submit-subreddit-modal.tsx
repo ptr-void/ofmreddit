@@ -28,9 +28,13 @@ export default function SubmitSubredditModal({ children }: { children: React.Rea
     setLoading(true)
 
     try {
+      const token = localStorage.getItem("token")
       const res = await fetch("/api/subreddits/submit", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token || ""}`,
+        },
         body: JSON.stringify({ subreddit, tags }),
       })
 
@@ -104,12 +108,14 @@ export default function SubmitSubredditModal({ children }: { children: React.Rea
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="tags">Niche / Tags (comma separated)</Label>
+              <Label htmlFor="tags">Niche / Tags (comma separated) *</Label>
               <Input
                 id="tags"
                 placeholder="e.g. teen, under 25, petit"
                 value={tags}
                 onChange={(e) => setTags(e.target.value)}
+                required
+                maxLength={500}
                 disabled={loading}
               />
             </div>

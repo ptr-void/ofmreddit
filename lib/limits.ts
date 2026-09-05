@@ -1,4 +1,4 @@
-import { query, queryOne } from "@/lib/db"
+import { getPool, query, queryOne } from "@/lib/db"
 
 export type Feature = "scraper" | "post_planner" | "caption_gen" | "database" | "subreddit_checker"
 
@@ -13,10 +13,10 @@ type Tier = {
   daily_subreddit_checker_limit: number
 }
 
-type AssertOk = { ok: true; usage?: number; cap?: number }
+type AssertOk = { ok: true; usage?: number; cap?: number; bonusCredits?: number; usedBonusCredit?: boolean }
 type NoTier = { ok: false; code: "NO_TIER" }
 type NoAccess = { ok: false; code: "NO_ACCESS"; weekly: number; cap: number }
-type WeeklyLimit = { ok: false; code: "WEEKLY_LIMIT"; weekly: number; cap: number }
+type WeeklyLimit = { ok: false; code: "WEEKLY_LIMIT"; weekly: number; cap: number; bonusCredits?: number }
 type Cooldown = { ok: false; code: "COOLDOWN"; wait: number }
 
 export async function getActiveTierForUser(userId: number): Promise<Tier | null> {
@@ -102,8 +102,8 @@ export async function assertDailySubredditCheckerLimit(
   feature: Feature
 ): Promise<AssertOk | WeeklyLimit> {
   // Check if the user has a custom limit first
-  const user = await queryOne<{ custom_subreddit_checker_limit: number | null }>(
-    "SELECT custom_subreddit_checker_limit FROM users WHERE id = ? LIMIT 1",
+  const user = await queryOne<{ custom_subreddit_checker_limit: number | null; subreddit_checker_credits: number }>(
+    "SELECT custom_subreddit_checker_limit, subreddit_checker_credits FROM users WHERE id = ? LIMIT 1",
     [userId]
   )
   
@@ -129,18 +129,82 @@ export async function assertDailySubredditCheckerLimit(
   `
   const row = await queryOne<{ count: number }>(sql, [userId, feature])
   const daily = Number(row?.count ?? 0)
+  const bonusCredits = Math.max(0, Number(user?.subreddit_checker_credits ?? 0))
 
-  if (cap > 0 && daily >= cap) {
+  if (daily >= cap && bonusCredits <= 0) {
     // using WeeklyLimit type to reuse the same error structure, but it represents a daily limit
-    return { ok: false, code: "WEEKLY_LIMIT", weekly: daily, cap }
+    return { ok: false, code: "WEEKLY_LIMIT", weekly: daily, cap, bonusCredits }
   }
 
-  // if cap is 0, they have no access
-  if (cap === 0) {
-    return { ok: false, code: "WEEKLY_LIMIT", weekly: daily, cap }
-  }
+  return { ok: true, usage: daily, cap, bonusCredits }
+}
 
-  return { ok: true, usage: daily, cap }
+export async function recordSubredditCheckerUsage(userId: number, meta?: any): Promise<AssertOk | WeeklyLimit> {
+  const connection = await getPool().getConnection()
+  try {
+    await connection.beginTransaction()
+    const [users]: any = await connection.execute(
+      "SELECT custom_subreddit_checker_limit, subreddit_checker_credits FROM users WHERE id = ? FOR UPDATE",
+      [userId]
+    )
+    if (!users.length) {
+      await connection.rollback()
+      return { ok: false, code: "WEEKLY_LIMIT", weekly: 0, cap: 0, bonusCredits: 0 }
+    }
+
+    let cap = Number(users[0].custom_subreddit_checker_limit ?? NaN)
+    if (!Number.isFinite(cap)) {
+      const [tiers]: any = await connection.execute(
+        `SELECT t.daily_subreddit_checker_limit
+           FROM user_subscriptions us
+           JOIN subscription_tiers t ON t.id = us.tier_id AND t.is_active = 1
+          WHERE us.user_id = ? AND us.starts_at <= NOW()
+            AND (us.ends_at IS NULL OR us.ends_at >= NOW())
+          ORDER BY us.starts_at DESC LIMIT 1`,
+        [userId]
+      )
+      cap = Math.max(0, Number(tiers[0]?.daily_subreddit_checker_limit ?? 0))
+    }
+
+    const [counts]: any = await connection.execute(
+      `SELECT COUNT(*) AS count FROM feature_usage
+        WHERE user_id = ? AND feature = 'subreddit_checker'
+          AND occurred_at >= NOW() - INTERVAL 1 DAY`,
+      [userId]
+    )
+    const daily = Number(counts[0]?.count ?? 0)
+    const availableCredits = Math.max(0, Number(users[0].subreddit_checker_credits ?? 0))
+    const useBonus = daily >= cap
+
+    if (useBonus && availableCredits <= 0) {
+      await connection.rollback()
+      return { ok: false, code: "WEEKLY_LIMIT", weekly: daily, cap, bonusCredits: 0 }
+    }
+    if (useBonus) {
+      await connection.execute(
+        "UPDATE users SET subreddit_checker_credits = subreddit_checker_credits - 1 WHERE id = ?",
+        [userId]
+      )
+    }
+    await connection.execute(
+      `INSERT INTO feature_usage (user_id, feature, occurred_at, meta)
+       VALUES (?, 'subreddit_checker', NOW(), ?)`,
+      [userId, meta ? JSON.stringify(meta) : null]
+    )
+    await connection.commit()
+    return {
+      ok: true,
+      usage: daily + 1,
+      cap,
+      bonusCredits: availableCredits - (useBonus ? 1 : 0),
+      usedBonusCredit: useBonus,
+    }
+  } catch (error) {
+    await connection.rollback()
+    throw error
+  } finally {
+    connection.release()
+  }
 }
 
 
