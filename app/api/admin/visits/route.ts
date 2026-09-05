@@ -18,12 +18,19 @@ export async function GET(request: NextRequest) {
     const totalVisitsRes = await query(`SELECT COUNT(*) as count FROM website_visits`)
     const totalVisits = totalVisitsRes[0]?.count || 0
 
-    // Get visits today
+    // Page views include reloads and navigation; unique visitors are distinct IPs.
     const visitsTodayRes = await query(`
       SELECT COUNT(*) as count FROM website_visits 
       WHERE DATE(visited_at) = CURDATE()
     `)
     const visitsToday = visitsTodayRes[0]?.count || 0
+
+    const uniqueVisitorsTodayRes = await query(`
+      SELECT COUNT(DISTINCT NULLIF(SUBSTRING_INDEX(ip_address, ',', 1), 'unknown')) as count
+      FROM website_visits
+      WHERE DATE(visited_at) = CURDATE()
+    `)
+    const uniqueVisitorsToday = uniqueVisitorsTodayRes[0]?.count || 0
 
     // Get recent visits (last 50)
     const recentVisits = await query(`
@@ -42,11 +49,10 @@ export async function GET(request: NextRequest) {
       LIMIT 10
     `)
 
-    // Get visits by day (last 30 days)
+    // Keep the complete recorded history so the chart reaches the first visit.
     const visitsByDay = await query(`
       SELECT DATE(visited_at) as date, COUNT(*) as count 
       FROM website_visits 
-      WHERE visited_at >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
       GROUP BY DATE(visited_at)
       ORDER BY date ASC
     `)
@@ -54,6 +60,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       totalVisits,
       visitsToday,
+      uniqueVisitorsToday,
       recentVisits,
       topPages,
       visitsByDay

@@ -5,13 +5,12 @@ import { NextRequest, NextResponse } from "next/server";
 
 // ------------------ CONFIGURATION ------------------
 
-const HF_API_KEY = process.env.AI_API_KEY ?? process.env.HF_API_KEY;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY;
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent`;
 
-const API_URL =
-  "https://router.huggingface.co/novita/v3/openai/chat/completions";
-
-if (!HF_API_KEY) {
-  console.error("❌ Missing Hugging Face API key (AI_API_KEY or HF_API_KEY in .env)");
+if (!GEMINI_API_KEY) {
+  console.error("Missing Gemini API key (GEMINI_API_KEY or GOOGLE_API_KEY in environment)");
 }
 
 // ------------------ KNOWLEDGE BASE (EMBEDDED) ------------------
@@ -173,11 +172,8 @@ function polishCaption(caption: any): ApexCaption {
 // ------------------ MAIN API ROUTE ------------------
 
 export async function POST(request: NextRequest) {
-  console.log("\n⬇️ ====== APEX REQUEST START ======");
-
   try {
-    if (!HF_API_KEY) {
-      console.error("❌ Missing HF_API_KEY / AI_API_KEY – cannot call model.");
+    if (!GEMINI_API_KEY) {
       return NextResponse.json(
         { error: "Server configuration error: missing AI API key." },
         { status: 500 }
@@ -189,7 +185,6 @@ export async function POST(request: NextRequest) {
       ?.replace("Bearer ", "");
 
     if (!token) {
-      console.log("❌ Unauthorized Request");
       return NextResponse.json(
         { error: "Unauthorized" },
         { status: 401 }
@@ -197,8 +192,6 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    console.log("📦 User Input:", JSON.stringify(body, null, 2));
-
     // 1. Input Extraction & Normalization
     const gender = body.gender || "Female";
     const niche_features =
@@ -324,24 +317,38 @@ Format exactly like:
 `;
 
 
-    console.log("🧠 System Prompt Constructed. Sending to AI...");
-
-    // 3. Call Model (DeepSeek via HF Router)
+    // 3. Call Gemini with a constrained JSON response schema.
+    const expectedCount = interactive_mode === "ON" ? 3 : 6;
     const payload = {
-      model: "deepseek/deepseek-v3-0324",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: "Generate the captions now. Output ONLY JSON." },
+      systemInstruction: { parts: [{ text: systemPrompt }] },
+      contents: [
+        { role: "user", parts: [{ text: `Generate exactly ${expectedCount} captions now. Output only the requested JSON array.` }] },
       ],
-      temperature: 0.7,
-      stream: false,
-      max_tokens: 1500,
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 4096,
+        thinkingConfig: { thinkingBudget: 0 },
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: "ARRAY",
+          minItems: expectedCount,
+          maxItems: expectedCount,
+          items: {
+            type: "OBJECT",
+            properties: {
+              option: { type: "STRING" },
+              text: { type: "STRING" },
+            },
+            required: ["option", "text"],
+          },
+        },
+      },
     };
 
     const response = await fetch(API_URL, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${HF_API_KEY}`,
+        "x-goog-api-key": GEMINI_API_KEY,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),
@@ -349,7 +356,7 @@ Format exactly like:
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("❌ Model API Error:", response.status, errorText);
+      console.error("Gemini API error:", response.status, errorText.slice(0, 1000));
       return NextResponse.json(
         { error: "AI Generation Failed" },
         { status: 500 }
@@ -357,10 +364,14 @@ Format exactly like:
     }
 
     const data = await response.json();
-    const rawResponse: string =
-      data.choices?.[0]?.message?.content || "";
-
-    console.log("🤖 Raw AI Response:", rawResponse);
+    const rawResponse: string = (data.candidates?.[0]?.content?.parts || [])
+      .map((part: { text?: string }) => part.text || "")
+      .join("")
+      .trim();
+    if (!rawResponse) {
+      console.error("Gemini returned no caption content", JSON.stringify(data).slice(0, 1000));
+      return NextResponse.json({ error: "AI Generation Failed" }, { status: 502 });
+    }
 
     // 4. Robust Parsing & Cleaning
     const parsedCaptions = extractCaptions(rawResponse);
@@ -374,20 +385,21 @@ Format exactly like:
     } else if (interactive_mode === "ON" && finalCaptions.length > 3) {
       finalCaptions = finalCaptions.slice(0, 3);
     }
-
-    console.log("✅ Final Output:", JSON.stringify(finalCaptions, null, 2));
-    console.log("⬆️ ====== APEX REQUEST END ======\n");
+    if (finalCaptions.length !== expectedCount || finalCaptions.some((caption) => !caption.text)) {
+      console.error(`Gemini returned ${finalCaptions.length} usable captions; expected ${expectedCount}`);
+      return NextResponse.json({ error: "AI Generation Failed" }, { status: 502 });
+    }
 
     return NextResponse.json({
       captions: finalCaptions,
       meta: {
         interactiveMode: interactive_mode,
-        logic: "Apex Phase I-IV (DeepSeek)",
-        model: "deepseek/deepseek-v3-0324",
+        logic: "Apex Phase I-IV (Gemini)",
+        model: GEMINI_MODEL,
       },
     });
   } catch (error: any) {
-    console.error("❌ FATAL SERVER ERROR:", error);
+    console.error("Caption generation error:", error);
     return NextResponse.json(
       { error: error.message || "Internal Server Error" },
       { status: 500 }

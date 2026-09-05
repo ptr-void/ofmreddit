@@ -28,6 +28,7 @@ type VisitDay = {
 type AnalyticsData = {
   totalVisits: number
   visitsToday: number
+  uniqueVisitorsToday: number
   recentVisits: Visit[]
   topPages: TopPage[]
   visitsByDay: VisitDay[]
@@ -62,7 +63,7 @@ export function VisitsTab() {
       if (analyticsData.visitsByDay) {
         analyticsData.visitsByDay = analyticsData.visitsByDay.map((v: any) => ({
           ...v,
-          date: new Date(v.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+          date: new Date(v.date).toLocaleDateString(undefined, { year: '2-digit', month: 'short', day: 'numeric' }),
           count: Number(v.count)
         }))
       }
@@ -103,7 +104,7 @@ export function VisitsTab() {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Page Views</CardTitle>
@@ -117,19 +118,30 @@ export function VisitsTab() {
         
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Visits Today</CardTitle>
+            <CardTitle className="text-sm font-medium">Page Views Today</CardTitle>
             <MousePointerClick className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{data.visitsToday.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">Unique views today</p>
+            <p className="text-xs text-muted-foreground">Includes navigation and reloads</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Unique Visitors Today</CardTitle>
+            <Globe className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{data.uniqueVisitorsToday.toLocaleString()}</div>
+            <p className="text-xs text-muted-foreground">Approximate unique IP addresses</p>
           </CardContent>
         </Card>
       </div>
 
       <Card className="col-span-full">
         <CardHeader>
-          <CardTitle>Visits Over Time (Last 30 Days)</CardTitle>
+          <CardTitle>Visits Over Time (All History)</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="h-[300px] w-full">
