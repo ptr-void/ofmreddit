@@ -354,6 +354,15 @@ export default function RegisterPage() {
                   @Reddit_Key_Master_Bot
                 </a>{" "}
                 with /signup to get your code.
+                If you cannot access the group or receive a code, message{" "}
+                <a
+                  href="https://t.me/pimenta9000"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary font-medium hover:underline"
+                >
+                  @pimenta9000
+                </a>.
               </p>
             </div>
 

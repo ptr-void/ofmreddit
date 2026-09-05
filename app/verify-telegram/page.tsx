@@ -111,6 +111,15 @@ export default function VerifyTelegramPage() {
             @Reddit_Key_Master_Bot
           </a>{" "}
           with <strong className="text-foreground">/signup</strong> to get your verification code.
+          If you cannot access the group or receive a code, message{" "}
+          <a
+            href="https://t.me/pimenta9000"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-foreground font-bold hover:underline"
+          >
+            @pimenta9000
+          </a>.
         </p>
 
         <form onSubmit={handleVerify} className="w-full flex flex-col gap-4">
