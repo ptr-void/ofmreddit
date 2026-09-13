@@ -26,6 +26,14 @@ export default function RegisterPage() {
   const router = useRouter()
 
   useEffect(() => {
+    const pendingEmail = sessionStorage.getItem("pendingVerificationEmail")
+    if (pendingEmail) {
+      setEmail(pendingEmail)
+      setOtpSent(true)
+    }
+  }, [])
+
+  useEffect(() => {
     if (resendCountdown > 0) {
       const timer = setTimeout(() => setResendCountdown(resendCountdown - 1), 1000)
       return () => clearTimeout(timer)
@@ -68,6 +76,7 @@ export default function RegisterPage() {
       }
 
       setOtpSent(true)
+      sessionStorage.setItem("pendingVerificationEmail", email.trim().toLowerCase())
       setResendCountdown(60)
     } catch (err) {
       setError("Something went wrong. Please try again.")
@@ -102,6 +111,7 @@ export default function RegisterPage() {
       }
 
       setVerified(true)
+      sessionStorage.removeItem("pendingVerificationEmail")
     } catch (err) {
       setError("Something went wrong. Please try again.")
     } finally {
@@ -117,7 +127,7 @@ export default function RegisterPage() {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, op: "resend" }),
       })
 
       const data = await res.json()
@@ -224,7 +234,10 @@ export default function RegisterPage() {
                 </button>
               </p>
               <button
-                onClick={() => setOtpSent(false)}
+                onClick={() => {
+                  sessionStorage.removeItem("pendingVerificationEmail")
+                  setOtpSent(false)
+                }}
                 className="text-sm text-muted-foreground hover:text-foreground flex items-center justify-center gap-1 mx-auto"
               >
                 <ArrowLeft className="w-3 h-3" />

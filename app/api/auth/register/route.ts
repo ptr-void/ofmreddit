@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server"
 import bcrypt from "bcryptjs"
 import nodemailer from "nodemailer"
-import { query, queryOne } from "@/lib/db"
-import type { ResultSetHeader } from "mysql2"
+import { getPool } from "@/lib/db"
 
 const lastSent = new Map<string, number>()
 const RESEND_COOLDOWN_MS = 30_000   
@@ -58,54 +57,20 @@ async function sendVerificationEmail(to: string, code: string) {
     html,
   })
 }
-import fs from "fs"
-import path from "path"
-
 export async function POST(request: Request) {
   try {
-    const { email, password, inviteCode } = await request.json()
-    if (!email || !password) {
+    const body = await request.json()
+    const email = String(body.email || "").trim().toLowerCase()
+    const password = String(body.password || "")
+    const inviteCode = String(body.inviteCode || "").trim().toUpperCase()
+    const resend = body.op === "resend"
+    if (!email || (!password && !resend)) {
       return NextResponse.json(
         { error: "Email and password are required" },
         { status: 400 }
       )
     }
     
-    if (!inviteCode) {
-      return NextResponse.json(
-        { error: "Telegram invite code is required" },
-        { status: 400 }
-      )
-    }
-
-    let telegramUsername: string | null = null;
-    
-    // Verify Telegram Invite Code using Database
-    try {
-      const existingCode = await queryOne<{ code: string, user_name: string }>(
-        "SELECT code, user_name FROM invite_codes WHERE code = ?",
-        [inviteCode.toUpperCase()]
-      )
-
-      if (!existingCode) {
-        return NextResponse.json(
-          { error: "Invalid or already used Telegram invite code" },
-          { status: 400 }
-        )
-      }
-      
-      telegramUsername = existingCode.user_name;
-
-      // Remove used code
-      await query("DELETE FROM invite_codes WHERE code = ?", [inviteCode.toUpperCase()])
-    } catch (dbErr) {
-      console.error("DB Error checking invite code:", dbErr)
-      return NextResponse.json(
-        { error: "Verification system error. Please contact admin." },
-        { status: 500 }
-      )
-    }
-
     const now = Date.now()
     const last = lastSent.get(email) ?? 0
     if (now - last < RESEND_COOLDOWN_MS) {
@@ -116,47 +81,85 @@ export async function POST(request: Request) {
       )
     }
 
-    const existing = await query(
-      "SELECT id, email_verified FROM users WHERE email = ?",
-      [email]
-    )
-
-    const hashedPassword = await bcrypt.hash(password, 10)
+    const hashedPassword = resend ? null : await bcrypt.hash(password, 10)
     const verificationCode = Math.floor(100000 + Math.random() * 900000).toString()
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000) 
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000)
+    const connection = await getPool().getConnection()
+    let insertId = 0
+    try {
+      await connection.beginTransaction()
+      const [existingRows]: any = await connection.execute(
+        "SELECT id, email_verified, telegram_username FROM users WHERE email = ? FOR UPDATE",
+        [email],
+      )
+      const user = existingRows[0]
 
-    let insertId: number
+      if (resend && !user) {
+        await connection.rollback()
+        return NextResponse.json({ error: "Registration was not found. Please register again." }, { status: 404 })
+      }
 
-    if ((existing as any[]).length === 0) {
-      const result = (await query(
-        `INSERT INTO users
-         (email, password, email_verified, verification_code, verification_expires_at, telegram_username, created_at)
-         VALUES (?, ?, 0, ?, ?, ?, NOW())`,
-        [email, hashedPassword, verificationCode, expiresAt, telegramUsername]
-      )) as unknown as ResultSetHeader
-
-      insertId = result.insertId
-    } else {
-      const user = (existing as any[])[0]
-
-      if (user.email_verified) {
+      // Check the account before touching an invite code. The old order could
+      // consume a fresh Telegram code for an email that was already registered.
+      if (user?.email_verified) {
+        await connection.rollback()
         return NextResponse.json(
-          { error: "Email already registered and verified" },
-          { status: 400 }
+          { error: "Email already registered. Please sign in instead." },
+          { status: 409 },
         )
       }
 
-      await query(
-        `UPDATE users
-         SET verification_code = ?,
-             verification_expires_at = ?,
-             password = ?,
-             telegram_username = ?
-         WHERE email = ?`,
-        [verificationCode, expiresAt, hashedPassword, telegramUsername, email]
-      )
+      let telegramUsername: string | null = user?.telegram_username || null
+      if (!telegramUsername) {
+        if (!inviteCode) {
+          await connection.rollback()
+          return NextResponse.json({ error: "Telegram invite code is required" }, { status: 400 })
+        }
+        const [codeRows]: any = await connection.execute(
+          "SELECT code, user_name FROM invite_codes WHERE code = ? FOR UPDATE",
+          [inviteCode],
+        )
+        if (!codeRows.length) {
+          await connection.rollback()
+          return NextResponse.json(
+            { error: "Invalid or already used Telegram invite code" },
+            { status: 400 },
+          )
+        }
+        telegramUsername = codeRows[0].user_name
+        await connection.execute("DELETE FROM invite_codes WHERE code = ?", [inviteCode])
+      }
 
-      insertId = user.id
+      if (!user) {
+        const [result]: any = await connection.execute(
+          `INSERT INTO users
+           (email, password, email_verified, verification_code, verification_expires_at, telegram_username, created_at)
+           VALUES (?, ?, 0, ?, ?, ?, NOW())`,
+          [email, hashedPassword, verificationCode, expiresAt, telegramUsername],
+        )
+        insertId = Number(result.insertId)
+      } else {
+        if (resend) {
+          await connection.execute(
+            `UPDATE users SET verification_code = ?, verification_expires_at = ? WHERE id = ?`,
+            [verificationCode, expiresAt, user.id],
+          )
+        } else {
+          await connection.execute(
+            `UPDATE users
+                SET verification_code = ?, verification_expires_at = ?, password = ?
+              WHERE id = ?`,
+            [verificationCode, expiresAt, hashedPassword, user.id],
+          )
+        }
+        insertId = Number(user.id)
+      }
+      await connection.commit()
+    } catch (dbErr) {
+      await connection.rollback()
+      throw dbErr
+    } finally {
+      connection.release()
     }
 
     await sendVerificationEmail(email, verificationCode)
