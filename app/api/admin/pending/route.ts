@@ -11,7 +11,8 @@ export async function GET(req: Request) {
   if (!admin(req)) return NextResponse.json({ error: "Admin access required" }, { status: 401 })
   try {
     const subreddits = await query(`
-      SELECT m.id, m.subreddit_name, m.subscribers, m.niche_tags,
+      SELECT m.id, m.subreddit_name, m.subscribers,
+             COALESCE(NULLIF(TRIM(m.niche_tags), ''), JSON_UNQUOTE(JSON_EXTRACT(s.discovery_json, '$.query'))) AS niche_tags,
              s.discovery_json, s.requested_action, attempts.submitted_by
         FROM master_subreddits m LEFT JOIN subreddit_maintenance s
           ON LOWER(m.subreddit_name) = s.subreddit_name

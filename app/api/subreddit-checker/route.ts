@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { verifyToken } from "@/lib/auth"
 import { query } from "@/lib/db"
+import { validateNicheTags } from "@/lib/niche-presets"
 
 interface RedditTokenResponse {
   access_token: string
@@ -48,13 +49,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid subreddit name" }, { status: 400 })
     }
 
-    const nicheTags = String(niche || tags || "").trim()
-    if (!nicheTags) {
-      return NextResponse.json({ error: "At least one niche tag is required" }, { status: 400 })
+    const nicheSelection = await validateNicheTags(niche || tags)
+    if (!nicheSelection.ok) {
+      return NextResponse.json({ error: nicheSelection.error }, { status: 400 })
     }
-    if (nicheTags.length > 500) {
-      return NextResponse.json({ error: "Niche tags must be 500 characters or fewer" }, { status: 400 })
-    }
+    const nicheTags = nicheSelection.value
 
     const authToken = (request.headers.get("authorization") || "").replace(/^Bearer\s+/i, "")
     const user = authToken ? verifyToken(authToken) : null

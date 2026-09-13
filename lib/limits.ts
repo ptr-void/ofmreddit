@@ -38,7 +38,21 @@ export async function getActiveTierForUser(userId: number): Promise<Tier | null>
     ORDER BY us.starts_at DESC
     LIMIT 1
   `
-  return (await queryOne<Tier>(sql, [userId])) ?? null
+  const assignedTier = await queryOne<Tier>(sql, [userId])
+  if (assignedTier) return assignedTier
+
+  // Accounts without an explicit subscription are displayed as Free throughout
+  // the app, so their limits must come from the active Free tier as well.
+  return (await queryOne<Tier>(
+    `SELECT id, weekly_scraper_limit, weekly_planner_limit,
+            weekly_caption_limit, weekly_database_limit,
+            saved_username_limit, saved_profile_limit,
+            daily_subreddit_checker_limit
+       FROM subscription_tiers
+      WHERE is_active = 1 AND LOWER(name) = 'free'
+      ORDER BY id ASC
+      LIMIT 1`,
+  )) ?? null
 }
 
 export async function getWeeklyCount(userId: number, feature: Feature): Promise<number> {
@@ -163,7 +177,17 @@ export async function recordSubredditCheckerUsage(userId: number, meta?: any): P
           ORDER BY us.starts_at DESC LIMIT 1`,
         [userId]
       )
-      cap = Math.max(0, Number(tiers[0]?.daily_subreddit_checker_limit ?? 0))
+      let tierLimit = tiers[0]?.daily_subreddit_checker_limit
+      if (tierLimit === undefined) {
+        const [freeTiers]: any = await connection.execute(
+          `SELECT daily_subreddit_checker_limit
+             FROM subscription_tiers
+            WHERE is_active = 1 AND LOWER(name) = 'free'
+            ORDER BY id ASC LIMIT 1`
+        )
+        tierLimit = freeTiers[0]?.daily_subreddit_checker_limit
+      }
+      cap = Math.max(0, Number(tierLimit ?? 0))
     }
 
     const [counts]: any = await connection.execute(

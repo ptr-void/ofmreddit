@@ -51,7 +51,7 @@ export function PendingSubredditsTab() {
       <Button variant="outline" size="sm" onClick={fetchPending} disabled={busy}>Refresh</Button>
     </div>
     <p className="text-sm text-muted-foreground">
-      Discoveries and user submissions stay here until approved. Automatic discovery looks for public communities with at least 100 members and a recent post within 30 days. Niche tags remain manually maintained.
+      Discoveries and user submissions stay here until approved. Automatic discovery looks for public communities with at least 100 members and a recent post within 30 days, then suggests the preset niche used for discovery.
     </p>
     {!subreddits.length ? <p className="text-sm text-muted-foreground">No pending candidates.</p> : <div className="overflow-x-auto rounded-md border">
       <Table>

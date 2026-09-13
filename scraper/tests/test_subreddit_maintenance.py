@@ -6,7 +6,7 @@ import copy
 import re
 
 from scraper.subreddit_maintenance import (
-    Maintenance, Probe, candidate_eligible, next_observation, probe_subreddit,
+    Maintenance, Probe, candidate_eligible, discovery_niche, next_observation, probe_subreddit,
 )
 from scraper.subreddit_sync import GoogleSheetStore, ScrapeResult, SHEET1_REQUIRED_HEADERS
 from scraper.tests.test_subreddit_sync import FakeWorksheet
@@ -110,6 +110,10 @@ class MaintenanceTests(unittest.TestCase):
         for changes in [{'subscribers': None}, {'subscribers': 99}, {'over18': False}, {'subreddit_type': 'private'},
                         {'latest_post_utc': NOW.timestamp() - 31 * 86400}, {'latest_post_utc': None}, {'name': '../bad'}]:
             self.assertFalse(candidate_eligible({**valid, **changes}, NOW))
+
+    def test_discovery_query_becomes_a_controlled_niche_suggestion(self):
+        self.assertEqual(discovery_niche('{"query":"Cosplay"}'), 'cosplay')
+        self.assertEqual(discovery_niche('not-json'), '')
 
     def test_normal_scraper_never_selects_or_overwrites_archives(self):
         headers = list(SHEET1_REQUIRED_HEADERS)

@@ -42,6 +42,14 @@ def json_text(value):
     return json.dumps(value, default=str, ensure_ascii=False)
 
 
+def discovery_niche(value):
+    try:
+        payload = json.loads(value or '{}')
+        return str(payload.get('query') or '').strip().lower()
+    except (TypeError, ValueError, AttributeError):
+        return ''
+
+
 @dataclass
 class Probe:
     outcome: str  # alive, dead, or uncertain
@@ -266,9 +274,13 @@ class Maintenance:
                     if probe_subreddit(self.analyzer, name).outcome != 'alive':
                         self.report['errors'].append(f'r/{name}: approval waits for matching live metadata')
                         continue
-                    self.append_row(name, {'Total Members': sub['subscribers'], 'Niche': sub.get('niche_tags') or ''})
+                    niche = (sub.get('niche_tags') or discovery_niche(item.get('discovery_json'))).strip()
+                    if not niche:
+                        self.report['errors'].append(f'r/{name}: approval waits for a preset niche tag')
+                        continue
+                    self.append_row(name, {'Total Members': sub['subscribers'], 'Niche': niche})
                     self.reward_submitters(name)
-                    self.sql("UPDATE master_subreddits SET status='approved' WHERE id=%s AND status='pending'", (sub['id'],))
+                    self.sql("UPDATE master_subreddits SET status='approved', niche_tags=%s WHERE id=%s AND status='pending'", (niche, sub['id']))
                     self.sql("UPDATE subreddit_maintenance SET requested_action=NULL, state='active' WHERE subreddit_name=%s", (name,))
                     self.event(name, 'approved_and_added', {})
             except Exception as exc:
@@ -366,8 +378,8 @@ class Maintenance:
                     continue
                 if self.apply:
                     # Do not overwrite an existing approval/rejection or curated tags.
-                    self.sql("INSERT IGNORE INTO master_subreddits (subreddit_name, niche_tags, subscribers, is_nsfw, status) VALUES (%s,'',%s,1,'pending')",
-                             (name, metadata['subscribers']))
+                    self.sql("INSERT IGNORE INTO master_subreddits (subreddit_name, niche_tags, subscribers, is_nsfw, status) VALUES (%s,%s,%s,1,'pending')",
+                             (name, query, metadata['subscribers']))
                     self.sql('INSERT INTO subreddit_maintenance (subreddit_name, discovery_json) VALUES (%s,%s) '
                              'ON DUPLICATE KEY UPDATE discovery_json=VALUES(discovery_json)', (name, json_text(metadata)))
                     self.event(name, 'discovered_for_review', metadata)

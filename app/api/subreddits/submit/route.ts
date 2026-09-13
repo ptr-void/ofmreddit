@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { verifyToken } from "@/lib/auth"
 import { query } from "@/lib/db"
+import { validateNicheTags } from "@/lib/niche-presets"
 
 function userFromRequest(req: Request) {
   const header = req.headers.get("authorization") || ""
@@ -26,13 +27,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid subreddit name" }, { status: 400 })
     }
 
-    const nicheTags = String(tags || "").trim()
-    if (!nicheTags) {
-      return NextResponse.json({ error: "At least one niche tag is required" }, { status: 400 })
-    }
-    if (nicheTags.length > 500) {
-      return NextResponse.json({ error: "Niche tags must be 500 characters or fewer" }, { status: 400 })
-    }
+    const niche = await validateNicheTags(tags)
+    if (!niche.ok) return NextResponse.json({ error: niche.error }, { status: 400 })
+    const nicheTags = niche.value
 
     // Scrape Reddit to check if it's NSFW and exists
     const redditRes = await fetch(`https://www.reddit.com/r/${cleanSubreddit}/about.json`, {

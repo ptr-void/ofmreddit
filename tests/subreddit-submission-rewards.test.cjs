@@ -28,6 +28,11 @@ test("direct submissions require authentication and niche tags, then attribute t
     "next/server": next,
     "@/lib/auth": { verifyToken: token => token === "valid" ? { userId: 7 } : null },
     "@/lib/db": { query: async (sql, params) => { statements.push([sql, params]); return [] } },
+    "@/lib/niche-presets": {
+      validateNicheTags: async value => value
+        ? { ok: true, value: String(value).trim().toLowerCase() }
+        : { ok: false, error: "Select at least one niche tag" },
+    },
   }, {
     fetch: async () => ({ ok: true, json: async () => ({ data: { over18: true, subscribers: 123 } }) }),
   })
@@ -77,4 +82,33 @@ test("checker bonus usage is consumed atomically only after the daily allowance"
   assert.match(sql, /INSERT INTO feature_usage/)
   assert.ok(statements.includes("commit"))
   assert.equal(statements.at(-1), "release")
+})
+
+test("accounts without an assigned subscription inherit the active Free tier", async () => {
+  const statements = []
+  const freeTier = {
+    id: 1,
+    weekly_scraper_limit: 5,
+    weekly_planner_limit: 5,
+    weekly_caption_limit: 5,
+    weekly_database_limit: 5,
+    saved_username_limit: 5,
+    saved_profile_limit: 5,
+    daily_subreddit_checker_limit: 3,
+  }
+  const limits = load("lib/limits.ts", {
+    "@/lib/db": {
+      getPool: () => { throw new Error("not used") },
+      query: async () => [],
+      queryOne: async (sql, params) => {
+        statements.push([sql, params])
+        return sql.includes("FROM user_subscriptions") ? null : freeTier
+      },
+    },
+  })
+
+  const tier = await limits.getActiveTierForUser(42)
+  assert.equal(tier.daily_subreddit_checker_limit, 3)
+  assert.equal(statements.length, 2)
+  assert.match(statements[1][0], /LOWER\(name\) = 'free'/)
 })

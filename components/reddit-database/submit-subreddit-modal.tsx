@@ -4,6 +4,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { NicheTagSelect } from "@/components/niche-tag-select"
 import { Loader2, CheckCircle2 } from "lucide-react"
 import {
   Dialog,
@@ -108,14 +109,11 @@ export default function SubmitSubredditModal({ children }: { children: React.Rea
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="tags">Niche / Tags (comma separated) *</Label>
-              <Input
+              <Label htmlFor="tags">Niche / Tags *</Label>
+              <NicheTagSelect
                 id="tags"
-                placeholder="e.g. teen, under 25, petit"
                 value={tags}
-                onChange={(e) => setTags(e.target.value)}
-                required
-                maxLength={500}
+                onChange={setTags}
                 disabled={loading}
               />
             </div>

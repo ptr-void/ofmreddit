@@ -6,6 +6,7 @@ import { useToast } from "@/hooks/use-toast"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { NicheTagSelect } from "@/components/niche-tag-select"
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogAction } from "@/components/ui/alert-dialog"
 import { Loader2, Search, Activity, Clock, ShieldAlert, Star, History } from "lucide-react"
 import s from "@/styles/scraper.module.css"
@@ -150,15 +151,12 @@ export default function SubredditCheckerPage() {
 
             <div className="space-y-2">
               <label htmlFor="niche" className="text-sm font-medium text-muted-foreground">
-                Niche / Tags (comma separated) *
+                Niche / Tags *
               </label>
-              <Input
+              <NicheTagSelect
                 id="niche"
                 value={niche}
-                onChange={(e) => setNiche(e.target.value)}
-                placeholder="e.g. fitness, cosplay"
-                maxLength={500}
-                required
+                onChange={setNiche}
                 disabled={loading}
               />
               <span className="text-xs text-muted-foreground">
