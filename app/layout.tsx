@@ -9,6 +9,7 @@ import { Toaster } from "@/components/ui/toaster"
 import { TelegramGuard } from "@/components/telegram-guard"
 import "./globals.css"
 import { Suspense } from "react"
+import { PaymentSessionFloat } from "@/components/payment-session-float"
 
 export const metadata: Metadata = {
   title: "OFMReddit - Reddit Analytics",
@@ -46,6 +47,7 @@ export default function RootLayout({
           <VisitTracker />
           <Navigation />
           {children}
+          <PaymentSessionFloat />
         </Suspense>
         <Toaster />
         <TelegramGuard />

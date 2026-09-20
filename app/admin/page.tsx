@@ -13,6 +13,7 @@ import { SiteControlsTab } from "@/components/admin/site-controls-tab"
 import { ScraperDataTab } from "@/components/admin/scraper-data-tab"
 import { VisitsTab } from "@/components/admin/visits-tab"
 import { PendingSubredditsTab } from "@/components/admin/pending-subreddits-tab"
+import { CryptoPaymentsTab } from "@/components/admin/crypto-payments-tab"
 import s from "@/styles/scraper.module.css"
 
 type Prompt = {
@@ -543,6 +544,7 @@ export default function AdminPage() {
             <TabsTrigger className="flex-none px-4 lg:flex-1 lg:justify-center" value="pending_subs">Subreddit Review</TabsTrigger>
             <TabsTrigger className="flex-none px-4 lg:flex-1 lg:justify-center" value="subscriptions">User Subscription</TabsTrigger>
             <TabsTrigger className="flex-none px-4 lg:flex-1 lg:justify-center" value="tiers">Subscription Tier</TabsTrigger>
+            <TabsTrigger className="flex-none px-4 lg:flex-1 lg:justify-center" value="payments">Payments</TabsTrigger>
             <TabsTrigger className="flex-none px-4 lg:flex-1 lg:justify-center" value="analytics">Copied Captions</TabsTrigger>
             <TabsTrigger className="flex-none px-4 lg:flex-1 lg:justify-center" value="visits">Website Visits</TabsTrigger>
             <TabsTrigger className="flex-none px-4 lg:flex-1 lg:justify-center" value="site_controls">Site Controls</TabsTrigger>
@@ -585,6 +587,10 @@ export default function AdminPage() {
 
           <TabsContent value="tiers" className="space-y-4">
             <SubscriptionTierTab />
+          </TabsContent>
+
+          <TabsContent value="payments" className="space-y-4">
+            <CryptoPaymentsTab />
           </TabsContent>
 
           <TabsContent value="analytics" className="space-y-4">

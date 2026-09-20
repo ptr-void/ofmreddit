@@ -302,7 +302,7 @@ export async function createPaymentIntent(userId: number, tierId: number) {
   await query(
     `INSERT INTO crypto_payment_intents
       (id, user_id, tier_id, duration_days, base_amount, expected_amount, coin, network, address, status, expires_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', DATE_ADD(NOW(), INTERVAL 24 HOUR))`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', DATE_ADD(NOW(), INTERVAL 10 MINUTE))`,
     [id, userId, tierId, Math.max(1, Number(tier.duration_days || 30)), tier.price, amount, config.coin, config.network, config.address],
   )
   const created = await queryOne<PaymentIntentRow>(`${intentSelect} WHERE p.id=? LIMIT 1`, [id])

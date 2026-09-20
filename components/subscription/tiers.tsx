@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
 import { ArrowLeft, CheckCircle2, Copy, Loader2, X } from "lucide-react"
 
+const PAYMENT_STORAGE_KEY = "activeCryptoPayment"
+
 type ApiTier = {
   id: number
   name: string
@@ -65,8 +67,29 @@ export default function SubscriptionTiers({
   const [startingTierId, setStartingTierId] = useState<number | null>(null)
   const [error, setError] = useState("")
   const [copied, setCopied] = useState("")
+  const [paymentTimeLeft, setPaymentTimeLeft] = useState(0)
 
   useEffect(() => setCurrentTierId(currentTierIdProp), [currentTierIdProp])
+
+  useEffect(() => {
+    if (!open) return
+    try {
+      const saved = JSON.parse(localStorage.getItem(PAYMENT_STORAGE_KEY) || "null") as Payment | null
+      if (saved?.id && new Date(saved.expiresAt).getTime() > Date.now() && ["pending", "confirming"].includes(saved.status)) {
+        setPayment(saved)
+      }
+    } catch {
+      localStorage.removeItem(PAYMENT_STORAGE_KEY)
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!payment || !["pending", "confirming"].includes(payment.status)) return
+    const update = () => setPaymentTimeLeft(Math.max(0, new Date(payment.expiresAt).getTime() - Date.now()))
+    update()
+    const timer = window.setInterval(update, 1000)
+    return () => window.clearInterval(timer)
+  }, [payment])
 
   useEffect(() => {
     if (!open) return
@@ -116,6 +139,12 @@ export default function SubscriptionTiers({
       if (!response.ok) throw new Error(data.error || "Payment check failed")
       const updated = data.payment as Payment
       setPayment(updated)
+      if (["pending", "confirming"].includes(updated.status)) {
+        localStorage.setItem(PAYMENT_STORAGE_KEY, JSON.stringify(updated))
+      } else {
+        localStorage.removeItem(PAYMENT_STORAGE_KEY)
+      }
+      window.dispatchEvent(new CustomEvent("crypto-payment-updated", { detail: updated }))
       setError("")
       if (updated.status === "paid") {
         setCurrentTierId(updated.tierId)
@@ -152,6 +181,8 @@ export default function SubscriptionTiers({
       const data = await response.json()
       if (!response.ok) throw new Error(data.error || "Payment request failed")
       setPayment(data.payment)
+      localStorage.setItem(PAYMENT_STORAGE_KEY, JSON.stringify(data.payment))
+      window.dispatchEvent(new CustomEvent("crypto-payment-updated", { detail: data.payment }))
     } catch (reason: any) {
       setError(reason.message)
     } finally {
@@ -237,15 +268,11 @@ export default function SubscriptionTiers({
                       Request expires {new Date(payment.expiresAt).toLocaleString()}. Status: <span className="font-semibold capitalize text-foreground">{payment.status}</span>
                     </div>
                   </div>
-                  <button
-                    onClick={checkPayment}
-                    disabled={paymentBusy}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-3 font-bold text-white disabled:opacity-60"
-                  >
-                    {paymentBusy && <Loader2 className="size-4 animate-spin" />}
-                    I’ve paid — check payment
-                  </button>
-                  <p className="text-center text-xs text-muted-foreground">This page checks automatically every 15 seconds. Completed payments activate the plan without manual approval.</p>
+                  <div className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-3 font-bold text-white">
+                    <Loader2 className="size-4 animate-spin" />
+                    Waiting for payment confirmation · {Math.floor(Math.ceil(paymentTimeLeft / 1000) / 60)}:{String(Math.ceil(paymentTimeLeft / 1000) % 60).padStart(2, "0")}
+                  </div>
+                  <p className="text-center text-xs text-muted-foreground">Payment is checked automatically every 15 seconds. You can leave this page and reopen it from the floating timer.</p>
                 </>
               )}
             </div>
