@@ -249,7 +249,7 @@ export default function SubscriptionTiers({
           )}
 
           {!loading && !payment && (
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
               {tiers.map((tier, index) => {
                 const isCurrent = Number(currentTierId || 0) === Number(tier.id)
                 const numericPrice = tier.price == null || tier.price === "" ? null : Number(tier.price)
@@ -263,7 +263,7 @@ export default function SubscriptionTiers({
                     <div className="space-y-5 bg-card p-6">
                       <div>
                         <div className="text-3xl font-bold">{isFree ? "$0.00" : `${numericPrice!.toFixed(2)} USDT`}</div>
-                        <div className="text-sm text-muted-foreground">{duration} days</div>
+                        <div className="text-sm text-muted-foreground">{isFree ? "Ongoing free access" : `${duration} days`}</div>
                       </div>
                       <ul className="space-y-2 text-sm">
                         <li className="flex justify-between"><span className="text-muted-foreground">Scraper / {Number(tier.usage_period_days || 7)} days</span><strong>{fmt(tier.weekly_scraper_limit)}</strong></li>
