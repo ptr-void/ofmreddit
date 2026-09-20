@@ -26,33 +26,21 @@ type UiTier = {
   usagePeriodDays: string
   limits: {
     weekly_scraper_limit: string
-    weekly_planner_limit: string
-    weekly_caption_limit: string
     weekly_database_limit: string
-    saved_username_limit: string
-    saved_profile_limit: string
     daily_subreddit_checker_limit: string
   }
 }
 
 const LIMIT_KEYS = [
   "weekly_scraper_limit",
-  "weekly_planner_limit",
-  "weekly_caption_limit",
   "weekly_database_limit",
-  "saved_username_limit",
-  "saved_profile_limit",
   "daily_subreddit_checker_limit",
 ] as const
 
 const LABELS: Record<(typeof LIMIT_KEYS)[number], string> = {
-  weekly_scraper_limit: "Scraper Limit",
-  weekly_planner_limit: "Planner Limit",
-  weekly_caption_limit: "Caption Limit",
-  weekly_database_limit: "Database Limit",
-  saved_username_limit: "Saved Username Limit",
-  saved_profile_limit: "Saved Profile Limit",
-  daily_subreddit_checker_limit: "Daily Subreddit Checker Limit",
+  weekly_scraper_limit: "SPA Tool Limit",
+  weekly_database_limit: "Subreddit Database Limit (24 hours)",
+  daily_subreddit_checker_limit: "Daily Minimum Reqs Scraper Limit",
 }
 
 export function SubscriptionTierTab() {
@@ -83,16 +71,8 @@ export function SubscriptionTierTab() {
           limits: {
             weekly_scraper_limit:
               row.weekly_scraper_limit == null ? "" : String(row.weekly_scraper_limit),
-            weekly_planner_limit:
-              row.weekly_planner_limit == null ? "" : String(row.weekly_planner_limit),
-            weekly_caption_limit:
-              row.weekly_caption_limit == null ? "" : String(row.weekly_caption_limit),
             weekly_database_limit:
               row.weekly_database_limit == null ? "" : String(row.weekly_database_limit),
-            saved_username_limit:
-              row.saved_username_limit == null ? "" : String(row.saved_username_limit),
-            saved_profile_limit:
-              row.saved_profile_limit == null ? "" : String(row.saved_profile_limit),
             daily_subreddit_checker_limit:
               row.daily_subreddit_checker_limit == null ? "" : String(row.daily_subreddit_checker_limit),
           },
@@ -124,11 +104,7 @@ export function SubscriptionTierTab() {
       duration_days: tier.durationDays === "" ? 30 : Number(tier.durationDays),
       usage_period_days: tier.usagePeriodDays === "" ? 7 : Number(tier.usagePeriodDays),
       weekly_scraper_limit: tier.limits.weekly_scraper_limit === "" ? 0 : Number(tier.limits.weekly_scraper_limit),
-      weekly_planner_limit: tier.limits.weekly_planner_limit === "" ? 0 : Number(tier.limits.weekly_planner_limit),
-      weekly_caption_limit: tier.limits.weekly_caption_limit === "" ? 0 : Number(tier.limits.weekly_caption_limit),
       weekly_database_limit: tier.limits.weekly_database_limit === "" ? 0 : Number(tier.limits.weekly_database_limit),
-      saved_username_limit: tier.limits.saved_username_limit === "" ? 0 : Number(tier.limits.saved_username_limit),
-      saved_profile_limit: tier.limits.saved_profile_limit === "" ? 0 : Number(tier.limits.saved_profile_limit),
       daily_subreddit_checker_limit:
         tier.limits.daily_subreddit_checker_limit === ""
           ? 0

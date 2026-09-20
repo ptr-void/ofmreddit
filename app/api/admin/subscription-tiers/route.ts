@@ -46,11 +46,11 @@ export async function PUT(req: Request) {
   const usage_period_days = Math.max(1, Math.min(365, Number(tier?.usage_period_days ?? 7)))
 
   const weekly_scraper_limit = Number(tier?.weekly_scraper_limit ?? 0)
-  const weekly_planner_limit = Number(tier?.weekly_planner_limit ?? 0)
-  const weekly_caption_limit = Number(tier?.weekly_caption_limit ?? 0)
   const weekly_database_limit = Number(tier?.weekly_database_limit ?? 0)
-  const saved_username_limit = Number(tier?.saved_username_limit ?? 0)
-  const saved_profile_limit = Number(tier?.saved_profile_limit ?? 0)
+  const weekly_planner_limit = -1
+  const weekly_caption_limit = -1
+  const saved_username_limit = 3
+  const saved_profile_limit = 0
   const daily_subreddit_checker_limit = Number(tier?.daily_subreddit_checker_limit ?? 0)
 
   if (!id) return NextResponse.json({ error: "Missing tier id" }, { status: 400 })

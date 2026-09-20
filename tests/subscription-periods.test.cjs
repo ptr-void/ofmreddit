@@ -8,8 +8,10 @@ const root = path.join(__dirname, "..")
 test("subscription limits use the tier's configured rolling period", () => {
   const limits = fs.readFileSync(path.join(root, "lib/limits.ts"), "utf8")
   assert.match(limits, /usage_period_days/)
+  assert.match(limits, /feature === "database" \? 1/)
   assert.match(limits, /DATE_SUB\(NOW\(\), INTERVAL \? DAY\)/)
   assert.match(limits, /if \(cap < 0\)/)
+  assert.match(limits, /const cap = 3/)
 })
 
 test("production plan migration defines all four requested plans", () => {
@@ -20,4 +22,16 @@ test("production plan migration defines all four requested plans", () => {
   assert.match(migration, /price=10/)
   assert.match(migration, /price=30/)
   assert.match(migration, /price=50/)
+  assert.match(migration, /saved_username_limit=3/)
+  assert.match(migration, /saved_profile_limit=0/)
+})
+
+test("tier controls expose only active customer limits", () => {
+  const admin = fs.readFileSync(path.join(root, "components/admin/subscription-tier-tab.tsx"), "utf8")
+  assert.match(admin, /SPA Tool Limit/)
+  assert.match(admin, /Subreddit Database Limit \(24 hours\)/)
+  assert.match(admin, /Daily Minimum Reqs Scraper Limit/)
+  assert.doesNotMatch(admin, /Planner Limit/)
+  assert.doesNotMatch(admin, /Caption Limit/)
+  assert.doesNotMatch(admin, /Saved Profile Limit/)
 })

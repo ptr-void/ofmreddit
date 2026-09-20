@@ -296,13 +296,10 @@ export default function SubscriptionTiers({
                         <div className="text-sm text-muted-foreground">{isFree ? "Ongoing free access" : `${duration} days`}</div>
                       </div>
                       <ul className="space-y-2 text-sm">
-                        <li className="flex justify-between"><span className="text-muted-foreground">Scraper / {Number(tier.usage_period_days || 7)} days</span><strong>{fmt(tier.weekly_scraper_limit)}</strong></li>
-                        <li className="flex justify-between"><span className="text-muted-foreground">Planner / {Number(tier.usage_period_days || 7)} days</span><strong>{fmt(tier.weekly_planner_limit)}</strong></li>
-                        <li className="flex justify-between"><span className="text-muted-foreground">Captions / {Number(tier.usage_period_days || 7)} days</span><strong>{fmt(tier.weekly_caption_limit)}</strong></li>
-                        <li className="flex justify-between"><span className="text-muted-foreground">Database / {Number(tier.usage_period_days || 7)} days</span><strong>{fmt(tier.weekly_database_limit)}</strong></li>
-                        <li className="flex justify-between"><span className="text-muted-foreground">Daily Checker</span><strong>{fmt(tier.daily_subreddit_checker_limit)}</strong></li>
-                        <li className="flex justify-between"><span className="text-muted-foreground">Saved Usernames</span><strong>{fmt(tier.saved_username_limit)}</strong></li>
-                        <li className="flex justify-between"><span className="text-muted-foreground">Saved Profiles</span><strong>{fmt(tier.saved_profile_limit)}</strong></li>
+                        <li className="flex justify-between"><span className="text-muted-foreground">SPA Tool / {Number(tier.usage_period_days || 7)} days</span><strong>{fmt(tier.weekly_scraper_limit)}</strong></li>
+                        <li className="flex justify-between"><span className="text-muted-foreground">Subreddit Database / 24 hours</span><strong>{fmt(tier.weekly_database_limit)}</strong></li>
+                        <li className="flex justify-between"><span className="text-muted-foreground">Daily Minimum Reqs Scraper</span><strong>{fmt(tier.daily_subreddit_checker_limit)}</strong></li>
+                        <li className="flex justify-between"><span className="text-muted-foreground">Saved Usernames</span><strong>3</strong></li>
                       </ul>
                       <button
                         className={`w-full rounded-xl px-4 py-3 text-sm font-bold transition-opacity ${isCurrent || isFree ? "cursor-not-allowed bg-muted text-muted-foreground" : "cursor-pointer bg-gradient-to-r from-cyan-500 to-blue-600 text-white hover:opacity-90 disabled:cursor-pointer disabled:opacity-70"}`}

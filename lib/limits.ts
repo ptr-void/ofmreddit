@@ -102,7 +102,7 @@ export async function assertWithinLimits(
   const tier = await getActiveTierForUser(userId)
   if (!tier) return { ok: false, code: "NO_TIER" }
 
-  const periodDays = Math.max(1, Number(tier.usage_period_days || 7))
+  const periodDays = feature === "database" ? 1 : Math.max(1, Number(tier.usage_period_days || 7))
   const weekly = await getUsageCount(userId, feature, periodDays)
   const cap = capFor(feature, tier)
 
@@ -309,7 +309,7 @@ export async function loadSavedScrape(userId: number, username: string) {
 
 export async function saveSnapshotWithPrune(userId: number, username: string, payload: any): Promise<Array<{ id: number; username: string; scraped_at: string }>> {
   const tier = await getActiveTierForUser(userId)
-  const cap = Math.max(0, Number(tier?.saved_username_limit ?? 0))
+  const cap = 3
   await query(
     `INSERT INTO saved_scrapes (user_id, username, payload, scraped_at)
      VALUES (?, ?, ?, NOW())

@@ -37,9 +37,9 @@ def main() -> None:
                 """
                 UPDATE subscription_tiers
                    SET name='Free', price=NULL, duration_days=30, usage_period_days=7,
-                       weekly_scraper_limit=5, weekly_planner_limit=5,
-                       weekly_caption_limit=5, weekly_database_limit=5,
-                       saved_username_limit=5, saved_profile_limit=5,
+                       weekly_scraper_limit=5, weekly_planner_limit=-1,
+                       weekly_caption_limit=-1, weekly_database_limit=5,
+                       saved_username_limit=3, saved_profile_limit=0,
                        daily_subreddit_checker_limit=3, is_active=1, updated_at=NOW()
                  WHERE id=1
                 """
@@ -47,10 +47,10 @@ def main() -> None:
             cursor.execute(
                 """
                 UPDATE subscription_tiers
-                   SET name='10-Day Pass', price=10, duration_days=10, usage_period_days=10,
-                       weekly_scraper_limit=20, weekly_planner_limit=20,
-                       weekly_caption_limit=20, weekly_database_limit=20,
-                       saved_username_limit=20, saved_profile_limit=20,
+                   SET name='10-Day Pass', price=10, duration_days=10, usage_period_days=7,
+                       weekly_scraper_limit=20, weekly_planner_limit=-1,
+                       weekly_caption_limit=-1, weekly_database_limit=20,
+                       saved_username_limit=3, saved_profile_limit=0,
                        daily_subreddit_checker_limit=5, is_active=1, updated_at=NOW()
                  WHERE id=2
                 """
@@ -58,10 +58,10 @@ def main() -> None:
             cursor.execute(
                 """
                 UPDATE subscription_tiers
-                   SET name='Standard', price=30, duration_days=30, usage_period_days=30,
-                       weekly_scraper_limit=25, weekly_planner_limit=25,
-                       weekly_caption_limit=25, weekly_database_limit=25,
-                       saved_username_limit=25, saved_profile_limit=25,
+                   SET name='Standard', price=30, duration_days=30, usage_period_days=7,
+                       weekly_scraper_limit=25, weekly_planner_limit=-1,
+                       weekly_caption_limit=-1, weekly_database_limit=25,
+                       saved_username_limit=3, saved_profile_limit=0,
                        daily_subreddit_checker_limit=10, is_active=1, updated_at=NOW()
                  WHERE id=4
                 """
@@ -72,10 +72,10 @@ def main() -> None:
                 cursor.execute(
                     """
                     UPDATE subscription_tiers
-                       SET price=50, duration_days=30, usage_period_days=30,
+                       SET price=50, duration_days=30, usage_period_days=7,
                            weekly_scraper_limit=-1, weekly_planner_limit=-1,
                            weekly_caption_limit=-1, weekly_database_limit=-1,
-                           saved_username_limit=-1, saved_profile_limit=-1,
+                           saved_username_limit=3, saved_profile_limit=0,
                            daily_subreddit_checker_limit=-1, is_active=1, updated_at=NOW()
                      WHERE id=%s
                     """,
@@ -90,9 +90,23 @@ def main() -> None:
                        weekly_caption_limit, weekly_database_limit,
                        saved_username_limit, saved_profile_limit,
                        daily_subreddit_checker_limit, is_active)
-                    VALUES ('Unlimited', 50, 30, 30, -1, -1, -1, -1, -1, -1, -1, 1)
+                    VALUES ('Unlimited', 50, 30, 7, -1, -1, -1, -1, 3, 0, -1, 1)
                     """
                 )
+            # These controls are global invariants, including any additional active tier
+            # that an administrator created outside this migration.
+            cursor.execute(
+                """
+                UPDATE subscription_tiers
+                   SET usage_period_days=7,
+                       weekly_planner_limit=-1,
+                       weekly_caption_limit=-1,
+                       saved_username_limit=3,
+                       saved_profile_limit=0,
+                       updated_at=NOW()
+                 WHERE is_active=1
+                """
+            )
         db.commit()
         print("Verified Free, 10-Day Pass, Standard, and Unlimited plans.")
     except Exception:
