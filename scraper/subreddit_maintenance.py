@@ -32,6 +32,13 @@ MIN_DEAD_SPAN = timedelta(hours=48)
 MIN_DEAD_CHECKS = 3
 MAX_ARCHIVES = 5
 NAME = re.compile(r'^[A-Za-z0-9_]{2,21}$')
+DEFAULT_DISCOVERY_EXCLUDED_TERMS = (
+    'gay', 'dude', 'menonly', 'male', 'boy', 'cock', 'dick', 'penis',
+    'twink', 'femboy', 'sissy',
+)
+DISCOVERY_NAME_EXCLUDED_TERMS = (
+    'gay', 'dude', 'menonly', 'cock', 'dick', 'penis', 'twink', 'femboy', 'sissy',
+)
 
 
 def aware(value):
@@ -112,13 +119,23 @@ def next_observation(previous, probe, now):
     return current, eligible
 
 
-def candidate_eligible(metadata, now, minimum_members=100, max_age_days=30):
+def discovery_excluded(metadata, terms=DEFAULT_DISCOVERY_EXCLUDED_TERMS):
+    text = ' '.join(str(metadata.get(field) or '') for field in
+                    ('name', 'title', 'public_description')).lower()
+    compact = re.sub(r'[^a-z0-9]+', ' ', text)
+    tokens = set(compact.split())
+    name = str(metadata.get('name') or '').lower()
+    return any(term in tokens for term in terms) or any(term in name for term in DISCOVERY_NAME_EXCLUDED_TERMS)
+
+
+def candidate_eligible(metadata, now, minimum_members=100000, max_age_days=30):
     members = parse_subscriber_count(metadata.get('subscribers'))
     posted = metadata.get('latest_post_utc')
     return bool(
         NAME.fullmatch(metadata.get('name', ''))
         and metadata.get('over18') is True
         and metadata.get('subreddit_type') == 'public'
+        and not discovery_excluded(metadata)
         and members is not None and members >= minimum_members
         and isinstance(posted, (float, int))
         and 0 <= now.timestamp() - posted <= max_age_days * 86400
@@ -358,7 +375,7 @@ class Maintenance:
             lambda: list(self.analyzer.reddit.subreddits.search(query, limit=25, params={'include_over_18': 'on'})),
             'Discovery search',
         )
-        minimum = int(os.getenv('DISCOVERY_MIN_MEMBERS', '100'))
+        minimum = int(os.getenv('DISCOVERY_MIN_MEMBERS', '100000'))
         max_age = int(os.getenv('DISCOVERY_MAX_POST_AGE_DAYS', '30'))
         for sub in candidates:
             name = normalize_subreddit(str(sub.display_name))
@@ -368,7 +385,9 @@ class Maintenance:
                 # Explicit metadata fetch rather than trusting a search listing's cached fields.
                 self.analyzer._call(sub._fetch, f'r/{name} discovery metadata')
                 metadata = {'name': name, 'over18': bool(sub.over18), 'subreddit_type': sub.subreddit_type,
-                            'subscribers': parse_subscriber_count(getattr(sub, 'subscribers', None)), 'query': query}
+                            'subscribers': parse_subscriber_count(getattr(sub, 'subscribers', None)), 'query': query,
+                            'title': getattr(sub, 'title', ''),
+                            'public_description': getattr(sub, 'public_description', '')}
                 if not metadata['over18'] or metadata['subreddit_type'] != 'public' or (metadata['subscribers'] or 0) < minimum:
                     continue
                 posts = self.analyzer._call(lambda: list(sub.new(limit=5)), f'r/{name} discovery activity')

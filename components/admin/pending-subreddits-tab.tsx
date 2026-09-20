@@ -1,5 +1,5 @@
 "use client"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -15,7 +15,8 @@ export function PendingSubredditsTab() {
   const [subreddits, setSubreddits] = useState<Candidate[]>([])
   const [availability, setAvailability] = useState<Availability[]>([])
   const [loading, setLoading] = useState(true)
-  const [busy, setBusy] = useState(false)
+  const [pendingActions, setPendingActions] = useState<Record<string, "approve" | "reject" | "restore">>({})
+  const actionQueue = useRef<Promise<void>>(Promise.resolve())
   const { toast } = useToast()
   const fetchPending = async () => {
     try {
@@ -29,29 +30,46 @@ export function PendingSubredditsTab() {
     } finally { setLoading(false) }
   }
   useEffect(() => { fetchPending() }, [])
-  const handleAction = async (action: "approve" | "reject" | "restore", item: { id?: number; subreddit_name: string }) => {
-    setBusy(true)
-    try {
-      const res = await fetch("/api/admin/pending", {
-        method: "POST", headers: headers(),
-        body: JSON.stringify({ id: item.id, subreddit: item.subreddit_name, action }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || "Action could not be saved")
-      toast({ title: "Saved", description: data.queued ? "Queued for the next maintenance run. Sheet data is verified before publishing." : "Candidate rejected." })
-      await fetchPending()
-    } catch (e: any) {
-      toast({ title: "Error", description: e.message, variant: "destructive" })
-    } finally { setBusy(false) }
+  const handleAction = (action: "approve" | "reject" | "restore", item: { id?: number; subreddit_name: string }) => {
+    const key = String(item.id ?? item.subreddit_name)
+    if (pendingActions[key]) return
+
+    // Update the row immediately. Requests are serialized in the background so
+    // rapid clicks never contend for the maintenance lock or block the table.
+    setPendingActions((current) => ({ ...current, [key]: action }))
+    actionQueue.current = actionQueue.current.then(async () => {
+      try {
+        const res = await fetch("/api/admin/pending", {
+          method: "POST", headers: headers(),
+          body: JSON.stringify({ id: item.id, subreddit: item.subreddit_name, action }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || "Action could not be saved")
+        setSubreddits((current) => action === "reject"
+          ? current.filter((sub) => sub.id !== item.id)
+          : current.map((sub) => sub.id === item.id ? { ...sub, requested_action: "add" } : sub))
+        setAvailability((current) => action === "restore"
+          ? current.map((sub) => sub.subreddit_name === item.subreddit_name ? { ...sub, requested_action: "restore" } : sub)
+          : current)
+      } catch (e: any) {
+        toast({ title: "Error", description: `${item.subreddit_name}: ${e.message}`, variant: "destructive" })
+      } finally {
+        setPendingActions((current) => {
+          const next = { ...current }
+          delete next[key]
+          return next
+        })
+      }
+    })
   }
   if (loading) return <div>Loading subreddit review...</div>
   return <div className="space-y-6 bg-card rounded-lg border border-border p-6 shadow-sm">
     <div className="flex items-center justify-between gap-4">
       <h2 className="text-xl font-semibold">Subreddit Review</h2>
-      <Button variant="outline" size="sm" onClick={fetchPending} disabled={busy}>Refresh</Button>
+      <Button variant="outline" size="sm" onClick={fetchPending}>Refresh</Button>
     </div>
     <p className="text-sm text-muted-foreground">
-      Discoveries and user submissions stay here until approved. Automatic discovery looks for public communities with at least 100 members and a recent post within 30 days, then suggests the preset niche used for discovery.
+      Discoveries and user submissions stay here until approved. Automatic discovery looks for suitable public communities with at least 100,000 members and a recent post within 30 days, then suggests the preset niche used for discovery.
     </p>
     {!subreddits.length ? <p className="text-sm text-muted-foreground">No pending candidates.</p> : <div className="overflow-x-auto rounded-md border">
       <Table>
@@ -67,8 +85,10 @@ export function PendingSubredditsTab() {
             <TableCell className="max-w-xs text-sm">{sub.submitted_by || (found ? "Automatic discovery" : "Unknown user")}</TableCell>
             <TableCell>{sub.niche_tags || "Not assigned"}</TableCell>
             <TableCell className="space-x-2 whitespace-nowrap">
-              {sub.requested_action === "add" ? <span className="text-muted-foreground text-sm">Addition queued</span> : <Button size="sm" disabled={busy} onClick={() => handleAction("approve", sub)}>Approve</Button>}
-              <Button variant="destructive" size="sm" disabled={busy} onClick={() => handleAction("reject", sub)}>Reject</Button>
+              {sub.requested_action === "add" || pendingActions[String(sub.id)] === "approve"
+                ? <span className="text-muted-foreground text-sm">Addition queued</span>
+                : <Button size="sm" onClick={() => handleAction("approve", sub)}>Approve</Button>}
+              <Button variant="destructive" size="sm" disabled={!!pendingActions[String(sub.id)]} onClick={() => handleAction("reject", sub)}>Reject</Button>
             </TableCell>
           </TableRow>
         })}</TableBody>
@@ -84,7 +104,7 @@ export function PendingSubredditsTab() {
           <TableCell>{sub.state === "archived" ? "Archived" : "Under review"}</TableCell>
           <TableCell>{sub.dead_checks} / 3</TableCell>
           <TableCell className="max-w-md text-sm">{sub.last_evidence}<div className="text-muted-foreground">{sub.last_checked_at ? new Date(sub.last_checked_at).toLocaleString() : ""}</div></TableCell>
-          <TableCell>{sub.state === "archived" && (sub.requested_action === "restore" ? "Restore queued" : <Button size="sm" variant="outline" disabled={busy} onClick={() => handleAction("restore", sub)}>Restore</Button>)}</TableCell>
+          <TableCell>{sub.state === "archived" && (sub.requested_action === "restore" || pendingActions[sub.subreddit_name] === "restore" ? "Restore queued" : <Button size="sm" variant="outline" onClick={() => handleAction("restore", sub)}>Restore</Button>)}</TableCell>
         </TableRow>)}</TableBody>
       </Table>
     </div>}

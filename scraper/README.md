@@ -172,7 +172,7 @@ attribution table; it does not rewrite existing users or subreddit rows.
 * Once per 24 hours, rotate through existing manually entered niche vocabulary.
   Search at most 25 results; queue at most five eligible new communities.
 * Default eligibility: public, adult-designated, at least 100 subscribers and
-  a surviving recent post within 30 days. Override with `DISCOVERY_MIN_MEMBERS`
+  at least 100,000 members and a surviving recent post within 30 days. Override with `DISCOVERY_MIN_MEMBERS`
   and `DISCOVERY_MAX_POST_AGE_DAYS`. These are candidate filters, NOT deletion
   criteria. Admin review determines suitability.
 * Normalize/deduplicate against Sheets, every master row (including rejected),

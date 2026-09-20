@@ -6,7 +6,7 @@ import copy
 import re
 
 from scraper.subreddit_maintenance import (
-    Maintenance, Probe, candidate_eligible, discovery_niche, next_observation, probe_subreddit,
+    Maintenance, Probe, candidate_eligible, discovery_excluded, discovery_niche, next_observation, probe_subreddit,
 )
 from scraper.subreddit_sync import GoogleSheetStore, ScrapeResult, SHEET1_REQUIRED_HEADERS
 from scraper.tests.test_subreddit_sync import FakeWorksheet
@@ -105,11 +105,16 @@ class MaintenanceTests(unittest.TestCase):
         self.assertFalse(eligible)
 
     def test_discovery_thresholds_and_no_missing_member_invention(self):
-        valid = {'name': 'example', 'over18': True, 'subreddit_type': 'public', 'subscribers': 100, 'latest_post_utc': NOW.timestamp() - 100}
+        valid = {'name': 'example', 'over18': True, 'subreddit_type': 'public', 'subscribers': 100000, 'latest_post_utc': NOW.timestamp() - 100}
         self.assertTrue(candidate_eligible(valid, NOW))
-        for changes in [{'subscribers': None}, {'subscribers': 99}, {'over18': False}, {'subreddit_type': 'private'},
+        for changes in [{'subscribers': None}, {'subscribers': 99999}, {'over18': False}, {'subreddit_type': 'private'},
                         {'latest_post_utc': NOW.timestamp() - 31 * 86400}, {'latest_post_utc': None}, {'name': '../bad'}]:
             self.assertFalse(candidate_eligible({**valid, **changes}, NOW))
+
+    def test_discovery_excludes_male_focused_candidates(self):
+        self.assertTrue(discovery_excluded({'name': 'chubbydudes'}))
+        self.assertTrue(discovery_excluded({'name': 'example', 'title': 'Gay community'}))
+        self.assertFalse(discovery_excluded({'name': 'curvywomen', 'title': 'Women'}))
 
     def test_discovery_query_becomes_a_controlled_niche_suggestion(self):
         self.assertEqual(discovery_niche('{"query":"Cosplay"}'), 'cosplay')
