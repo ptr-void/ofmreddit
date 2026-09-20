@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server"
 import { reconcilePendingPayments } from "@/lib/binance-payments"
 
+export const preferredRegion = "sin1"
+
 export const dynamic = "force-dynamic"
 
 export async function GET(req: Request) {

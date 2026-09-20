@@ -2,6 +2,8 @@ import { NextResponse } from "next/server"
 import { verifyToken } from "@/lib/auth"
 import { createPaymentIntent, getAndReconcilePaymentIntent } from "@/lib/binance-payments"
 
+export const preferredRegion = "sin1"
+
 function currentUser(req: Request) {
   const token = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "")
   return token ? verifyToken(token) : null
