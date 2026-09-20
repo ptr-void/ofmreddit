@@ -278,7 +278,7 @@ export default function SubscriptionTiers({
                         <li className="flex justify-between"><span className="text-muted-foreground">Saved Profiles</span><strong>{fmt(tier.saved_profile_limit)}</strong></li>
                       </ul>
                       <button
-                        className={`w-full rounded-xl px-4 py-3 text-sm font-bold transition-opacity ${isCurrent || isFree ? "cursor-not-allowed bg-muted text-muted-foreground" : "cursor-pointer bg-gradient-to-r from-cyan-500 to-blue-600 text-white hover:opacity-90 disabled:cursor-wait disabled:opacity-70"}`}
+                        className={`w-full rounded-xl px-4 py-3 text-sm font-bold transition-opacity ${isCurrent || isFree ? "cursor-not-allowed bg-muted text-muted-foreground" : "cursor-pointer bg-gradient-to-r from-cyan-500 to-blue-600 text-white hover:opacity-90 disabled:cursor-pointer disabled:opacity-70"}`}
                         disabled={isCurrent || isFree || paymentBusy}
                         onClick={() => startPayment(Number(tier.id))}
                       >

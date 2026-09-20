@@ -232,7 +232,7 @@ export function SubscriptionTierTab() {
             </div>
 
             <button
-              className="mt-4 flex w-full cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-primary-foreground hover:opacity-90 disabled:cursor-wait disabled:opacity-70"
+              className="mt-4 flex w-full cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-primary-foreground hover:opacity-90 disabled:cursor-pointer disabled:opacity-70"
               onClick={() => saveTier(tiers[i])}
               disabled={savingTierId !== null}
             >
