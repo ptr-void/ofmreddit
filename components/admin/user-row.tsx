@@ -216,8 +216,8 @@ export function UserRow({ user, onBan, onDelete, onUpdateUsername, onUpdateCusto
               value={limitStr}
               onChange={(e) => setLimitStr(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); saveEditLimit() }
-                if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cancelEditLimit() }
+                if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); saveLimitEdit() }
+                if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cancelLimitEdit() }
               }}
               autoFocus
             />
@@ -226,7 +226,7 @@ export function UserRow({ user, onBan, onDelete, onUpdateUsername, onUpdateCusto
               onClick={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
-                cancelEditLimit()
+                cancelLimitEdit()
               }}
               className={`${s.btn2} !p-3`}
             >
@@ -239,7 +239,7 @@ export function UserRow({ user, onBan, onDelete, onUpdateUsername, onUpdateCusto
               onClick={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
-                saveEditLimit()
+                saveLimitEdit()
               }}
               className={`${s.btn1} !p-3`}
             >
