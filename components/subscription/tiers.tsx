@@ -9,6 +9,7 @@ type ApiTier = {
   name: string
   price: number | string | null
   duration_days: number | string | null
+  usage_period_days: number | string | null
   weekly_scraper_limit: number | string | null
   weekly_planner_limit: number | string | null
   weekly_caption_limit: number | string | null
@@ -44,6 +45,7 @@ type Props = {
 const fmt = (value: number | string | null) => {
   if (value === null || value === "" || typeof value === "undefined") return "-"
   const number = Number(value)
+  if (number < 0) return "Unlimited"
   return Number.isFinite(number) ? number.toString() : String(value)
 }
 
@@ -264,10 +266,10 @@ export default function SubscriptionTiers({
                         <div className="text-sm text-muted-foreground">{duration} days</div>
                       </div>
                       <ul className="space-y-2 text-sm">
-                        <li className="flex justify-between"><span className="text-muted-foreground">Weekly Scraper</span><strong>{fmt(tier.weekly_scraper_limit)}</strong></li>
-                        <li className="flex justify-between"><span className="text-muted-foreground">Weekly Planner</span><strong>{fmt(tier.weekly_planner_limit)}</strong></li>
-                        <li className="flex justify-between"><span className="text-muted-foreground">Weekly Captions</span><strong>{fmt(tier.weekly_caption_limit)}</strong></li>
-                        <li className="flex justify-between"><span className="text-muted-foreground">Weekly Database</span><strong>{fmt(tier.weekly_database_limit)}</strong></li>
+                        <li className="flex justify-between"><span className="text-muted-foreground">Scraper / {Number(tier.usage_period_days || 7)} days</span><strong>{fmt(tier.weekly_scraper_limit)}</strong></li>
+                        <li className="flex justify-between"><span className="text-muted-foreground">Planner / {Number(tier.usage_period_days || 7)} days</span><strong>{fmt(tier.weekly_planner_limit)}</strong></li>
+                        <li className="flex justify-between"><span className="text-muted-foreground">Captions / {Number(tier.usage_period_days || 7)} days</span><strong>{fmt(tier.weekly_caption_limit)}</strong></li>
+                        <li className="flex justify-between"><span className="text-muted-foreground">Database / {Number(tier.usage_period_days || 7)} days</span><strong>{fmt(tier.weekly_database_limit)}</strong></li>
                         <li className="flex justify-between"><span className="text-muted-foreground">Daily Checker</span><strong>{fmt(tier.daily_subreddit_checker_limit)}</strong></li>
                         <li className="flex justify-between"><span className="text-muted-foreground">Saved Usernames</span><strong>{fmt(tier.saved_username_limit)}</strong></li>
                         <li className="flex justify-between"><span className="text-muted-foreground">Saved Profiles</span><strong>{fmt(tier.saved_profile_limit)}</strong></li>

@@ -15,6 +15,7 @@ export async function GET(req: Request) {
       name,
       price,
       duration_days,
+      usage_period_days,
       weekly_scraper_limit,
       weekly_planner_limit,
       weekly_caption_limit,
@@ -42,6 +43,7 @@ export async function PUT(req: Request) {
       ? null
       : Number(tier.price)
   const duration_days = Math.max(1, Math.min(3650, Number(tier?.duration_days ?? 30)))
+  const usage_period_days = Math.max(1, Math.min(365, Number(tier?.usage_period_days ?? 7)))
 
   const weekly_scraper_limit = Number(tier?.weekly_scraper_limit ?? 0)
   const weekly_planner_limit = Number(tier?.weekly_planner_limit ?? 0)
@@ -59,6 +61,7 @@ export async function PUT(req: Request) {
        SET name = ?,
           price = ?,                      
           duration_days = ?,
+          usage_period_days = ?,
           weekly_scraper_limit = ?,
           weekly_planner_limit = ?,
           weekly_caption_limit = ?,
@@ -73,6 +76,7 @@ export async function PUT(req: Request) {
       name,
       price,
       duration_days,
+      usage_period_days,
       weekly_scraper_limit,
       weekly_planner_limit,
       weekly_caption_limit,
@@ -85,7 +89,7 @@ export async function PUT(req: Request) {
   )
 
   const updated = await query<any>(
-    `SELECT id, name, price, duration_days, weekly_scraper_limit, weekly_planner_limit, weekly_caption_limit, weekly_database_limit, saved_username_limit, saved_profile_limit, daily_subreddit_checker_limit, is_active, updated_at, created_at
+    `SELECT id, name, price, duration_days, usage_period_days, weekly_scraper_limit, weekly_planner_limit, weekly_caption_limit, weekly_database_limit, saved_username_limit, saved_profile_limit, daily_subreddit_checker_limit, is_active, updated_at, created_at
        FROM subscription_tiers
       WHERE id = ?`,
     [id],

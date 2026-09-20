@@ -7,6 +7,7 @@ type ApiTier = {
   name: string
   price: number | string | null
   duration_days: number | string | null
+  usage_period_days: number | string | null
   weekly_scraper_limit: number | string | null
   weekly_planner_limit: number | string | null
   weekly_caption_limit: number | string | null
@@ -21,6 +22,7 @@ type UiTier = {
   name: string
   priceStr: string
   durationDays: string
+  usagePeriodDays: string
   limits: {
     weekly_scraper_limit: string
     weekly_planner_limit: string
@@ -43,10 +45,10 @@ const LIMIT_KEYS = [
 ] as const
 
 const LABELS: Record<(typeof LIMIT_KEYS)[number], string> = {
-  weekly_scraper_limit: "Weekly Scraper Limit",
-  weekly_planner_limit: "Weekly Planner Limit",
-  weekly_caption_limit: "Weekly Caption Limit",
-  weekly_database_limit: "Weekly Database Limit",
+  weekly_scraper_limit: "Scraper Limit",
+  weekly_planner_limit: "Planner Limit",
+  weekly_caption_limit: "Caption Limit",
+  weekly_database_limit: "Database Limit",
   saved_username_limit: "Saved Username Limit",
   saved_profile_limit: "Saved Profile Limit",
   daily_subreddit_checker_limit: "Daily Subreddit Checker Limit",
@@ -75,6 +77,7 @@ export function SubscriptionTierTab() {
               ? ""
               : String(row.price),
           durationDays: row.duration_days == null ? "30" : String(row.duration_days),
+          usagePeriodDays: row.usage_period_days == null ? "7" : String(row.usage_period_days),
           limits: {
             weekly_scraper_limit:
               row.weekly_scraper_limit == null ? "" : String(row.weekly_scraper_limit),
@@ -117,6 +120,7 @@ export function SubscriptionTierTab() {
       name: tier.name,
       price: tier.priceStr === "" ? null : Number(tier.priceStr),
       duration_days: tier.durationDays === "" ? 30 : Number(tier.durationDays),
+      usage_period_days: tier.usagePeriodDays === "" ? 7 : Number(tier.usagePeriodDays),
       weekly_scraper_limit: tier.limits.weekly_scraper_limit === "" ? 0 : Number(tier.limits.weekly_scraper_limit),
       weekly_planner_limit: tier.limits.weekly_planner_limit === "" ? 0 : Number(tier.limits.weekly_planner_limit),
       weekly_caption_limit: tier.limits.weekly_caption_limit === "" ? 0 : Number(tier.limits.weekly_caption_limit),
@@ -153,6 +157,7 @@ export function SubscriptionTierTab() {
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-xl font-semibold">Edit Subscription Tiers</h2>
       </div>
+      <p className="mb-4 text-sm text-muted-foreground">Limits reset over the selected period. Use -1 for unlimited access and 0 to disable a feature.</p>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-4">
         {tiers.map((tier, i) => (
@@ -182,6 +187,19 @@ export function SubscriptionTierTab() {
                 value={tier.durationDays}
                 onChange={(e) => updateTier(i, (t) => ({ ...t, durationDays: e.target.value }))}
               />
+            </div>
+
+            <div className="mb-3 grid grid-cols-2 items-center gap-2">
+              <label className="text-sm text-muted-foreground">Usage limit period</label>
+              <select
+                className="w-full rounded-md border border-border bg-background px-3 py-2"
+                value={tier.usagePeriodDays}
+                onChange={(e) => updateTier(i, (t) => ({ ...t, usagePeriodDays: e.target.value }))}
+              >
+                <option value="7">Every 7 days</option>
+                <option value="10">Every 10 days</option>
+                <option value="30">Every 30 days</option>
+              </select>
             </div>
 
             <div className="space-y-2">

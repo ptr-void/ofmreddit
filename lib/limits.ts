@@ -4,6 +4,7 @@ export type Feature = "scraper" | "post_planner" | "caption_gen" | "database" | 
 
 type Tier = {
   id: number
+  usage_period_days: number
   weekly_scraper_limit: number
   weekly_planner_limit: number
   weekly_caption_limit: number
@@ -13,16 +14,17 @@ type Tier = {
   daily_subreddit_checker_limit: number
 }
 
-type AssertOk = { ok: true; usage?: number; cap?: number; bonusCredits?: number; usedBonusCredit?: boolean }
+type AssertOk = { ok: true; usage?: number; cap?: number; periodDays?: number; bonusCredits?: number; usedBonusCredit?: boolean }
 type NoTier = { ok: false; code: "NO_TIER" }
 type NoAccess = { ok: false; code: "NO_ACCESS"; weekly: number; cap: number }
-type WeeklyLimit = { ok: false; code: "WEEKLY_LIMIT"; weekly: number; cap: number; bonusCredits?: number }
+type WeeklyLimit = { ok: false; code: "WEEKLY_LIMIT"; weekly: number; cap: number; bonusCredits?: number; periodDays?: number }
 type Cooldown = { ok: false; code: "COOLDOWN"; wait: number }
 
 export async function getActiveTierForUser(userId: number): Promise<Tier | null> {
   const sql = `
     SELECT 
       t.id, 
+      t.usage_period_days,
       t.weekly_scraper_limit, 
       t.weekly_planner_limit, 
       t.weekly_caption_limit,
@@ -44,7 +46,7 @@ export async function getActiveTierForUser(userId: number): Promise<Tier | null>
   // Accounts without an explicit subscription are displayed as Free throughout
   // the app, so their limits must come from the active Free tier as well.
   return (await queryOne<Tier>(
-    `SELECT id, weekly_scraper_limit, weekly_planner_limit,
+    `SELECT id, usage_period_days, weekly_scraper_limit, weekly_planner_limit,
             weekly_caption_limit, weekly_database_limit,
             saved_username_limit, saved_profile_limit,
             daily_subreddit_checker_limit
@@ -55,15 +57,15 @@ export async function getActiveTierForUser(userId: number): Promise<Tier | null>
   )) ?? null
 }
 
-export async function getWeeklyCount(userId: number, feature: Feature): Promise<number> {
+export async function getUsageCount(userId: number, feature: Feature, periodDays: number): Promise<number> {
   const sql = `
     SELECT COUNT(*) AS count
     FROM feature_usage
     WHERE user_id = ?
       AND feature = ?
-      AND occurred_at >= NOW() - INTERVAL 7 DAY
+      AND occurred_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
   `
-  const row = await queryOne<{ count: number }>(sql, [userId, feature])
+  const row = await queryOne<{ count: number }>(sql, [userId, feature, Math.max(1, Math.min(365, periodDays))])
   return Number(row?.count ?? 0)
 }
 
@@ -100,15 +102,16 @@ export async function assertWithinLimits(
   const tier = await getActiveTierForUser(userId)
   if (!tier) return { ok: false, code: "NO_TIER" }
 
-  const weekly = await getWeeklyCount(userId, feature)
+  const periodDays = Math.max(1, Number(tier.usage_period_days || 7))
+  const weekly = await getUsageCount(userId, feature, periodDays)
   const cap = capFor(feature, tier)
 
   if (cap === 0) return { ok: false, code: "NO_ACCESS", weekly, cap }
 
   if (cap > 0 && weekly >= cap)
-    return { ok: false, code: "WEEKLY_LIMIT", weekly, cap }
+    return { ok: false, code: "WEEKLY_LIMIT", weekly, cap, periodDays }
 
-  return { ok: true }
+  return { ok: true, usage: weekly, cap, periodDays }
 }
 
 export async function assertDailySubredditCheckerLimit(
@@ -144,6 +147,8 @@ export async function assertDailySubredditCheckerLimit(
   const row = await queryOne<{ count: number }>(sql, [userId, feature])
   const daily = Number(row?.count ?? 0)
   const bonusCredits = Math.max(0, Number(user?.subreddit_checker_credits ?? 0))
+
+  if (cap < 0) return { ok: true, usage: daily, cap, bonusCredits }
 
   if (daily >= cap && bonusCredits <= 0) {
     // using WeeklyLimit type to reuse the same error structure, but it represents a daily limit
@@ -198,7 +203,7 @@ export async function recordSubredditCheckerUsage(userId: number, meta?: any): P
     )
     const daily = Number(counts[0]?.count ?? 0)
     const availableCredits = Math.max(0, Number(users[0].subreddit_checker_credits ?? 0))
-    const useBonus = daily >= cap
+    const useBonus = cap >= 0 && daily >= cap
 
     if (useBonus && availableCredits <= 0) {
       await connection.rollback()

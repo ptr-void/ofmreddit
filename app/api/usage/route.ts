@@ -81,8 +81,9 @@ export async function POST(req: Request) {
                     return NextResponse.json({ error: "This feature is not available for your plan.", showTiers: showTiersFlag }, { status: 403 })
                 }
                 if (anyWithin.code === "WEEKLY_LIMIT") {
-                    const timeWindow = feature === "subreddit_checker" ? "Daily" : "Weekly"
-                    const perTime = feature === "subreddit_checker" ? "day" : "week"
+                    const periodDays = feature === "subreddit_checker" ? 1 : Math.max(1, Number(anyWithin.periodDays || 7))
+                    const timeWindow = periodDays === 1 ? "Daily" : `${periodDays}-day`
+                    const perTime = periodDays === 1 ? "day" : `${periodDays} days`
                     return NextResponse.json(
                         { 
                           error: `${timeWindow} limit reached (${anyWithin.cap} uses per ${perTime}).`, 
