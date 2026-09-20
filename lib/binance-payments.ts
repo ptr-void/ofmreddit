@@ -33,6 +33,8 @@ type BinanceDeposit = {
   insertTime: number
 }
 
+const TRON_USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
+
 function paymentConfig() {
   const apiKey = process.env.BINANCE_API_KEY?.trim()
   const secretKey = process.env.BINANCE_SECRET_KEY?.trim()
@@ -118,7 +120,42 @@ export async function getBinancePermissions() {
 }
 
 async function getDeposits(startTime: number): Promise<BinanceDeposit[]> {
-  const { coin } = paymentConfig()
+  const config = paymentConfig()
+  if (config.coin === "USDT" && config.network === "TRX") {
+    const params = new URLSearchParams({
+      only_confirmed: "true",
+      only_to: "true",
+      limit: "200",
+      contract_address: TRON_USDT_CONTRACT,
+      min_timestamp: String(Math.max(0, startTime)),
+    })
+    const response = await fetch(
+      `https://api.trongrid.io/v1/accounts/${encodeURIComponent(config.address)}/transactions/trc20?${params}`,
+      { cache: "no-store" },
+    )
+    const payload = await response.json().catch(() => null)
+    if (!response.ok || !payload?.success || !Array.isArray(payload.data)) {
+      throw new Error("TRON payment confirmation service is temporarily unavailable")
+    }
+    return payload.data
+      .filter((item: any) => String(item.to || "") === config.address)
+      .map((item: any) => {
+        const decimals = Math.max(0, Number(item.token_info?.decimals ?? 6))
+        const raw = BigInt(String(item.value || "0"))
+        return {
+          amount: formatUnits(raw * BigInt(10) ** BigInt(Math.max(0, SCALE - decimals))),
+          coin: "USDT",
+          network: "TRX",
+          status: 1,
+          address: String(item.to || ""),
+          txId: String(item.transaction_id || ""),
+          insertTime: Number(item.block_timestamp || 0),
+        }
+      })
+      .filter((item: BinanceDeposit) => Boolean(item.txId))
+  }
+
+  const { coin } = config
   const data = await signedBinanceGet("/sapi/v1/capital/deposit/hisrec", {
     coin,
     startTime: Math.max(Date.now() - 89 * 86400_000, startTime),

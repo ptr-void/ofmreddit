@@ -46,3 +46,11 @@ test("payment endpoints require authentication and reject malformed intent ids",
 test("the unsigned placeholder Binance webhook is removed", () => {
   assert.equal(fs.existsSync(path.join(__dirname, "../app/api/webhooks/binance/route.ts")), false)
 })
+
+test("USDT TRC20 confirmation uses confirmed on-chain transfers", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../lib/binance-payments.ts"), "utf8")
+  assert.match(source, /TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t/)
+  assert.match(source, /only_confirmed: "true"/)
+  assert.match(source, /only_to: "true"/)
+  assert.match(source, /transaction_id/)
+})
