@@ -127,6 +127,15 @@ export default function Navigation() {
                     >
                       Subreddit min reqs checker
                     </Link>
+                <Link
+                  href="/subscriptions"
+                  className={`hidden xl:block whitespace-nowrap px-3 py-2 text-sm rounded-lg font-medium transition-colors ${pathname === "/subscriptions"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                    }`}
+                >
+                  Plans
+                </Link>
                 {user.isAdmin ? (
                   <>
                     <Link
@@ -238,6 +247,16 @@ export default function Navigation() {
                 >
                   Subreddit min reqs checker
                 </Link>
+            <Link
+              href="/subscriptions"
+              onClick={() => setMobileMenuOpen(false)}
+              className={`block px-4 py-2 rounded-lg font-medium transition-colors ${pathname === "/subscriptions"
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                }`}
+            >
+              Plans
+            </Link>
             {user.isAdmin ? (
               <>
                 <Link

@@ -6,6 +6,7 @@ type ApiTier = {
   id: number
   name: string
   price: number | string | null
+  duration_days: number | string | null
   weekly_scraper_limit: number | string | null
   weekly_planner_limit: number | string | null
   weekly_caption_limit: number | string | null
@@ -19,6 +20,7 @@ type UiTier = {
   id: number
   name: string
   priceStr: string
+  durationDays: string
   limits: {
     weekly_scraper_limit: string
     weekly_planner_limit: string
@@ -72,6 +74,7 @@ export function SubscriptionTierTab() {
             row.price === null || row.price === undefined || row.price === ""
               ? ""
               : String(row.price),
+          durationDays: row.duration_days == null ? "30" : String(row.duration_days),
           limits: {
             weekly_scraper_limit:
               row.weekly_scraper_limit == null ? "" : String(row.weekly_scraper_limit),
@@ -113,6 +116,7 @@ export function SubscriptionTierTab() {
       id: tier.id,
       name: tier.name,
       price: tier.priceStr === "" ? null : Number(tier.priceStr),
+      duration_days: tier.durationDays === "" ? 30 : Number(tier.durationDays),
       weekly_scraper_limit: tier.limits.weekly_scraper_limit === "" ? 0 : Number(tier.limits.weekly_scraper_limit),
       weekly_planner_limit: tier.limits.weekly_planner_limit === "" ? 0 : Number(tier.limits.weekly_planner_limit),
       weekly_caption_limit: tier.limits.weekly_caption_limit === "" ? 0 : Number(tier.limits.weekly_caption_limit),
@@ -163,9 +167,20 @@ export function SubscriptionTierTab() {
                 type="text"
                 inputMode="decimal"
                 className="w-28 shrink-0 rounded-md border border-border bg-background px-3 py-2"
-                placeholder="Price"
+                placeholder="Price (USDT)"
                 value={tier.priceStr}
                 onChange={(e) => updateTier(i, (t) => ({ ...t, priceStr: e.target.value }))}
+              />
+            </div>
+
+            <div className="mb-3 grid grid-cols-2 items-center gap-2">
+              <label className="text-sm text-muted-foreground">Duration (days)</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                className="w-full rounded-md border border-border bg-background px-3 py-2"
+                value={tier.durationDays}
+                onChange={(e) => updateTier(i, (t) => ({ ...t, durationDays: e.target.value }))}
               />
             </div>
 

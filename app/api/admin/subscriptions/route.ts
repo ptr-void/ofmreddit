@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server"
 import { query, queryOne } from "@/lib/db"
+import { verifyAdminToken } from "@/lib/auth"
 
-export async function GET() {
+function admin(req: Request) {
+  const token = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "")
+  return token ? verifyAdminToken(token) : null
+}
+
+export async function GET(req: Request) {
+  if (!admin(req)) return NextResponse.json({ error: "Admin access required" }, { status: 401 })
   const subscriptions = await query(
     `SELECT 
       us.id,
@@ -21,6 +28,7 @@ export async function GET() {
 }
 
 export async function PUT(req: Request) {
+  if (!admin(req)) return NextResponse.json({ error: "Admin access required" }, { status: 401 })
   const { userId, tierId, starts_at, ends_at, cooldown } = await req.json()
   if (!userId || !tierId || !starts_at) {
     return NextResponse.json({ error: "Missing userId, tierId, or start date" }, { status: 400 })

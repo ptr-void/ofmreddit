@@ -1,12 +1,20 @@
 import { NextResponse } from "next/server"
 import { query } from "@/lib/db"
+import { verifyAdminToken } from "@/lib/auth"
 
-export async function GET() {
+function admin(req: Request) {
+  const token = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "")
+  return token ? verifyAdminToken(token) : null
+}
+
+export async function GET(req: Request) {
+  if (!admin(req)) return NextResponse.json({ error: "Admin access required" }, { status: 401 })
   const rows = await query<any>(`
     SELECT
       id,
       name,
-      price,                   
+      price,
+      duration_days,
       weekly_scraper_limit,
       weekly_planner_limit,
       weekly_caption_limit,
@@ -24,6 +32,7 @@ export async function GET() {
 }
 
 export async function PUT(req: Request) {
+  if (!admin(req)) return NextResponse.json({ error: "Admin access required" }, { status: 401 })
   const { tier } = await req.json()
 
   const id = Number(tier?.id)
@@ -32,6 +41,7 @@ export async function PUT(req: Request) {
     tier?.price === null || tier?.price === "" || Number.isNaN(Number(tier?.price))
       ? null
       : Number(tier.price)
+  const duration_days = Math.max(1, Math.min(3650, Number(tier?.duration_days ?? 30)))
 
   const weekly_scraper_limit = Number(tier?.weekly_scraper_limit ?? 0)
   const weekly_planner_limit = Number(tier?.weekly_planner_limit ?? 0)
@@ -48,6 +58,7 @@ export async function PUT(req: Request) {
     UPDATE subscription_tiers
        SET name = ?,
           price = ?,                      
+          duration_days = ?,
           weekly_scraper_limit = ?,
           weekly_planner_limit = ?,
           weekly_caption_limit = ?,
@@ -61,6 +72,7 @@ export async function PUT(req: Request) {
     [
       name,
       price,
+      duration_days,
       weekly_scraper_limit,
       weekly_planner_limit,
       weekly_caption_limit,
@@ -73,7 +85,7 @@ export async function PUT(req: Request) {
   )
 
   const updated = await query<any>(
-    `SELECT id, name, price, weekly_scraper_limit, weekly_planner_limit, weekly_caption_limit, weekly_database_limit, saved_username_limit, saved_profile_limit, daily_subreddit_checker_limit, is_active, updated_at, created_at
+    `SELECT id, name, price, duration_days, weekly_scraper_limit, weekly_planner_limit, weekly_caption_limit, weekly_database_limit, saved_username_limit, saved_profile_limit, daily_subreddit_checker_limit, is_active, updated_at, created_at
        FROM subscription_tiers
       WHERE id = ?`,
     [id],
