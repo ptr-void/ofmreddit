@@ -60,6 +60,7 @@ export default function SubscriptionTiers({
   const [currentTierId, setCurrentTierId] = useState<number | null>(currentTierIdProp)
   const [payment, setPayment] = useState<Payment | null>(null)
   const [paymentBusy, setPaymentBusy] = useState(false)
+  const [startingTierId, setStartingTierId] = useState<number | null>(null)
   const [error, setError] = useState("")
   const [copied, setCopied] = useState("")
 
@@ -137,6 +138,7 @@ export default function SubscriptionTiers({
       setError("Sign in to choose a paid plan")
       return
     }
+    setStartingTierId(tierId)
     setPaymentBusy(true)
     setError("")
     try {
@@ -152,6 +154,7 @@ export default function SubscriptionTiers({
       setError(reason.message)
     } finally {
       setPaymentBusy(false)
+      setStartingTierId(null)
     }
   }
 
@@ -275,11 +278,13 @@ export default function SubscriptionTiers({
                         <li className="flex justify-between"><span className="text-muted-foreground">Saved Profiles</span><strong>{fmt(tier.saved_profile_limit)}</strong></li>
                       </ul>
                       <button
-                        className={`w-full rounded-xl px-4 py-3 text-sm font-bold ${isCurrent || isFree ? "cursor-not-allowed bg-muted text-muted-foreground" : "bg-gradient-to-r from-cyan-500 to-blue-600 text-white"}`}
+                        className={`w-full rounded-xl px-4 py-3 text-sm font-bold transition-opacity ${isCurrent || isFree ? "cursor-not-allowed bg-muted text-muted-foreground" : "cursor-pointer bg-gradient-to-r from-cyan-500 to-blue-600 text-white hover:opacity-90 disabled:cursor-wait disabled:opacity-70"}`}
                         disabled={isCurrent || isFree || paymentBusy}
                         onClick={() => startPayment(Number(tier.id))}
                       >
-                        {isCurrent ? "Current Plan" : isFree ? "Free Plan" : "Pay with USDT"}
+                        {startingTierId === Number(tier.id) ? (
+                          <span className="flex items-center justify-center gap-2"><Loader2 className="size-4 animate-spin" />Preparing payment…</span>
+                        ) : isCurrent ? "Current Plan" : isFree ? "Free Plan" : "Pay with USDT"}
                       </button>
                     </div>
                   </div>
