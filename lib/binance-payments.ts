@@ -82,11 +82,21 @@ function publicIntent(intent: PaymentIntentRow) {
 
 async function signedBinanceGet(path: string, input: Record<string, string | number>) {
   const config = paymentConfig()
-  const timeResponse = await fetch("https://api.binance.com/api/v3/time", { cache: "no-store" })
-  if (!timeResponse.ok) throw new Error("Binance time service is unavailable")
-  const { serverTime } = await timeResponse.json()
+  let serverTime = Date.now()
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const timeResponse = await fetch("https://api.binance.com/api/v3/time", { cache: "no-store" })
+      if (timeResponse.ok) {
+        const data = await timeResponse.json()
+        if (Number.isFinite(Number(data.serverTime))) serverTime = Number(data.serverTime)
+        break
+      }
+    } catch {
+      // Vercel's clock is synchronized, so Date.now() remains a valid signed-request fallback.
+    }
+  }
   const params = new URLSearchParams()
-  for (const [key, value] of Object.entries({ ...input, recvWindow: 5000, timestamp: Number(serverTime) })) {
+  for (const [key, value] of Object.entries({ ...input, recvWindow: 10000, timestamp: serverTime })) {
     params.set(key, String(value))
   }
   const payload = params.toString()

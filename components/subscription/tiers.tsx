@@ -38,6 +38,7 @@ type Payment = {
 type Props = {
   open: boolean
   onClose: () => void
+  embedded?: boolean
   currentTierId?: number | null
   onSelectTier?: (tierId: number) => void
 }
@@ -52,6 +53,7 @@ const fmt = (value: number | string | null) => {
 export default function SubscriptionTiers({
   open,
   onClose,
+  embedded = false,
   currentTierId: currentTierIdProp = null,
   onSelectTier,
 }: Props) {
@@ -174,12 +176,10 @@ export default function SubscriptionTiers({
     [],
   )
 
-  if (!open || typeof document === "undefined") return null
+  if ((!embedded && !open) || typeof document === "undefined") return null
 
-  return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center animate-in fade-in duration-200">
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative max-h-[92vh] w-full max-w-6xl overflow-y-auto rounded-2xl border border-border/50 bg-card shadow-2xl mx-4">
+  const panel = (
+      <div className={`relative w-full max-w-6xl overflow-y-auto rounded-2xl border border-border/50 bg-card shadow-2xl ${embedded ? "" : "max-h-[92vh] mx-4"}`}>
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border/50 bg-card px-6 py-5">
           <div className="flex items-center gap-3">
             {payment && payment.status !== "paid" && (
@@ -189,9 +189,9 @@ export default function SubscriptionTiers({
             )}
             <div className="text-2xl font-bold text-foreground">{payment ? "Crypto Payment" : "Choose Your Plan"}</div>
           </div>
-          <button aria-label="Close" onClick={onClose} className="rounded-full p-2 hover:bg-accent">
+          {!embedded && <button aria-label="Close" onClick={onClose} className="cursor-pointer rounded-full p-2 hover:bg-accent">
             <X className="h-5 w-5" />
-          </button>
+          </button>}
         </div>
 
         <div className="px-6 pb-10 pt-8">
@@ -205,7 +205,7 @@ export default function SubscriptionTiers({
                   <CheckCircle2 className="mx-auto mb-4 size-12 text-green-500" />
                   <h3 className="text-2xl font-bold">Payment confirmed</h3>
                   <p className="mt-2 text-muted-foreground">{payment.tierName} is active for {payment.durationDays} days.</p>
-                  <button onClick={onClose} className="mt-6 rounded-xl bg-primary px-6 py-3 font-semibold text-primary-foreground">Continue</button>
+                  <button onClick={() => embedded ? setPayment(null) : onClose()} className="mt-6 cursor-pointer rounded-xl bg-primary px-6 py-3 font-semibold text-primary-foreground">Continue</button>
                 </div>
               ) : (
                 <>
@@ -295,6 +295,14 @@ export default function SubscriptionTiers({
           {!loading && !payment && tiers.length === 0 && <div className="text-sm text-muted-foreground">No tiers available.</div>}
         </div>
       </div>
+  )
+
+  if (embedded) return <section className="mx-auto w-full max-w-6xl px-4 py-10">{panel}</section>
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center animate-in fade-in duration-200">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      {panel}
     </div>,
     document.body,
   )

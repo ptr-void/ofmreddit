@@ -1,6 +1,7 @@
 "use client"
 import { useEffect, useState, useRef } from "react"
 import { useToast } from "@/hooks/use-toast"
+import { Loader2 } from "lucide-react"
 
 type ApiTier = {
   id: number
@@ -59,6 +60,7 @@ export function SubscriptionTierTab() {
   const [tiers, setTiers] = useState<UiTier[]>([])
   const [loading, setLoading] = useState(true)
   const [showBanner, setShowBanner] = useState(false)
+  const [savingTierId, setSavingTierId] = useState<number | null>(null)
   const timerRef = useRef<number | null>(null)
 
   useEffect(() => {
@@ -133,21 +135,27 @@ export function SubscriptionTierTab() {
           : Number(tier.limits.daily_subreddit_checker_limit),
     }
 
-    const res = await fetch("/api/admin/subscription-tiers", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ tier: payload }),
-    })
+    setSavingTierId(tier.id)
+    try {
+      const res = await fetch("/api/admin/subscription-tiers", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ tier: payload }),
+      })
 
-    if (!res.ok) {
-      const e = await res.json().catch(() => ({}))
-      toast({ title: "Error", description: e.error || "Failed to save tier", variant: "destructive", duration: 2000 })
-      return
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({}))
+        throw new Error(e.error || "Failed to save tier")
+      }
+
+      setShowBanner(true)
+      if (timerRef.current) window.clearTimeout(timerRef.current)
+      timerRef.current = window.setTimeout(() => setShowBanner(false), 2000)
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive", duration: 2000 })
+    } finally {
+      setSavingTierId(null)
     }
-
-    setShowBanner(true)
-    if (timerRef.current) window.clearTimeout(timerRef.current)
-    timerRef.current = window.setTimeout(() => setShowBanner(false), 2000)
   }
 
   if (loading) return <div className="text-sm text-muted-foreground">Loading…</div>
@@ -224,10 +232,12 @@ export function SubscriptionTierTab() {
             </div>
 
             <button
-              className="mt-4 w-full rounded-md bg-primary text-primary-foreground px-3 py-2 hover:opacity-90"
+              className="mt-4 flex w-full cursor-pointer items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 text-primary-foreground hover:opacity-90 disabled:cursor-wait disabled:opacity-70"
               onClick={() => saveTier(tiers[i])}
+              disabled={savingTierId !== null}
             >
-              Save Tier
+              {savingTierId === tier.id && <Loader2 className="size-4 animate-spin" />}
+              {savingTierId === tier.id ? "Saving…" : "Save Tier"}
             </button>
           </div>
         ))}
