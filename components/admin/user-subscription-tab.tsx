@@ -3,17 +3,10 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useToast } from "@/hooks/use-toast"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select2"
 import s from "@/styles/scraper.module.css"
-import a from "@/styles/admin.module.css"
 
 type User = { id: number; email: string; username?: string | null; is_admin: boolean }
-type Subscription = { id: number; user_id: number; tier_id: number; starts_at: string | null; ends_at: string | null; cooldown: "0" | "10" | "30" | null }
+type Subscription = { id: number; user_id: number; tier_id: number; tier_name?: string; starts_at: string | null; ends_at: string | null }
 type Tier = { id: number; name: string }
-
-const COOLDOWN_CHOICES: Array<{ value: "0" | "10" | "30"; label: string }> = [
-  { value: "0", label: "No Cooldown" },
-  { value: "10", label: "10-Minute Cooldown" },
-  { value: "30", label: "30-Minute Cooldown" },
-]
 
 export function UserSubscriptionTab() {
   const { toast } = useToast()
@@ -54,22 +47,17 @@ export function UserSubscriptionTab() {
   }, [toast])
 
   const initial = useMemo(() => {
-    const map: Record<number, { start: string; end: string; tierId: number | null; cooldown: "0" | "10" | "30" }> = {}
+    const map: Record<number, number | null> = {}
     subs.forEach(s => {
-      map[s.user_id] = {
-        start: s.starts_at ? s.starts_at.slice(0, 10) : "",
-        end: s.ends_at ? s.ends_at.slice(0, 10) : "",
-        tierId: s.tier_id ?? null,
-        cooldown: (s.cooldown as "0" | "10" | "30") ?? "0"
-      }
+      map[s.user_id] = s.tier_id ?? null
     })
     return map
   }, [subs])
 
-  const [rows, setRows] = useState<Record<number, { start: string; end: string; tierId: number | null; cooldown: "0" | "10" | "30" }>>({})
+  const [rows, setRows] = useState<Record<number, number | null>>({})
   useEffect(() => setRows(initial), [initial])
 
-  const save = async (userId: number, tierId: number | null, start: string | null, end: string | null, cooldown: "0" | "10" | "30") => {
+  const save = async (userId: number, tierId: number | null) => {
     const token = localStorage.getItem("token")
     if (!token) return
     setSaving(prev => ({ ...prev, [userId]: true }))
@@ -77,7 +65,7 @@ export function UserSubscriptionTab() {
       const res = await fetch("/api/admin/subscriptions", {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ userId, tierId, starts_at: start, ends_at: end, cooldown })
+        body: JSON.stringify({ userId, tierId })
       })
       if (!res.ok) {
         const e = await res.json().catch(() => ({}))
@@ -86,8 +74,15 @@ export function UserSubscriptionTab() {
         showBanner(msg, "err")
         return
       }
-      toast({ title: "Saved", description: "Subscription updated", duration: 2000 })
-      showBanner("Subscription updated!", "ok")
+      const data = await res.json()
+      if (data.subscription) {
+        setSubs((current) => [
+          ...current.filter((subscription) => subscription.user_id !== userId),
+          data.subscription,
+        ])
+      }
+      toast({ title: "Saved", description: "Tier updated", duration: 2000 })
+      showBanner("Tier updated!", "ok")
     } finally {
       setSaving(prev => ({ ...prev, [userId]: false }))
     }
@@ -97,25 +92,26 @@ export function UserSubscriptionTab() {
 
   return (
     <div>
-      <h2 className="text-xl font-semibold mb-3">Assign User Subscription</h2>
+      <h2 className="text-xl font-semibold mb-1">User Subscription Tiers</h2>
+      <p className="mb-3 text-sm text-muted-foreground">Paid plans update automatically after payment. Use this table only for manual tier overrides.</p>
 
       <div className="rounded-xl border border-border overflow-hidden">
         <div className="w-full overflow-x-auto">
-          <table className="w-full min-w-[980px] text-sm">
+          <table className="w-full min-w-[720px] text-sm">
             <thead className="bg-card/60">
               <tr>
                 <th className="text-left p-3 whitespace-nowrap">User</th>
                 <th className="text-left p-3 whitespace-nowrap">Username</th>
-                <th className="text-left p-3 whitespace-nowrap">Tier</th>
-                <th className="text-left p-3 whitespace-nowrap">Start Date</th>
-                <th className="text-left p-3 whitespace-nowrap">End Date</th>
-                <th className="text-left p-3 whitespace-nowrap">Cooldown</th>
+                <th className="text-left p-3 whitespace-nowrap">Current Tier</th>
+                <th className="text-left p-3 whitespace-nowrap">Assign Tier</th>
                 <th className="text-left p-3 w-32 whitespace-nowrap">Action</th>
               </tr>
             </thead>
             <tbody>
               {users.map(u => {
-                const row = rows[u.id] || { start: "", end: "", tierId: tiers[0]?.id ?? null, cooldown: "0" as const }
+                const tierId = rows[u.id] ?? initial[u.id] ?? tiers.find((tier) => tier.name.toLowerCase() === "free")?.id ?? tiers[0]?.id ?? null
+                const currentTierId = initial[u.id] ?? tiers.find((tier) => tier.name.toLowerCase() === "free")?.id ?? null
+                const currentTier = tiers.find((tier) => tier.id === currentTierId)?.name || "Free"
                 const isSaving = !!saving[u.id]
                 return (
                   <tr key={u.id} className="border-t border-border/60">
@@ -132,12 +128,11 @@ export function UserSubscriptionTab() {
                         {u.username && u.username.trim() !== "" ? u.username : "None"}
                       </span>
                     </td>
+                    <td className="p-3 font-medium">{currentTier}</td>
                     <td className="p-3 min-w-[200px]">
                       <Select
-                        value={row.tierId != null ? String(row.tierId) : ""}
-                        onValueChange={(v) =>
-                          setRows(prev => ({ ...prev, [u.id]: { ...row, tierId: v ? Number(v) : null } }))
-                        }
+                        value={tierId != null ? String(tierId) : ""}
+                        onValueChange={(v) => setRows(prev => ({ ...prev, [u.id]: v ? Number(v) : null }))}
                       >
                         <SelectTrigger className={s.csvinput}>
                           <SelectValue />
@@ -149,44 +144,11 @@ export function UserSubscriptionTab() {
                         </SelectContent>
                       </Select>
                     </td>
-                    <td className="p-3 min-w-[180px]">
-                      <input
-                        type="date"
-                        className={`${a.date} w-full rounded-md border border-border bg-background px-3 py-2 date-icon-tinted`}
-                        value={row.start}
-                        onChange={e => setRows(prev => ({ ...prev, [u.id]: { ...row, start: e.target.value } }))}
-                      />
-                    </td>
-                    <td className="p-3 min-w-[180px]">
-                      <input
-                        type="date"
-                        className={`${a.date} w-full rounded-md border border-border bg-background px-3 py-2 date-icon-tinted`}
-                        value={row.end}
-                        onChange={e => setRows(prev => ({ ...prev, [u.id]: { ...row, end: e.target.value } }))}
-                      />
-                    </td>
-                    <td className="p-3 min-w-[200px]">
-                      <Select
-                        value={row.cooldown}
-                        onValueChange={(v) =>
-                          setRows(prev => ({ ...prev, [u.id]: { ...row, cooldown: (v as "0" | "10" | "30") } }))
-                        }
-                      >
-                        <SelectTrigger className={s.csvinput}>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {COOLDOWN_CHOICES.map(opt => (
-                            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </td>
                     <td className="p-3 min-w-[140px]">
                       <button
                         className="w-full rounded-md bg-primary text-primary-foreground px-3 py-2 hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed"
-                        onClick={() => save(u.id, row.tierId, row.start || null, row.end || null, row.cooldown)}
-                        disabled={isSaving}
+                        onClick={() => save(u.id, tierId)}
+                        disabled={isSaving || tierId == null || tierId === currentTierId}
                         aria-busy={isSaving}
                       >
                         {isSaving ? "Saving…" : "Save"}
@@ -199,8 +161,6 @@ export function UserSubscriptionTab() {
           </table>
         </div>
       </div>
-
-      <p className="text-xs text-muted-foreground mt-2">Leave a date empty to clear it. Dates save as YYYY-MM-DD.</p>
 
       {banner && (
         <div

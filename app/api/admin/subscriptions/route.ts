@@ -29,12 +29,13 @@ export async function GET(req: Request) {
 
 export async function PUT(req: Request) {
   if (!admin(req)) return NextResponse.json({ error: "Admin access required" }, { status: 401 })
-  const { userId, tierId, starts_at, ends_at, cooldown } = await req.json()
-  if (!userId || !tierId || !starts_at) {
-    return NextResponse.json({ error: "Missing userId, tierId, or start date" }, { status: 400 })
+  const { userId, tierId } = await req.json()
+  if (!Number.isSafeInteger(Number(userId)) || !Number.isSafeInteger(Number(tierId))) {
+    return NextResponse.json({ error: "Select a valid user and tier" }, { status: 400 })
   }
 
-  await new Promise((r) => setTimeout(r, 900))
+  const tier = await queryOne<{ id: number }>("SELECT id FROM subscription_tiers WHERE id = ? AND is_active = 1", [tierId])
+  if (!tier) return NextResponse.json({ error: "Tier not found" }, { status: 404 })
 
   const existing = await queryOne(
     `SELECT id 
@@ -45,20 +46,18 @@ export async function PUT(req: Request) {
     [userId]
   )
 
-  const cd = cooldown ?? "0"
-
   if (existing) {
     await query(
       `UPDATE user_subscriptions
-       SET tier_id = ?, starts_at = ?, ends_at = ?, cooldown = ?
+       SET tier_id = ?, starts_at = NOW(), ends_at = NULL
        WHERE id = ?`,
-      [tierId, starts_at, ends_at ?? null, cd, existing.id]
+      [tierId, existing.id]
     )
   } else {
     await query(
-      `INSERT INTO user_subscriptions (user_id, tier_id, starts_at, ends_at, cooldown)
-       VALUES (?, ?, ?, ?, ?)`,
-      [userId, tierId, starts_at, ends_at ?? null, cd]
+      `INSERT INTO user_subscriptions (user_id, tier_id, starts_at, ends_at)
+       VALUES (?, ?, NOW(), NULL)`,
+      [userId, tierId]
     )
   }
 
