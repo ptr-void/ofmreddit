@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { getPool, query } from "@/lib/db"
 import { verifyAdminToken } from "@/lib/auth"
+import { validateNicheTags } from "@/lib/niche-presets"
 
 function admin(req: Request) {
   const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "")
@@ -60,6 +61,12 @@ export async function POST(req: Request) {
       (action === "restore" ? !/^[a-z0-9_]{2,21}$/.test(name) : !Number.isSafeInteger(id) || id <= 0)) {
     return NextResponse.json({ error: "Invalid action or subreddit" }, { status: 400 })
   }
+  let approvedNiche = ""
+  if (action === "approve") {
+    const niche = await validateNicheTags(body.niche_tags)
+    if (!niche.ok) return NextResponse.json({ error: niche.error }, { status: 400 })
+    approvedNiche = niche.value
+  }
   const connection = await getPool().getConnection()
   let locked = false
   try {
@@ -95,6 +102,7 @@ export async function POST(req: Request) {
           await connection.rollback()
           return NextResponse.json({ error: "Restore this archived subreddit first" }, { status: 409 })
         }
+        await connection.execute("UPDATE master_subreddits SET niche_tags=? WHERE id=? AND status='pending'", [approvedNiche, id])
         await connection.execute(`INSERT INTO subreddit_maintenance (subreddit_name, requested_action)
           VALUES (?, 'add') ON DUPLICATE KEY UPDATE requested_action='add'`, [target])
       } else {
@@ -103,7 +111,7 @@ export async function POST(req: Request) {
       }
     }
     await connection.execute("INSERT INTO subreddit_maintenance_events (subreddit_name, action, detail_json) VALUES (?,?,?)",
-      [target, `admin_${action}`, JSON.stringify({ userId: actor.userId })])
+      [target, `admin_${action}`, JSON.stringify({ userId: actor.userId, ...(approvedNiche ? { nicheTags: approvedNiche } : {}) })])
     await connection.commit()
     return NextResponse.json({ success: true, queued: action !== "reject" })
   } catch (err) {

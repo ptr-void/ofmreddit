@@ -156,11 +156,17 @@ export default function RedditDatabasePage() {
 
   let renderHeaders = sheetData?.headers ?? []
   let renderRows = filteredRows
-  if (sheetData && !showMinReqs) {
-    const hidden = new Set(["Min Post Karma", "Min Comment Karma", "Min Total Karma", "Min Account Age"])
-    const keepIndices = renderHeaders.map((header, index) => (hidden.has(header) ? -1 : index)).filter((index) => index >= 0)
-    renderHeaders = renderHeaders.filter((_, index) => keepIndices.includes(index))
-    renderRows = renderRows.map((row) => keepIndices.map((index) => row[index] ?? ""))
+  if (sheetData) {
+    const observedMinimums = new Set(["min post karma", "min comment karma", "min total karma", "min account age"])
+    const normalIndices = renderHeaders
+      .map((header, index) => (observedMinimums.has(header.trim().toLowerCase()) ? -1 : index))
+      .filter((index) => index >= 0)
+    const minimumIndices = renderHeaders
+      .map((header, index) => (observedMinimums.has(header.trim().toLowerCase()) ? index : -1))
+      .filter((index) => index >= 0)
+    const displayIndices = showMinReqs ? [...normalIndices, ...minimumIndices] : normalIndices
+    renderHeaders = displayIndices.map((index) => renderHeaders[index])
+    renderRows = renderRows.map((row) => displayIndices.map((index) => row[index] ?? ""))
   }
 
   return (

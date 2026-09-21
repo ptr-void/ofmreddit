@@ -48,6 +48,7 @@ test('archived communities stay excluded even with an approved DB mirror or a st
 test('review reads and writes require admin authentication before any DB access', async () => {
   const route = load('app/api/admin/pending/route.ts', {
     'next/server': next, '@/lib/auth': { verifyAdminToken: () => null },
+    '@/lib/niche-presets': { validateNicheTags: async () => ({ ok: true, value: 'fixture' }) },
     '@/lib/db': { query: () => { throw Error('unexpected DB access') }, getPool: () => { throw Error('unexpected DB access') } },
   })
   assert.equal((await route.GET(new Request('https://example.test'))).status, 401)
@@ -69,6 +70,7 @@ function adminFixture({ locked = true, state = 'active' } = {}) {
   }
   return { statements, route: load('app/api/admin/pending/route.ts', {
     'next/server': next, '@/lib/auth': { verifyAdminToken: () => ({ userId: 1, isAdmin: true }) },
+    '@/lib/niche-presets': { validateNicheTags: async value => ({ ok: true, value: value || 'fixture' }) },
     '@/lib/db': { getPool: () => ({ getConnection: async () => connection }) },
   }) }
 }

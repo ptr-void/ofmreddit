@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { NicheTagSelect } from "@/components/niche-tag-select"
 
 type Candidate = { id: number; subreddit_name: string; subscribers: number | null; niche_tags: string | null; discovery_json: string | null; requested_action: string | null; submitted_by: string | null }
 type Availability = { subreddit_name: string; state: string; dead_checks: number; last_evidence: string | null; last_checked_at: string | null; requested_action: string | null }
@@ -16,6 +17,7 @@ export function PendingSubredditsTab() {
   const [availability, setAvailability] = useState<Availability[]>([])
   const [loading, setLoading] = useState(true)
   const [pendingActions, setPendingActions] = useState<Record<string, "approve" | "reject" | "restore">>({})
+  const [nicheDrafts, setNicheDrafts] = useState<Record<number, string>>({})
   const actionQueue = useRef<Promise<void>>(Promise.resolve())
   const { toast } = useToast()
   const fetchPending = async () => {
@@ -24,6 +26,7 @@ export function PendingSubredditsTab() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || "Review queue unavailable")
       setSubreddits(data.subreddits || [])
+      setNicheDrafts(Object.fromEntries((data.subreddits || []).map((sub: Candidate) => [sub.id, sub.niche_tags || ""])))
       setAvailability(data.availability || [])
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" })
@@ -41,7 +44,12 @@ export function PendingSubredditsTab() {
       try {
         const res = await fetch("/api/admin/pending", {
           method: "POST", headers: headers(),
-          body: JSON.stringify({ id: item.id, subreddit: item.subreddit_name, action }),
+          body: JSON.stringify({
+            id: item.id,
+            subreddit: item.subreddit_name,
+            action,
+            niche_tags: action === "approve" && item.id ? nicheDrafts[item.id] || "" : undefined,
+          }),
         })
         const data = await res.json()
         if (!res.ok) throw new Error(data.error || "Action could not be saved")
@@ -83,7 +91,14 @@ export function PendingSubredditsTab() {
             <TableCell>{sub.subscribers == null ? "Unknown" : Number(sub.subscribers).toLocaleString("en-US")}</TableCell>
             <TableCell>{found ? `Discovery / ${found.latest_post_utc ? new Date(found.latest_post_utc * 1000).toLocaleDateString() : "Unknown"}` : "User submission"}</TableCell>
             <TableCell className="max-w-xs text-sm">{sub.submitted_by || (found ? "Automatic discovery" : "Unknown user")}</TableCell>
-            <TableCell>{sub.niche_tags || "Not assigned"}</TableCell>
+            <TableCell className="min-w-56">
+              <NicheTagSelect
+                value={nicheDrafts[sub.id] ?? sub.niche_tags ?? ""}
+                onChange={(value) => setNicheDrafts((current) => ({ ...current, [sub.id]: value }))}
+                disabled={sub.requested_action === "add" || !!pendingActions[String(sub.id)]}
+                id={`review-niche-${sub.id}`}
+              />
+            </TableCell>
             <TableCell className="space-x-2 whitespace-nowrap">
               {sub.requested_action === "add" || pendingActions[String(sub.id)] === "approve"
                 ? <span className="text-muted-foreground text-sm">Addition queued</span>
