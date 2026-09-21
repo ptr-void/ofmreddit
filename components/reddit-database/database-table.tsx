@@ -155,11 +155,19 @@ export default function DatabaseTable({ headers, rows, sortState, onSort, rowHea
               const active = sortState.columnIndex === i
               const direction = active ? sortState.direction : null
               const width = columnWidths[i]
+              const isSubredditColumn = i === 0
               return (
                 <th 
                   key={i} 
-                  style={{ width: width ? `${width}px` : undefined }}
-                  className="relative px-4 py-3 text-xs font-semibold text-muted-foreground select-none group"
+                  style={{
+                    width: width ? `${width}px` : undefined,
+                    minWidth: isSubredditColumn ? "190px" : undefined,
+                  }}
+                  className={`relative px-4 py-3 text-xs font-semibold text-muted-foreground select-none group ${
+                    isSubredditColumn
+                      ? "sticky left-0 z-30 bg-muted shadow-[4px_0_8px_-5px_rgba(0,0,0,0.65)]"
+                      : ""
+                  }`}
                 >
                   <div className="flex w-full items-center gap-1.5 overflow-hidden pr-1">
                     <button
@@ -220,6 +228,10 @@ export default function DatabaseTable({ headers, rows, sortState, onSort, rowHea
                 const displayValue = row[ci] ?? ""
                 const formattedValue = formatDatabaseMetric(header, displayValue)
                 const health = header === "Subreddit Name" ? rowHealth[subredditKey(displayValue)] : undefined
+                const isSubredditColumn = ci === 0
+                const stickyColumnClass = isSubredditColumn
+                  ? "sticky left-0 z-20 bg-inherit shadow-[4px_0_8px_-5px_rgba(0,0,0,0.65)]"
+                  : ""
 
                 let isLink = false;
                 if (typeof displayValue === "string" && displayValue.startsWith("http")) {
@@ -228,7 +240,7 @@ export default function DatabaseTable({ headers, rows, sortState, onSort, rowHea
 
                 if (isLink) {
                   return (
-                    <td key={ci} className="px-4 py-2 text-xs md:text-sm overflow-hidden">
+                    <td key={ci} className={`px-4 py-2 text-xs md:text-sm overflow-hidden ${stickyColumnClass}`}>
                       <div className="flex items-center gap-2 overflow-hidden">
                         <a 
                           href={displayValue} 
@@ -266,7 +278,7 @@ export default function DatabaseTable({ headers, rows, sortState, onSort, rowHea
                 return (
                   <td
                     key={ci}
-                    className={`truncate px-4 py-2 text-xs md:text-sm ${displayValue === "••••••" ? "pointer-events-none select-none blur-sm" : ""}`}
+                    className={`truncate px-4 py-2 text-xs md:text-sm ${stickyColumnClass} ${displayValue === "••••••" ? "pointer-events-none select-none blur-sm" : ""}`}
                     title={displayValue === "••••••" ? undefined : formattedValue}
                   >
                     {formattedValue}
