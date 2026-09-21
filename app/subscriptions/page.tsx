@@ -3,6 +3,7 @@
 import { useEffect } from "react"
 import { useRouter } from "next/navigation"
 import SubscriptionTiers from "@/components/subscription/tiers"
+import s from "@/styles/scraper.module.css"
 
 export default function SubscriptionsPage() {
   const router = useRouter()
@@ -11,7 +12,7 @@ export default function SubscriptionsPage() {
   }, [router])
 
   return (
-    <main className="min-h-[70vh] py-6">
+    <main className={`min-h-screen bg-background py-6 ${s.bgPattern}`}>
       <SubscriptionTiers embedded open onClose={() => undefined} />
     </main>
   )
