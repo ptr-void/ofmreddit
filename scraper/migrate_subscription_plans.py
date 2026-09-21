@@ -47,7 +47,7 @@ def main() -> None:
             cursor.execute(
                 """
                 UPDATE subscription_tiers
-                   SET name='10-Day Pass', price=10, duration_days=10, usage_period_days=7,
+                   SET name='Minimum', price=10, duration_days=10, usage_period_days=7,
                        weekly_scraper_limit=20, weekly_planner_limit=-1,
                        weekly_caption_limit=-1, weekly_database_limit=20,
                        saved_username_limit=3, saved_profile_limit=0,
@@ -58,7 +58,7 @@ def main() -> None:
             cursor.execute(
                 """
                 UPDATE subscription_tiers
-                   SET name='Standard', price=30, duration_days=30, usage_period_days=7,
+                   SET name='Basic', price=30, duration_days=30, usage_period_days=7,
                        weekly_scraper_limit=25, weekly_planner_limit=-1,
                        weekly_caption_limit=-1, weekly_database_limit=25,
                        saved_username_limit=3, saved_profile_limit=0,
@@ -66,33 +66,23 @@ def main() -> None:
                  WHERE id=4
                 """
             )
-            cursor.execute("SELECT id FROM subscription_tiers WHERE LOWER(name)='unlimited' LIMIT 1")
-            unlimited = cursor.fetchone()
-            if unlimited:
-                cursor.execute(
-                    """
-                    UPDATE subscription_tiers
-                       SET price=50, duration_days=30, usage_period_days=7,
-                           weekly_scraper_limit=-1, weekly_planner_limit=-1,
-                           weekly_caption_limit=-1, weekly_database_limit=-1,
-                           saved_username_limit=3, saved_profile_limit=0,
-                           daily_subreddit_checker_limit=-1, is_active=1, updated_at=NOW()
-                     WHERE id=%s
-                    """,
-                    (unlimited[0],),
-                )
-            else:
-                cursor.execute(
-                    """
-                    INSERT INTO subscription_tiers
-                      (name, price, duration_days, usage_period_days,
-                       weekly_scraper_limit, weekly_planner_limit,
-                       weekly_caption_limit, weekly_database_limit,
-                       saved_username_limit, saved_profile_limit,
-                       daily_subreddit_checker_limit, is_active)
-                    VALUES ('Unlimited', 50, 30, 7, -1, -1, -1, -1, 3, 0, -1, 1)
-                    """
-                )
+            cursor.execute(
+                """
+                UPDATE subscription_tiers
+                   SET name='Pro', price=50, duration_days=30, usage_period_days=7,
+                       weekly_scraper_limit=-1, weekly_planner_limit=-1,
+                       weekly_caption_limit=-1, weekly_database_limit=-1,
+                       saved_username_limit=3, saved_profile_limit=0,
+                       daily_subreddit_checker_limit=-1, is_active=1, updated_at=NOW()
+                 WHERE id=5
+                """
+            )
+
+            # Fold the accidentally-created Unlimited tier into Pro, preserving any
+            # subscriptions and payment history before removing the duplicate row.
+            cursor.execute("UPDATE user_subscriptions SET tier_id=5 WHERE tier_id=6")
+            cursor.execute("UPDATE crypto_payment_intents SET tier_id=5 WHERE tier_id=6")
+            cursor.execute("DELETE FROM subscription_tiers WHERE id=6")
             # These controls are global invariants, including any additional active tier
             # that an administrator created outside this migration.
             cursor.execute(
@@ -108,7 +98,7 @@ def main() -> None:
                 """
             )
         db.commit()
-        print("Verified Free, 10-Day Pass, Standard, and Unlimited plans.")
+        print("Verified Free, Minimum, Basic, and Pro plans.")
     except Exception:
         db.rollback()
         raise

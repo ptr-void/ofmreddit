@@ -14,11 +14,13 @@ test("subscription limits use the tier's configured rolling period", () => {
   assert.match(limits, /const cap = 3/)
 })
 
-test("production plan migration defines all four requested plans", () => {
+test("production plan migration defines exactly the four requested plans", () => {
   const migration = fs.readFileSync(path.join(root, "scraper/migrate_subscription_plans.py"), "utf8")
-  for (const plan of ["Free", "10-Day Pass", "Standard", "Unlimited"]) {
+  for (const plan of ["Free", "Minimum", "Basic", "Pro"]) {
     assert.match(migration, new RegExp(plan.replace("-", "\\-")))
   }
+  assert.doesNotMatch(migration, /VALUES \('Unlimited'/)
+  assert.match(migration, /DELETE FROM subscription_tiers WHERE id=6/)
   assert.match(migration, /price=10/)
   assert.match(migration, /price=30/)
   assert.match(migration, /price=50/)
