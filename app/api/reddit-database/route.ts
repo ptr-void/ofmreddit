@@ -2,11 +2,35 @@ import { NextResponse } from "next/server"
 import { query } from "@/lib/db"
 import { createWorkbookReader, parseSpreadsheetUrl } from "@/lib/google-sheets-reader"
 import { sourceRowHealth, subredditKey } from "@/lib/reddit-database-display"
+import { verifyToken } from "@/lib/auth"
+import { getActiveTierForUser } from "@/lib/limits"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
 
 const INTERNAL_HEADERS = new Set(["scraped at utc", "sync status", "sync error"])
+const FREE_MASKED_HEADERS = new Set([
+  "subreddit name",
+  "total members",
+  "min post karma",
+  "min comment karma",
+  "min total karma",
+  "min account age",
+  "hot 1 (weekly)",
+  "hot 2-5 avg (weekly)",
+  "hot 6-10 avg (weekly)",
+])
+
+function tokenFromRequest(req: Request) {
+  const authorization = req.headers.get("authorization") || ""
+  const bearer = /^Bearer\s+(.+)$/i.exec(authorization)?.[1]
+  if (bearer) return bearer
+  const tokenCookie = (req.headers.get("cookie") || "")
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith("token="))
+  return tokenCookie ? decodeURIComponent(tokenCookie.split("=").slice(1).join("=")) : null
+}
 
 const CACHE_FIELDS: Record<string, string> = {
   "total members": "subscribers",
@@ -49,7 +73,12 @@ function cachedValue(header: string, cached: any) {
   return field ? String(cached?.[field] ?? "") : ""
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  const token = tokenFromRequest(req)
+  const account = token ? verifyToken(token) : null
+  if (!account?.userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const tier = await getActiveTierForUser(account.userId)
+  const freePreview = Number(tier?.id || 0) === 1
   const sheetUrl = process.env.SUBREDDIT_SHEET_URL
   if (!sheetUrl) {
     return NextResponse.json({ error: "Subreddit sheet URL is not configured." }, { status: 500 })
@@ -129,8 +158,20 @@ export async function GET() {
       })
     }
 
+    const maskedColumnIndices = freePreview
+      ? mainSheet.headers
+          .map((header, index) => (FREE_MASKED_HEADERS.has(header.trim().toLowerCase()) ? index : -1))
+          .filter((index) => index >= 0)
+      : []
+    if (freePreview) {
+      const masked = new Set(maskedColumnIndices)
+      mainSheet.rows = mainSheet.rows.map((row) =>
+        row.map((value, index) => (masked.has(index) && value ? "••••••" : value)),
+      )
+    }
+
     return NextResponse.json(
-      { mainSheet, rowHealth },
+      { mainSheet, rowHealth: freePreview ? {} : rowHealth, freePreview, maskedColumnIndices },
       { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } },
     )
   } catch (error) {

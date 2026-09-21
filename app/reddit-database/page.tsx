@@ -14,7 +14,11 @@ type SheetData = {
   rows: string[][]
 }
 
-type ApiResponse = { mainSheet: SheetData; rowHealth?: Record<string, RowHealth> }
+type ApiResponse = {
+  mainSheet: SheetData
+  rowHealth?: Record<string, RowHealth>
+  freePreview?: boolean
+}
 type SortDirection = "asc" | "desc" | null
 type SortState = { columnIndex: number; direction: SortDirection }
 
@@ -55,6 +59,7 @@ function splitNiches(value: string) {
 export default function RedditDatabasePage() {
   const [sheetData, setSheetData] = useState<SheetData | null>(null)
   const [rowHealth, setRowHealth] = useState<Record<string, RowHealth>>({})
+  const [freePreview, setFreePreview] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(false)
@@ -73,7 +78,11 @@ export default function RedditDatabasePage() {
     }
     setError(null)
     try {
-      const response = await fetch("/api/reddit-database", { cache: "no-store" })
+      const token = localStorage.getItem("token") || ""
+      const response = await fetch("/api/reddit-database", {
+        cache: "no-store",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
       if (!response.ok) {
         let message = "Failed to fetch sheet data."
         try {
@@ -82,9 +91,10 @@ export default function RedditDatabasePage() {
         } catch {}
         throw new Error(message)
       }
-      const { mainSheet, rowHealth: health }: ApiResponse = await response.json()
+      const { mainSheet, rowHealth: health, freePreview: preview }: ApiResponse = await response.json()
       setSheetData(mainSheet)
       setRowHealth(health ?? {})
+      setFreePreview(Boolean(preview))
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "An unknown error occurred while fetching the sheet.")
       setSheetData(null)
@@ -245,6 +255,11 @@ export default function RedditDatabasePage() {
               Showing {filteredRows.length.toLocaleString()} of {sheetData.rows.length.toLocaleString()} subreddits •{" "}
               {renderHeaders.length.toLocaleString()} columns
             </div>
+            {freePreview && (
+              <div className="rounded-lg border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-foreground">
+                Free plan preview: subreddit names and numeric data are blurred. Upgrade to view the complete database.
+              </div>
+            )}
             {Object.keys(rowHealth).length > 0 && (
               <p className="text-xs text-amber-700 dark:text-amber-400">
                 Stale or unverified rows contain stored values that may be out of date. A failed refresh does not prove a subreddit is dead.
@@ -255,7 +270,13 @@ export default function RedditDatabasePage() {
                 Observed minimums come from sampled authors, not verified posting requirements. Small samples can produce unusually high values.
               </p>
             )}
-            <DatabaseTable headers={renderHeaders} rows={renderRows} sortState={sortState} onSort={handleSort} rowHealth={rowHealth} />
+            <DatabaseTable
+              headers={renderHeaders}
+              rows={renderRows}
+              sortState={sortState}
+              onSort={handleSort}
+              rowHealth={rowHealth}
+            />
           </section>
         )}
 

@@ -113,7 +113,7 @@ export function SiteControlsTab() {
         <div className="flex items-center justify-between gap-4">
           <div>
             <div className="text-base font-medium text-foreground">Show Subscription Tier Panel</div>
-            <div className="text-sm text-muted-foreground">Toggle visibility of the subscription tiers upsell.</div>
+            <div className="text-sm text-muted-foreground">Shows the upgrade prompt when a user reaches a plan limit. It does not enable or disable subscriptions.</div>
           </div>
           <Switch
             checked={(data?.show_sub ?? 1) === 1}
@@ -127,7 +127,7 @@ export function SiteControlsTab() {
         <div className="flex items-center justify-between gap-4">
           <div>
             <div className="text-base font-medium text-foreground">Set Default Cooldown</div>
-            <div className="text-sm text-muted-foreground">Applies the moment a user registers on the website.</div>
+            <div className="text-sm text-muted-foreground">Minimum wait between SPA tool scrapes for newly created subscriptions.</div>
           </div>
           <div className="shrink-0">
             <Select

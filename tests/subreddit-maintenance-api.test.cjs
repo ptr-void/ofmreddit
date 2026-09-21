@@ -28,6 +28,8 @@ test('archived communities stay excluded even with an approved DB mirror or a st
     '@/lib/db': { query: async sql => sql.includes('subreddit_maintenance') ? [{ subreddit_name: 'db_archived' }] : [
       { subreddit_name: 'sheet_archived', subscribers: 999 }, { subreddit_name: 'db_archived', subscribers: 999 }, { subreddit_name: 'live' },
     ] },
+    '@/lib/auth': { verifyToken: () => ({ userId: 7 }) },
+    '@/lib/limits': { getActiveTierForUser: async () => ({ id: 2 }) },
     '@/lib/reddit-database-display': display,
     '@/lib/google-sheets-reader': {
       parseSpreadsheetUrl: () => ({ spreadsheetId: 'fixture', gid: '0' }),
@@ -37,7 +39,7 @@ test('archived communities stay excluded even with an approved DB mirror or a st
       }) }),
     },
   }, { SUBREDDIT_SHEET_URL: 'fixture' })
-  const response = await route.GET()
+  const response = await route.GET(new Request('https://example.test/api/reddit-database', { headers: { authorization: 'Bearer fixture' } }))
   assert.equal(response.status, 200)
   assert.equal(response.body.mainSheet.rows.length, 1)
   assert.equal(response.body.mainSheet.rows[0][1], '100')
