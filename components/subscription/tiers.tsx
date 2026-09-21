@@ -297,6 +297,8 @@ export default function SubscriptionTiers({
                       </div>
                       <ul className="space-y-2 text-xs">
                         <li className="flex items-center justify-between gap-2"><span className="whitespace-nowrap text-muted-foreground">SPA Tool / {Number(tier.usage_period_days || 7)} days</span><strong className="shrink-0">{fmt(tier.weekly_scraper_limit)}</strong></li>
+                        <li className="flex items-center justify-between gap-2"><span className="whitespace-nowrap text-muted-foreground">Planner</span><strong className="shrink-0">Unlimited</strong></li>
+                        <li className="flex items-center justify-between gap-2"><span className="whitespace-nowrap text-muted-foreground">Captions</span><strong className="shrink-0">Coming soon</strong></li>
                         <li className="flex items-center justify-between gap-2"><span className="whitespace-nowrap text-muted-foreground">Database / 24h</span><strong className="shrink-0">{fmt(tier.weekly_database_limit)}</strong></li>
                         <li className="flex items-center justify-between gap-2"><span className="whitespace-nowrap text-muted-foreground">Daily Min Reqs</span><strong className="shrink-0">{fmt(tier.daily_subreddit_checker_limit)}</strong></li>
                         <li className="flex items-center justify-between gap-2"><span className="whitespace-nowrap text-muted-foreground">Saved Usernames</span><strong className="shrink-0">3</strong></li>
