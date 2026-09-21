@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server"
-import { query } from "@/lib/db"
 import { createWorkbookReader, parseSpreadsheetUrl } from "@/lib/google-sheets-reader"
-import { sourceRowHealth, subredditKey } from "@/lib/reddit-database-display"
+import { sourceRowHealth } from "@/lib/reddit-database-display"
 import { verifyToken } from "@/lib/auth"
 import { getActiveTierForUser } from "@/lib/limits"
 
@@ -32,45 +31,9 @@ function tokenFromRequest(req: Request) {
   return tokenCookie ? decodeURIComponent(tokenCookie.split("=").slice(1).join("=")) : null
 }
 
-const CACHE_FIELDS: Record<string, string> = {
-  "total members": "subscribers",
-  "min post karma": "min_post_karma",
-  "min comment karma": "min_comment_karma",
-  "min total karma": "min_combined_karma",
-  "min account age": "min_account_age_days",
-  "hot 1 (weekly)": "hot_1_weekly",
-  "hot 2-5 avg (weekly)": "hot_2_5_weekly_avg",
-  "hot 6-10 avg (weekly)": "hot_6_10_weekly_avg",
-}
-
-function normalize(value: string) {
-  return subredditKey(value)
-}
-
 function redditUrl(value: string) {
   const name = value.trim().replace(/^r\//i, "").replace(/^\/+|\/+$/g, "")
   return name ? `https://www.reddit.com/r/${name}/` : ""
-}
-
-function yesNo(value: unknown) {
-  if (value === 1 || value === true) return "Yes"
-  if (value === 0 || value === false) return "No"
-  return ""
-}
-
-function cachedValue(header: string, cached: any) {
-  const key = header.trim().toLowerCase()
-  if (key === "subreddit") return String(cached?.subreddit_name ?? "")
-  if (key === "link") {
-    const name = String(cached?.subreddit_name ?? "").replace(/^r\//i, "")
-    return name ? `https://www.reddit.com/r/${name}/` : ""
-  }
-  if (key === "niche") return String(cached?.niche_tags ?? "")
-  if (key === "verification") return yesNo(cached?.requires_verification)
-  if (key === "bot bouncer") return yesNo(cached?.has_bot_bouncer)
-  if (key === "cta captions") return yesNo(cached?.allows_cta_captions)
-  const field = CACHE_FIELDS[key]
-  return field ? String(cached?.[field] ?? "") : ""
 }
 
 export async function GET(req: Request) {
@@ -91,17 +54,10 @@ export async function GET(req: Request) {
   try {
     const reader = await createWorkbookReader(parsed.spreadsheetId)
     const sourceSheet = await reader.readByGid(parsed.gid)
-    // Neither a stale Sheet snapshot nor the optional DB mirror may restore archives.
-    const archivedRows = await query<{ subreddit_name: string }>(
-      "SELECT subreddit_name FROM subreddit_maintenance WHERE state = 'archived'",
-    )
-    const archived = new Set(archivedRows.map(row => normalize(row.subreddit_name)))
     const statusIndex = sourceSheet.headers.findIndex(header => header.trim().toLowerCase() === "sync status")
-    const nameIndex = sourceSheet.headers.findIndex(header => header.trim().toLowerCase() === "subreddit")
-    sourceSheet.rows.forEach(row => {
-      if (String(row[statusIndex] || "").trim().toLowerCase() === "archived") archived.add(normalize(row[nameIndex] || ""))
-    })
-    sourceSheet.rows = sourceSheet.rows.filter(row => !archived.has(normalize(row[nameIndex] || "")))
+    sourceSheet.rows = sourceSheet.rows.filter(
+      row => String(row[statusIndex] || "").trim().toLowerCase() !== "archived",
+    )
     const rowHealth = sourceRowHealth(sourceSheet.headers, sourceSheet.rows)
     const keepIndices = sourceSheet.headers
       .map((header, index) => (INTERNAL_HEADERS.has(header.trim().toLowerCase()) ? -1 : index))
@@ -112,36 +68,9 @@ export async function GET(req: Request) {
       rows: sourceSheet.rows.map((row) => keepIndices.map((index) => String(row[index] ?? ""))),
     }
 
-    let cacheRows: any[] = []
-    try {
-      cacheRows = await query<any>("SELECT * FROM master_subreddits WHERE status = 'approved'")
-      cacheRows = cacheRows.filter(row => !archived.has(normalize(String(row.subreddit_name || ""))))
-    } catch (error) {
-      console.error("Failed to read optional master_subreddits mirror:", error)
-    }
-
     const subredditIndex = mainSheet.headers.findIndex(
       (header) => header.trim().toLowerCase() === "subreddit",
     )
-    if (subredditIndex !== -1 && cacheRows.length > 0) {
-      const cacheMap = new Map<string, any>()
-      cacheRows.forEach((row) => cacheMap.set(normalize(String(row.subreddit_name ?? "")), row))
-      const existing = new Set<string>()
-      mainSheet.rows = mainSheet.rows.map((row) => {
-        const key = normalize(row[subredditIndex] || "")
-        if (key) existing.add(key)
-        const cached = cacheMap.get(key)
-        if (!cached) return row
-        return mainSheet.headers.map((header, index) => row[index] || cachedValue(header, cached))
-      })
-
-      cacheRows.forEach((cached) => {
-        const key = normalize(String(cached.subreddit_name ?? ""))
-        if (!key || existing.has(key)) return
-        mainSheet.rows.push(mainSheet.headers.map((header) => cachedValue(header, cached)))
-      })
-    }
-
     const linkIndex = mainSheet.headers.findIndex(
       (header) => header.trim().toLowerCase() === "link",
     )

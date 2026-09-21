@@ -22,7 +22,7 @@ const request = body => new Request('https://example.test/api/admin/pending', {
   method: 'POST', headers: { authorization: 'Bearer fixture', 'Content-Type': 'application/json' }, body: JSON.stringify(body),
 })
 
-test('archived communities stay excluded even with an approved DB mirror or a stale sheet snapshot', async () => {
+test('the website follows Sheet rows without merging approved DB-only records', async () => {
   const route = load('app/api/reddit-database/route.ts', {
     'next/server': next,
     '@/lib/db': { query: async sql => sql.includes('subreddit_maintenance') ? [{ subreddit_name: 'db_archived' }] : [
@@ -41,8 +41,11 @@ test('archived communities stay excluded even with an approved DB mirror or a st
   }, { SUBREDDIT_SHEET_URL: 'fixture' })
   const response = await route.GET(new Request('https://example.test/api/reddit-database', { headers: { authorization: 'Bearer fixture' } }))
   assert.equal(response.status, 200)
-  assert.equal(response.body.mainSheet.rows.length, 1)
+  assert.equal(response.body.mainSheet.rows.length, 2)
   assert.equal(response.body.mainSheet.rows[0][1], '100')
+  assert.equal(response.body.mainSheet.rows[1][0], 'https://www.reddit.com/r/DB_Archived/')
+  const source = fs.readFileSync(path.join(__dirname, '../app/api/reddit-database/route.ts'), 'utf8')
+  assert.doesNotMatch(source, /FROM master_subreddits/)
 })
 
 test('review reads and writes require admin authentication before any DB access', async () => {
