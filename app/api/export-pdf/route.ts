@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
-import chromium from "@sparticuz/chromium"
+import chromium from "@sparticuz/chromium-min"
 
 export const runtime = "nodejs"
+
+// Keep the ~66 MB Chromium binary out of every Vercel deployment. The min
+// package downloads this pinned pack on a cold start and reuses it from /tmp
+// for subsequent PDF requests handled by the same function instance.
+const CHROMIUM_PACK_URL = process.env.CHROMIUM_PACK_URL ||
+  "https://github.com/Sparticuz/chromium/releases/download/v141.0.0/chromium-v141.0.0-pack.x64.tar"
 
 function pickTopN(rows: any[], n: number, key: string) {
   const arr = Array.isArray(rows) ? rows.slice() : []
@@ -701,7 +707,9 @@ function computeActualDateRange(ts: any): string | null {
 async function launchBrowser() {
   const isServerless = !!process.env.VERCEL || !!process.env.AWS_REGION
   const puppeteer = isServerless ? (await import("puppeteer-core")).default : (await import("puppeteer")).default
-  const executablePath = isServerless ? await chromium.executablePath() : puppeteer.executablePath()
+  const executablePath = isServerless
+    ? await chromium.executablePath(CHROMIUM_PACK_URL)
+    : puppeteer.executablePath()
   const browser = await puppeteer.launch({
     args: isServerless ? chromium.args : [],
     executablePath,
