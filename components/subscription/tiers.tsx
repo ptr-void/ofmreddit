@@ -210,22 +210,22 @@ export default function SubscriptionTiers({
   if ((!embedded && !open) || typeof document === "undefined") return null
 
   const panel = (
-      <div className={`relative w-full max-w-6xl overflow-y-auto rounded-2xl border border-border/50 bg-card shadow-2xl ${embedded ? "" : "max-h-[92vh] mx-4"}`}>
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border/50 bg-card px-6 py-5">
+      <div className={`relative w-full max-w-5xl overflow-y-auto rounded-2xl border border-border/50 bg-card shadow-2xl ${embedded ? "" : "max-h-[92vh] mx-4"}`}>
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border/50 bg-card px-5 py-4">
           <div className="flex items-center gap-3">
             {payment && payment.status !== "paid" && (
               <button aria-label="Back to plans" onClick={() => { setPayment(null); setError("") }} className="rounded-full p-2 hover:bg-accent">
                 <ArrowLeft className="h-5 w-5" />
               </button>
             )}
-            <div className="text-2xl font-bold text-foreground">{payment ? "Crypto Payment" : "Choose Your Plan"}</div>
+            <div className="text-xl font-bold text-foreground">{payment ? "Crypto Payment" : "Choose Your Plan"}</div>
           </div>
           {!embedded && <button aria-label="Close" onClick={onClose} className="cursor-pointer rounded-full p-2 hover:bg-accent">
             <X className="h-5 w-5" />
           </button>}
         </div>
 
-        <div className="px-6 pb-10 pt-8">
+        <div className="px-5 pb-8 pt-6">
           {error && <div className="mb-5 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</div>}
           {loading && <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />Loading plans…</div>}
 
@@ -279,7 +279,7 @@ export default function SubscriptionTiers({
           )}
 
           {!loading && !payment && (
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
               {tiers.map((tier, index) => {
                 const isCurrent = Number(currentTierId || 0) === Number(tier.id)
                 const numericPrice = tier.price == null || tier.price === "" ? null : Number(tier.price)
@@ -287,19 +287,19 @@ export default function SubscriptionTiers({
                 const duration = Math.max(1, Number(tier.duration_days || 30))
                 return (
                   <div key={tier.id} className={`relative overflow-hidden rounded-2xl border transition-all hover:scale-[1.01] ${isCurrent ? "border-green-500 ring-2 ring-green-400/50" : "border-border/50"}`}>
-                    <div className={`flex h-28 items-end bg-gradient-to-br ${headerGrad[index % headerGrad.length]} p-5`}>
-                      <div className="text-2xl font-bold text-white">{tier.name}</div>
+                    <div className={`flex h-24 items-end bg-gradient-to-br ${headerGrad[index % headerGrad.length]} p-4`}>
+                      <div className="text-xl font-bold text-white">{tier.name}</div>
                     </div>
-                    <div className="space-y-5 bg-card p-6">
+                    <div className="space-y-4 bg-card p-5">
                       <div>
-                        <div className="text-3xl font-bold">{isFree ? "$0.00" : `${numericPrice!.toFixed(2)} USDT`}</div>
-                        <div className="text-sm text-muted-foreground">{isFree ? "Ongoing free access" : `${duration} days`}</div>
+                        <div className="text-2xl font-bold">{isFree ? "$0.00" : `${numericPrice!.toFixed(2)} USDT`}</div>
+                        <div className="text-xs text-muted-foreground">{isFree ? "Ongoing free access" : `${duration} days`}</div>
                       </div>
-                      <ul className="space-y-2 text-sm">
-                        <li className="flex justify-between"><span className="text-muted-foreground">SPA Tool / {Number(tier.usage_period_days || 7)} days</span><strong>{fmt(tier.weekly_scraper_limit)}</strong></li>
-                        <li className="flex justify-between"><span className="text-muted-foreground">Subreddit Database / 24 hours</span><strong>{fmt(tier.weekly_database_limit)}</strong></li>
-                        <li className="flex justify-between"><span className="text-muted-foreground">Daily Minimum Reqs Scraper</span><strong>{fmt(tier.daily_subreddit_checker_limit)}</strong></li>
-                        <li className="flex justify-between"><span className="text-muted-foreground">Saved Usernames</span><strong>3</strong></li>
+                      <ul className="space-y-2 text-xs">
+                        <li className="flex items-center justify-between gap-2"><span className="whitespace-nowrap text-muted-foreground">SPA Tool / {Number(tier.usage_period_days || 7)} days</span><strong className="shrink-0">{fmt(tier.weekly_scraper_limit)}</strong></li>
+                        <li className="flex items-center justify-between gap-2"><span className="whitespace-nowrap text-muted-foreground">Database / 24h</span><strong className="shrink-0">{fmt(tier.weekly_database_limit)}</strong></li>
+                        <li className="flex items-center justify-between gap-2"><span className="whitespace-nowrap text-muted-foreground">Daily Min Reqs</span><strong className="shrink-0">{fmt(tier.daily_subreddit_checker_limit)}</strong></li>
+                        <li className="flex items-center justify-between gap-2"><span className="whitespace-nowrap text-muted-foreground">Saved Usernames</span><strong className="shrink-0">3</strong></li>
                       </ul>
                       <button
                         className={`w-full rounded-xl px-4 py-3 text-sm font-bold transition-opacity ${isCurrent || isFree ? "cursor-not-allowed bg-muted text-muted-foreground" : "cursor-pointer bg-gradient-to-r from-cyan-500 to-blue-600 text-white hover:opacity-90 disabled:cursor-pointer disabled:opacity-70"}`}
@@ -321,7 +321,7 @@ export default function SubscriptionTiers({
       </div>
   )
 
-  if (embedded) return <section className="mx-auto w-full max-w-6xl px-4 py-10">{panel}</section>
+  if (embedded) return <section className="mx-auto w-full max-w-5xl px-4 py-8">{panel}</section>
 
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center animate-in fade-in duration-200">
