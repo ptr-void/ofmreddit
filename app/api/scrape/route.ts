@@ -1,14 +1,14 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { buildWorkbook, type SubredditRow } from "@/lib/excel/buildWorkbook"
 import { buildRawWorkbook, type RawPostRow } from "@/lib/excel/buildRawWorkbook"
+import { getRedditAccessToken } from "@/lib/reddit-oauth"
 
 export const runtime = "nodejs"
 
 const sessions = new Map<string, { phase: string; fetched: number; total: number; done: boolean }>()
 
-interface RedditPost { data: { subreddit: string; score: number; num_comments: number; created_utc: number; title: string } }
+interface RedditPost { data: { author: string; subreddit: string; score: number; num_comments: number; created_utc: number; title: string } }
 interface SubredditStats { subreddit: string; totalPosts: number; totalUpvotes: number; totalComments: number; posts: Array<{ score: number; comments: number; created: number }>; lastPostDate: number }
-interface RedditTokenResponse { access_token: string; token_type: string; expires_in: number; scope: string }
 interface RedditApiResponse { data: { children: RedditPost[]; after: string | null } }
 
 function toDateRangeCutoff(value?: string | number | null): number | null {
@@ -19,23 +19,7 @@ function toDateRangeCutoff(value?: string | number | null): number | null {
   return nowSecs - n * 86400
 }
 
-async function getAccessToken(): Promise<string> {
-  const clientId = process.env.REDDIT_CLIENT_ID
-  const clientSecret = process.env.REDDIT_CLIENT_SECRET
-  const refreshToken = process.env.REDDIT_REFRESH_TOKEN
-  const userAgent = process.env.REDDIT_USER_AGENT
-  if (!clientId || !clientSecret || !refreshToken || !userAgent) throw new Error("Missing Reddit API credentials in .env file")
-  const authString = Buffer.from(`${clientId}:${clientSecret}`).toString("base64")
-  const response = await fetch("https://www.reddit.com/api/v1/access_token", {
-    method: "POST",
-    headers: { Authorization: `Basic ${authString}`, "Content-Type": "application/x-www-form-urlencoded", "User-Agent": userAgent },
-    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken }).toString()
-  })
-  if (!response.ok) throw new Error(`Failed to obtain access token: ${response.status} ${response.statusText}`)
-  const data = (await response.json()) as RedditTokenResponse
-  if (!data.access_token) throw new Error("No access token received from Reddit API")
-  return data.access_token
-}
+const getAccessToken = getRedditAccessToken
 
 const SUBS_TTL = 6 * 60 * 60 * 1000
 const SUBS_CACHE: Map<string, { v: number; t: number }> = (globalThis as any).__SUBS_CACHE__ ?? ((globalThis as any).__SUBS_CACHE__ = new Map())
@@ -162,6 +146,8 @@ async function processUser(
   u: string,
   opts: { limit: number; dateRange: string; inclSubs: number; inclVote: number; inclComm: number; inclPER: number; inclMed: number; sid: string; track: boolean }
 ) {
+  u = u.trim().replace(/^(?:https?:\/\/(?:www\.)?reddit\.com\/)?(?:u|user)\//i, "").replace(/\/$/, "")
+  if (!/^[A-Za-z0-9_-]{3,20}$/.test(u)) throw new Error("Enter a valid Reddit username")
   const maxLimit = Math.min(Number(opts.limit) || 1000, 1000)
   const cutoffSecs =
     toDateRangeCutoff(
@@ -197,7 +183,34 @@ async function processUser(
     await sleep(1000)
   }
 
+  // Some public profiles return an empty submitted listing through OAuth
+  // despite having searchable posts. Use Reddit's author search as a fallback.
+  if (posts.length === 0) {
+    let searchAfter: string | null = null
+    while (posts.length < maxLimit) {
+      const url = new URL("https://oauth.reddit.com/search.json")
+      url.searchParams.set("q", `author:${u}`)
+      url.searchParams.set("sort", "new")
+      url.searchParams.set("type", "link")
+      url.searchParams.set("include_over_18", "on")
+      url.searchParams.set("limit", String(Math.min(100, maxLimit - posts.length)))
+      if (searchAfter) url.searchParams.set("after", searchAfter)
+      const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}`, "User-Agent": process.env.REDDIT_USER_AGENT || "SubredditAnalyzer/1.0" } })
+      if (!response.ok) throw new Error(`Reddit author search failed (${response.status})`)
+      const data = (await response.json()) as RedditApiResponse
+      const matches = (data?.data?.children || []).filter(post => String(post.data?.author || "").toLowerCase() === u.toLowerCase())
+      posts.push(...matches)
+      if (opts.track) sessions.set(opts.sid, { phase: `Searching posts of ${u}…`, fetched: posts.length, total: maxLimit, done: false })
+      searchAfter = data?.data?.after
+      if (!searchAfter || !data?.data?.children?.length) break
+      await sleep(1000)
+    }
+  }
+
   const filtered = cutoffSecs == null ? posts : posts.filter(p => (p?.data?.created_utc || 0) >= cutoffSecs)
+  if (filtered.length === 0) throw new Error(posts.length === 0
+    ? `Reddit returned no accessible posts for u/${u}. Check the username or try again later.`
+    : `No posts by u/${u} were found in the selected date range. Try All Time.`)
   if (opts.track) sessions.set(opts.sid, { phase: `Processing data of ${u}…`, fetched: filtered.length, total: filtered.length, done: false })
 
   const created = filtered.map(p => p.data.created_utc)

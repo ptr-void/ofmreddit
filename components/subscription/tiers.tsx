@@ -299,8 +299,9 @@ export default function SubscriptionTiers({
                         <div className="text-xs text-muted-foreground">{isFree ? "Ongoing free access" : `${duration} days`}</div>
                       </div>
                       <ul className="space-y-2 text-xs">
-                        <li className="flex items-center justify-between gap-2"><span className="text-muted-foreground">{isFree ? `SPA analyses / rolling ${period} days` : `SPA analyses / ${duration}-day term`}</span><strong className="shrink-0">{fmt(termScrapes)}</strong></li>
-                        <li className="flex items-center justify-between gap-2"><span className="whitespace-nowrap text-muted-foreground">Database / 24h</span><strong className="shrink-0">{fmt(tier.weekly_database_limit)}</strong></li>
+                        <li className="flex items-center justify-between gap-2"><span className="text-muted-foreground">{isFree ? `SPA analyses / rolling ${period} days` : `SPA analyses / ${duration}-day plan`}</span><strong className="shrink-0">{fmt(termScrapes)}</strong></li>
+                        {!isFree && scraperLimit > 0 && <li className="text-[11px] text-muted-foreground">{scraperLimit} per {period} days × {Math.ceil(duration / period)} periods</li>}
+                        <li className="flex items-center justify-between gap-2"><span className="text-muted-foreground">Database lookups / rolling {period} days</span><strong className="shrink-0">{fmt(tier.weekly_database_limit)}</strong></li>
                         <li className="flex items-center justify-between gap-2"><span className="whitespace-nowrap text-muted-foreground">Daily Min Reqs</span><strong className="shrink-0">{fmt(tier.daily_subreddit_checker_limit)}</strong></li>
                       </ul>
                       <button

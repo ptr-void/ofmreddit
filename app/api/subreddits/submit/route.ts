@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { verifyToken } from "@/lib/auth"
 import { query } from "@/lib/db"
 import { validateNicheTags } from "@/lib/niche-presets"
+import { getRedditAccessToken } from "@/lib/reddit-oauth"
 
 function userFromRequest(req: Request) {
   const header = req.headers.get("authorization") || ""
@@ -31,18 +32,29 @@ export async function POST(req: Request) {
     if (!niche.ok) return NextResponse.json({ error: niche.error }, { status: 400 })
     const nicheTags = niche.value
 
-    // Scrape Reddit to check if it's NSFW and exists
-    const redditRes = await fetch(`https://www.reddit.com/r/${cleanSubreddit}/about.json`, {
+    // The unauthenticated www.reddit.com endpoint can return 403/429 for an
+    // existing community, so validate with the same OAuth API used by SPA.
+    const accessToken = await getRedditAccessToken()
+    const redditRes = await fetch(`https://oauth.reddit.com/r/${cleanSubreddit}/about`, {
       headers: {
-        "User-Agent": "web:ofmreddit:1.0"
-      }
-    });
-
-    if (!redditRes.ok) {
-      return NextResponse.json({ error: "Subreddit not found or banned" }, { status: 404 })
+        Authorization: `Bearer ${accessToken}`,
+        "User-Agent": process.env.REDDIT_USER_AGENT || "ofmreddit/1.0",
+      },
+      cache: "no-store",
+    })
+    if (redditRes.status === 404) {
+      return NextResponse.json({ error: "Subreddit not found" }, { status: 404 })
     }
-
+    if (redditRes.status === 403) {
+      return NextResponse.json({ error: "Subreddit is private or unavailable to the Reddit account used for verification" }, { status: 403 })
+    }
+    if (!redditRes.ok) {
+      return NextResponse.json({ error: "Reddit verification is temporarily unavailable. Please try again later." }, { status: 503 })
+    }
     const redditData = await redditRes.json()
+    if (!redditData?.data || typeof redditData.data.over18 !== "boolean") {
+      return NextResponse.json({ error: "Reddit verification returned incomplete data. Please try again later." }, { status: 503 })
+    }
     if (!redditData.data.over18) {
       return NextResponse.json({ error: "Subreddit must be NSFW (18+)" }, { status: 400 })
     }

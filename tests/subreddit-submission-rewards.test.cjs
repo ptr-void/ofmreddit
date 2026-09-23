@@ -24,6 +24,7 @@ const next = { NextResponse: { json: (body, init = {}) => ({ body, status: init.
 
 test("direct submissions require authentication and niche tags, then attribute the submitter", async () => {
   const statements = []
+  let redditStatus = 200
   const route = load("app/api/subreddits/submit/route.ts", {
     "next/server": next,
     "@/lib/auth": { verifyToken: token => token === "valid" ? { userId: 7 } : null },
@@ -33,8 +34,10 @@ test("direct submissions require authentication and niche tags, then attribute t
         ? { ok: true, value: String(value).trim().toLowerCase() }
         : { ok: false, error: "Select at least one niche tag" },
     },
+    "@/lib/reddit-oauth": { getRedditAccessToken: async () => "test-token" },
   }, {
-    fetch: async () => ({ ok: true, json: async () => ({ data: { over18: true, subscribers: 123 } }) }),
+    process: { env: { REDDIT_USER_AGENT: "test-agent" } },
+    fetch: async () => ({ ok: redditStatus === 200, status: redditStatus, json: async () => ({ data: { over18: true, subscribers: 123 } }) }),
   })
   const make = body => new Request("https://example.test/api/subreddits/submit", {
     method: "POST",
@@ -49,6 +52,9 @@ test("direct submissions require authentication and niche tags, then attribute t
   assert.equal(statements.length, 2)
   assert.match(statements[1][0], /subreddit_submission_attempts/)
   assert.deepEqual(Array.from(statements[1][1]), ["example", 7, "fitness", "example"])
+  redditStatus = 429
+  assert.equal((await route.POST(make({ subreddit: "example", tags: "fitness" }))).status, 503)
+  assert.equal(statements.length, 2)
 })
 
 test("checker bonus usage is consumed atomically only after the daily allowance", async () => {

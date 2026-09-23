@@ -122,7 +122,7 @@ export async function assertWithinLimits(
   // An open-ended admin assignment has no subscription term, so it keeps the
   // tier's rolling usage period rather than exhausting one lifetime allowance.
   const paidScraperTerm = feature === "scraper" && tier.starts_at && tier.ends_at && tier.name.toLowerCase() !== "free"
-  const periodDays = feature === "database" ? 1 : paidScraperTerm
+  const periodDays = paidScraperTerm
     ? Math.max(1, Number(tier.duration_days || 30))
     : Math.max(1, Number(tier.usage_period_days || 7))
   const weekly = paidScraperTerm

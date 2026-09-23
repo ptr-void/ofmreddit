@@ -38,8 +38,8 @@ const LIMIT_KEYS = [
 ] as const
 
 const LABELS: Record<(typeof LIMIT_KEYS)[number], string> = {
-  weekly_scraper_limit: "SPA Tool Limit",
-  weekly_database_limit: "Subreddit Database Limit (24 hours)",
+  weekly_scraper_limit: "SPA Limit / selected period",
+  weekly_database_limit: "Database Limit / selected period",
   daily_subreddit_checker_limit: "Daily Minimum Reqs Scraper Limit",
 }
 
@@ -141,7 +141,7 @@ export function SubscriptionTierTab() {
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-xl font-semibold">Edit Subscription Tiers</h2>
       </div>
-      <p className="mb-4 text-sm text-muted-foreground">Limits reset over the selected period. Use -1 for unlimited access and 0 to disable a feature.</p>
+      <p className="mb-4 text-sm text-muted-foreground">Database limits reset over the selected rolling period. Paid SPA limits are displayed and enforced as a total for the plan: SPA limit × rounded-up number of periods in the plan. Use -1 for unlimited access and 0 to disable a feature.</p>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-4">
         {tiers.map((tier, i) => (
