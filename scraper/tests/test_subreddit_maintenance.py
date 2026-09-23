@@ -107,6 +107,9 @@ class MaintenanceTests(unittest.TestCase):
     def test_discovery_thresholds_and_no_missing_member_invention(self):
         valid = {'name': 'example', 'over18': True, 'subreddit_type': 'public', 'subscribers': 100000, 'latest_post_utc': NOW.timestamp() - 100}
         self.assertTrue(candidate_eligible(valid, NOW))
+        self.assertFalse(candidate_eligible(valid, NOW, minimum_top1=100))
+        self.assertTrue(candidate_eligible({**valid, 'top1_weekly': 100}, NOW, minimum_top1=100))
+        self.assertFalse(candidate_eligible({**valid, 'top1_weekly': 99}, NOW, minimum_top1=100))
         for changes in [{'subscribers': None}, {'subscribers': 99999}, {'over18': False}, {'subreddit_type': 'private'},
                         {'latest_post_utc': NOW.timestamp() - 31 * 86400}, {'latest_post_utc': None}, {'name': '../bad'}]:
             self.assertFalse(candidate_eligible({**valid, **changes}, NOW))

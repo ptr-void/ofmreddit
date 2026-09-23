@@ -128,7 +128,7 @@ def discovery_excluded(metadata, terms=DEFAULT_DISCOVERY_EXCLUDED_TERMS):
     return any(term in tokens for term in terms) or any(term in name for term in DISCOVERY_NAME_EXCLUDED_TERMS)
 
 
-def candidate_eligible(metadata, now, minimum_members=100000, max_age_days=30):
+def candidate_eligible(metadata, now, minimum_members=100000, max_age_days=30, minimum_top1=0):
     members = parse_subscriber_count(metadata.get('subscribers'))
     posted = metadata.get('latest_post_utc')
     return bool(
@@ -137,6 +137,7 @@ def candidate_eligible(metadata, now, minimum_members=100000, max_age_days=30):
         and metadata.get('subreddit_type') == 'public'
         and not discovery_excluded(metadata)
         and members is not None and members >= minimum_members
+        and (minimum_top1 <= 0 or int(metadata.get('top1_weekly') or 0) >= minimum_top1)
         and isinstance(posted, (float, int))
         and 0 <= now.timestamp() - posted <= max_age_days * 86400
     )
@@ -377,6 +378,7 @@ class Maintenance:
         )
         minimum = int(os.getenv('DISCOVERY_MIN_MEMBERS', '100000'))
         max_age = int(os.getenv('DISCOVERY_MAX_POST_AGE_DAYS', '30'))
+        minimum_top1 = int(os.getenv('DISCOVERY_MIN_TOP1_UPVOTES', '100'))
         for sub in candidates:
             name = normalize_subreddit(str(sub.display_name))
             if name in known or not NAME.fullmatch(name):
@@ -393,7 +395,10 @@ class Maintenance:
                 posts = self.analyzer._call(lambda: list(sub.new(limit=5)), f'r/{name} discovery activity')
                 surviving = [float(p.created_utc) for p in posts if not getattr(p, 'removed_by_category', None)]
                 metadata['latest_post_utc'] = max(surviving) if surviving else None
-                if not candidate_eligible(metadata, now, minimum, max_age):
+                weekly_top = self.analyzer._call(
+                    lambda: list(sub.top(time_filter='week', limit=1)), f'r/{name} discovery weekly top')
+                metadata['top1_weekly'] = max((int(getattr(p, 'score', 0) or 0) for p in weekly_top), default=0)
+                if not candidate_eligible(metadata, now, minimum, max_age, minimum_top1):
                     continue
                 if self.apply:
                     # Do not overwrite an existing approval/rejection or curated tags.

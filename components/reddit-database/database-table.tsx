@@ -222,7 +222,7 @@ export default function DatabaseTable({ headers, rows, sortState, onSort, rowHea
           {sortedRows.map((row, ri) => (
             <tr
               key={ri}
-              className="border-b border-border/60 last:border-b-0 odd:bg-background even:bg-muted/30 hover:bg-primary/5"
+              className="group border-b border-border/60 last:border-b-0 odd:bg-background even:bg-card hover:bg-accent"
             >
               {headers.map((header, ci) => {
                 const displayValue = row[ci] ?? ""
@@ -230,7 +230,7 @@ export default function DatabaseTable({ headers, rows, sortState, onSort, rowHea
                 const health = header === "Subreddit Name" ? rowHealth[subredditKey(displayValue)] : undefined
                 const isSubredditColumn = ci === 0
                 const stickyColumnClass = isSubredditColumn
-                  ? "sticky left-0 z-20 bg-inherit shadow-[4px_0_8px_-5px_rgba(0,0,0,0.65)]"
+                  ? `sticky left-0 z-20 ${ri % 2 === 0 ? "bg-background" : "bg-card"} group-hover:bg-accent shadow-[4px_0_8px_-5px_rgba(0,0,0,0.65)]`
                   : ""
 
                 let isLink = false;

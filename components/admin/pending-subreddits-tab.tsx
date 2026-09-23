@@ -77,18 +77,19 @@ export function PendingSubredditsTab() {
       <Button variant="outline" size="sm" onClick={fetchPending}>Refresh</Button>
     </div>
     <p className="text-sm text-muted-foreground">
-      Discoveries and user submissions stay here until approved. Automatic discovery looks for suitable public communities with at least 100,000 members and a recent post within 30 days, then suggests the preset niche used for discovery.
+      Discoveries and user submissions stay here until approved. Automatic discovery requires at least 100,000 members, a post within 30 days, and a weekly top post with at least 100 upvotes. The niche is suggested from the discovery query.
     </p>
     {!subreddits.length ? <p className="text-sm text-muted-foreground">No pending candidates.</p> : <div className="overflow-x-auto rounded-md border">
       <Table>
         <TableHeader><TableRow>
-          <TableHead>Subreddit</TableHead><TableHead>Members</TableHead><TableHead>Source / Latest Post</TableHead><TableHead>Submitted By</TableHead><TableHead>Niche</TableHead><TableHead>Actions</TableHead>
+          <TableHead>Subreddit</TableHead><TableHead>Members</TableHead><TableHead>Weekly Top 1</TableHead><TableHead>Source / Latest Post</TableHead><TableHead>Submitted By</TableHead><TableHead>Niche</TableHead><TableHead>Actions</TableHead>
         </TableRow></TableHeader>
         <TableBody>{subreddits.map(sub => {
           const found = discovery(sub.discovery_json)
           return <TableRow key={sub.id}>
             <TableCell><a className="text-blue-500" href={`https://www.reddit.com/r/${encodeURIComponent(sub.subreddit_name)}/`} target="_blank" rel="noreferrer">{sub.subreddit_name}</a></TableCell>
             <TableCell>{sub.subscribers == null ? "Unknown" : Number(sub.subscribers).toLocaleString("en-US")}</TableCell>
+            <TableCell>{found?.top1_weekly == null ? "—" : Number(found.top1_weekly).toLocaleString("en-US")}</TableCell>
             <TableCell>{found ? `Discovery / ${found.latest_post_utc ? new Date(found.latest_post_utc * 1000).toLocaleDateString() : "Unknown"}` : "User submission"}</TableCell>
             <TableCell className="max-w-xs text-sm">{sub.submitted_by || (found ? "Automatic discovery" : "Unknown user")}</TableCell>
             <TableCell className="min-w-56">

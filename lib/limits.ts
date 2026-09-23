@@ -4,6 +4,10 @@ export type Feature = "scraper" | "post_planner" | "caption_gen" | "database" | 
 
 type Tier = {
   id: number
+  name: string
+  duration_days: number
+  starts_at: Date | string | null
+  ends_at: Date | string | null
   usage_period_days: number
   weekly_scraper_limit: number
   weekly_planner_limit: number
@@ -23,7 +27,11 @@ type Cooldown = { ok: false; code: "COOLDOWN"; wait: number }
 export async function getActiveTierForUser(userId: number): Promise<Tier | null> {
   const sql = `
     SELECT 
-      t.id, 
+      t.id,
+      t.name,
+      t.duration_days,
+      us.starts_at,
+      us.ends_at,
       t.usage_period_days,
       t.weekly_scraper_limit, 
       t.weekly_planner_limit, 
@@ -46,7 +54,7 @@ export async function getActiveTierForUser(userId: number): Promise<Tier | null>
   // Accounts without an explicit subscription are displayed as Free throughout
   // the app, so their limits must come from the active Free tier as well.
   return (await queryOne<Tier>(
-    `SELECT id, usage_period_days, weekly_scraper_limit, weekly_planner_limit,
+    `SELECT id, name, duration_days, NULL AS starts_at, NULL AS ends_at, usage_period_days, weekly_scraper_limit, weekly_planner_limit,
             weekly_caption_limit, weekly_database_limit,
             saved_username_limit, saved_profile_limit,
             daily_subreddit_checker_limit
@@ -66,6 +74,15 @@ export async function getUsageCount(userId: number, feature: Feature, periodDays
       AND occurred_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
   `
   const row = await queryOne<{ count: number }>(sql, [userId, feature, Math.max(1, Math.min(365, periodDays))])
+  return Number(row?.count ?? 0)
+}
+
+async function getUsageSince(userId: number, feature: Feature, startsAt: Date | string): Promise<number> {
+  const row = await queryOne<{ count: number }>(
+    `SELECT COUNT(*) AS count FROM feature_usage
+      WHERE user_id = ? AND feature = ? AND occurred_at >= ?`,
+    [userId, feature, startsAt],
+  )
   return Number(row?.count ?? 0)
 }
 
@@ -102,9 +119,19 @@ export async function assertWithinLimits(
   const tier = await getActiveTierForUser(userId)
   if (!tier) return { ok: false, code: "NO_TIER" }
 
-  const periodDays = feature === "database" ? 1 : Math.max(1, Number(tier.usage_period_days || 7))
-  const weekly = await getUsageCount(userId, feature, periodDays)
-  const cap = capFor(feature, tier)
+  // An open-ended admin assignment has no subscription term, so it keeps the
+  // tier's rolling usage period rather than exhausting one lifetime allowance.
+  const paidScraperTerm = feature === "scraper" && tier.starts_at && tier.ends_at && tier.name.toLowerCase() !== "free"
+  const periodDays = feature === "database" ? 1 : paidScraperTerm
+    ? Math.max(1, Number(tier.duration_days || 30))
+    : Math.max(1, Number(tier.usage_period_days || 7))
+  const weekly = paidScraperTerm
+    ? await getUsageSince(userId, feature, tier.starts_at!)
+    : await getUsageCount(userId, feature, periodDays)
+  const configuredCap = capFor(feature, tier)
+  const cap = paidScraperTerm && configuredCap > 0
+    ? configuredCap * Math.ceil(periodDays / Math.max(1, Number(tier.usage_period_days || 7)))
+    : configuredCap
 
   if (cap === 0) return { ok: false, code: "NO_ACCESS", weekly, cap }
 

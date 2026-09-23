@@ -285,6 +285,9 @@ export default function SubscriptionTiers({
                 const numericPrice = tier.price == null || tier.price === "" ? null : Number(tier.price)
                 const isFree = numericPrice === null || numericPrice === 0
                 const duration = Math.max(1, Number(tier.duration_days || 30))
+                const period = Math.max(1, Number(tier.usage_period_days || 7))
+                const scraperLimit = Number(tier.weekly_scraper_limit)
+                const termScrapes = isFree || scraperLimit < 0 ? scraperLimit : scraperLimit * Math.ceil(duration / period)
                 return (
                   <div key={tier.id} className={`relative overflow-hidden rounded-2xl border transition-all hover:scale-[1.01] ${isCurrent ? "border-green-500 ring-2 ring-green-400/50" : "border-border/50"}`}>
                     <div className={`flex h-24 items-end bg-gradient-to-br ${headerGrad[index % headerGrad.length]} p-4`}>
@@ -296,12 +299,9 @@ export default function SubscriptionTiers({
                         <div className="text-xs text-muted-foreground">{isFree ? "Ongoing free access" : `${duration} days`}</div>
                       </div>
                       <ul className="space-y-2 text-xs">
-                        <li className="flex items-center justify-between gap-2"><span className="whitespace-nowrap text-muted-foreground">SPA Tool / {Number(tier.usage_period_days || 7)} days</span><strong className="shrink-0">{fmt(tier.weekly_scraper_limit)}</strong></li>
-                        <li className="flex items-center justify-between gap-2"><span className="whitespace-nowrap text-muted-foreground">Planner</span><strong className="shrink-0">Unlimited</strong></li>
-                        <li className="flex items-center justify-between gap-2"><span className="whitespace-nowrap text-muted-foreground">Captions</span><strong className="shrink-0">Coming soon</strong></li>
+                        <li className="flex items-center justify-between gap-2"><span className="text-muted-foreground">{isFree ? `SPA analyses / rolling ${period} days` : `SPA analyses / ${duration}-day term`}</span><strong className="shrink-0">{fmt(termScrapes)}</strong></li>
                         <li className="flex items-center justify-between gap-2"><span className="whitespace-nowrap text-muted-foreground">Database / 24h</span><strong className="shrink-0">{fmt(tier.weekly_database_limit)}</strong></li>
                         <li className="flex items-center justify-between gap-2"><span className="whitespace-nowrap text-muted-foreground">Daily Min Reqs</span><strong className="shrink-0">{fmt(tier.daily_subreddit_checker_limit)}</strong></li>
-                        <li className="flex items-center justify-between gap-2"><span className="whitespace-nowrap text-muted-foreground">Saved Usernames</span><strong className="shrink-0">3</strong></li>
                       </ul>
                       <button
                         className={`w-full rounded-xl px-4 py-3 text-sm font-bold transition-opacity ${isCurrent || isFree ? "cursor-not-allowed bg-muted text-muted-foreground" : "cursor-pointer bg-gradient-to-r from-cyan-500 to-blue-600 text-white hover:opacity-90 disabled:cursor-pointer disabled:opacity-70"}`}

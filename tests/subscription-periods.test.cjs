@@ -40,10 +40,10 @@ test("tier controls expose only active customer limits", () => {
 
 test("plan cards keep fixed feature allowances visible", () => {
   const plans = fs.readFileSync(path.join(root, "components/subscription/tiers.tsx"), "utf8")
-  assert.match(plans, />Planner</)
-  assert.match(plans, />Unlimited</)
-  assert.match(plans, />Captions</)
-  assert.match(plans, />Coming soon</)
-  assert.match(plans, />Saved Usernames</)
+  assert.match(plans, /SPA analyses \/.*term/)
+  assert.match(plans, /termScrapes/)
+  assert.doesNotMatch(plans, />Planner</)
+  assert.doesNotMatch(plans, />Captions</)
+  assert.doesNotMatch(plans, />Saved Usernames</)
   assert.doesNotMatch(plans, />Saved Profiles</)
 })

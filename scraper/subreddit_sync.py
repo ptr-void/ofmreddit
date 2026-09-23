@@ -699,6 +699,11 @@ class GoogleSheetStore:
                     managed.pop("Verification", None)
                 if result.subscribers is None:
                     managed.pop("Total Members", None)
+                # An empty weekly listing is missing evidence, not a measured zero.
+                # Retain the previous snapshot until Reddit returns weekly posts.
+                if not result.weekly_top_10_posts:
+                    for header in ("Hot 1 (Weekly)", "Hot 2-5 Avg (Weekly)", "Hot 6-10 Avg (Weekly)"):
+                        managed.pop(header, None)
                 managed.pop("Subreddit", None)
             for target_row in target_rows:
                 for header, value in managed.items():
@@ -819,6 +824,11 @@ class MySQLStore:
                 available: list[tuple[str, Any]] = []
                 for field_name, column in self.FIELD_MAP.items():
                     if column not in self.columns:
+                        continue
+                    if not result.weekly_top_10_posts and field_name in {
+                        "weekly_top_1_upvotes", "weekly_top_2_5_avg_upvotes",
+                        "weekly_top_6_10_avg_upvotes", "weekly_top_10_posts",
+                    }:
                         continue
                     value = self._db_value(field_name, getattr(result, field_name))
                     if value is not None:
