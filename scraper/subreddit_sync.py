@@ -63,6 +63,8 @@ NO_VERIFICATION_PATTERNS = (
 )
 BOT_BOUNCER_NAME = "botbouncer"
 CYCLE_METADATA_KEY = "ofmreddit_scraper_cycle_v1"
+WEEKLY_HISTORY_HEADERS = ["Subreddit", "Scraped At UTC", "Hot 1", "Hot 2-5 Avg", "Hot 6-10 Avg"]
+WEEKLY_ROLLING_SAMPLES = 3
 
 try:
     from dotenv import load_dotenv
@@ -99,6 +101,12 @@ def iso_utc(value: datetime | None) -> str:
 
 def average_int(values: Sequence[int]) -> int:
     return round(sum(values) / len(values)) if values else 0
+
+
+def rolling_weekly_metrics(current: Sequence[int], history: Sequence[Sequence[int]], samples: int = WEEKLY_ROLLING_SAMPLES) -> tuple[int, int, int]:
+    """Average recent valid snapshots, including the current scrape."""
+    window = list(history[-(samples - 1):]) + [current] if samples > 1 else [current]
+    return tuple(average_int([int(row[index]) for row in window]) for index in range(3))
 
 
 def parse_subscriber_count(value: Any) -> int | None:
@@ -657,6 +665,52 @@ class GoogleSheetStore:
         if current_columns < required_columns:
             self.sheet1.add_cols(required_columns - current_columns)
 
+    def apply_weekly_rolling_average(self, results: Sequence[ScrapeResult]) -> None:
+        """Persist raw weekly samples and display a three-scrape rolling mean."""
+        valid = [result for result in results if result.status == "success" and result.weekly_top_10_posts and result.source_row >= 2]
+        if not valid:
+            return
+        title = "Weekly Metrics History"
+        try:
+            history_sheet = self.workbook.worksheet(title)
+        except Exception as exc:
+            # Only a missing worksheet is expected here; permission/API errors must
+            # surface rather than silently replacing the history.
+            if getattr(getattr(exc, "response", None), "status_code", None) != 404 and type(exc).__name__ != "WorksheetNotFound":
+                raise
+            history_sheet = self.workbook.add_worksheet(title=title, rows=1000, cols=len(WEEKLY_HISTORY_HEADERS))
+        values = history_sheet.get_all_values()
+        if not values:
+            history_sheet.update(values=[WEEKLY_HISTORY_HEADERS], range_name="A1:E1")
+        elif values[0] != WEEKLY_HISTORY_HEADERS:
+            raise RuntimeError("Weekly Metrics History headers changed; no rolling values were written")
+        previous: dict[str, list[tuple[str, tuple[int, int, int]]]] = {}
+        for row in values[1:]:
+            if len(row) < 5:
+                continue
+            key = normalize_subreddit(row[0])
+            try:
+                sample = tuple(int(value) for value in row[2:5])
+            except ValueError:
+                continue
+            previous.setdefault(key, []).append((row[1], sample))
+        additions = []
+        for result in valid:
+            key = normalize_subreddit(result.subreddit)
+            raw = (result.weekly_top_1_upvotes, result.weekly_top_2_5_avg_upvotes, result.weekly_top_6_10_avg_upvotes)
+            recorded = sorted((item for item in previous.get(key, []) if item[0] <= result.scraped_at_utc), key=lambda item: item[0])
+            # Re-runs of the same scrape must not weight one observation twice.
+            if any(stamp == result.scraped_at_utc for stamp, _ in recorded):
+                samples = [sample for stamp, sample in recorded if stamp <= result.scraped_at_utc]
+                mean = tuple(average_int([sample[index] for sample in samples[-WEEKLY_ROLLING_SAMPLES:]]) for index in range(3))
+            else:
+                mean = rolling_weekly_metrics(raw, [sample for _, sample in recorded])
+                additions.append([result.subreddit, result.scraped_at_utc, *raw])
+                previous.setdefault(key, []).append((result.scraped_at_utc, raw))
+            result.weekly_top_1_upvotes, result.weekly_top_2_5_avg_upvotes, result.weekly_top_6_10_avg_upvotes = mean
+        if additions:
+            history_sheet.append_rows(additions, value_input_option="RAW")
+
     def write_results(self, results: Sequence[ScrapeResult]) -> None:
         if not results:
             return
@@ -1164,6 +1218,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 LOG.error("SPREADSHEET_ID is required for --write-sheets")
                 return 2
             sheet_store = GoogleSheetStore(spreadsheet_id, allow_create=True)
+        sheet_store.apply_weekly_rolling_average(results)
         sheet_store.write_results(results)
         LOG.info("Google Sheets batch update completed")
     else:

@@ -20,6 +20,7 @@ from scraper.subreddit_sync import (
     normalize_subreddit,
     parse_subscriber_count,
     parse_utc,
+    rolling_weekly_metrics,
     select_sources,
     select_cycle_sources,
     utc_now,
@@ -70,6 +71,28 @@ class FakeWorkbook:
 
 
 class SubredditSyncTests(unittest.TestCase):
+    def test_weekly_metrics_use_three_recent_valid_snapshots(self):
+        self.assertEqual(rolling_weekly_metrics((0, 0, 0), []), (0, 0, 0))
+        self.assertEqual(rolling_weekly_metrics((30, 6, 3), [(999, 999, 999), (90, 12, 9), (60, 9, 6)]), (60, 9, 6))
+
+    def test_history_keeps_raw_sample_and_displays_rolling_mean(self):
+        from scraper.subreddit_sync import WEEKLY_HISTORY_HEADERS
+        history = FakeWorksheet(values=[
+            WEEKLY_HISTORY_HEADERS,
+            ["target", "2026-09-01T00:00:00Z", "90", "12", "9"],
+            ["target", "2026-09-08T00:00:00Z", "60", "9", "6"],
+        ])
+        history.append_rows = lambda rows, **kwargs: history.values.extend(rows)
+        store = object.__new__(GoogleSheetStore)
+        store.workbook = SimpleNamespace(worksheet=lambda _: history)
+        result = ScrapeResult(subreddit="target", source_row=2, scraped_at_utc="2026-09-15T00:00:00Z",
+                              weekly_top_1_upvotes=30, weekly_top_2_5_avg_upvotes=6,
+                              weekly_top_6_10_avg_upvotes=3, weekly_top_10_posts=[{"id": "post"}])
+        store.apply_weekly_rolling_average([result])
+        self.assertEqual(history.values[-1][2:], [30, 6, 3])
+        self.assertEqual((result.weekly_top_1_upvotes, result.weekly_top_2_5_avg_upvotes,
+                          result.weekly_top_6_10_avg_upvotes), (60, 9, 6))
+
     def test_subscriber_counts_do_not_turn_missing_data_into_zero(self):
         for value in [None, "", False, True, -1, "unknown", 5.5]:
             self.assertIsNone(parse_subscriber_count(value))
