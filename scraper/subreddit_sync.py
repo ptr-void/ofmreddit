@@ -680,7 +680,7 @@ class GoogleSheetStore:
                 raise
             history_sheet = self.workbook.add_worksheet(title=title, rows=1000, cols=len(WEEKLY_HISTORY_HEADERS))
         values = history_sheet.get_all_values()
-        if not values:
+        if not values or not any(str(cell).strip() for cell in values[0]):
             history_sheet.update(values=[WEEKLY_HISTORY_HEADERS], range_name="A1:E1")
         elif values[0] != WEEKLY_HISTORY_HEADERS:
             raise RuntimeError("Weekly Metrics History headers changed; no rolling values were written")

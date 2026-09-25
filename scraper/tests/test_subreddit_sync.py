@@ -93,6 +93,18 @@ class SubredditSyncTests(unittest.TestCase):
         self.assertEqual((result.weekly_top_1_upvotes, result.weekly_top_2_5_avg_upvotes,
                           result.weekly_top_6_10_avg_upvotes), (60, 9, 6))
 
+    def test_blank_history_sheet_initializes_headers(self):
+        from scraper.subreddit_sync import WEEKLY_HISTORY_HEADERS
+        history = FakeWorksheet(values=[[]])
+        history.append_rows = lambda rows, **kwargs: history.values.extend(rows)
+        store = object.__new__(GoogleSheetStore)
+        store.workbook = SimpleNamespace(worksheet=lambda _: history)
+        result = ScrapeResult(subreddit="target", source_row=2, scraped_at_utc="2026-09-25T00:00:00Z",
+                              weekly_top_1_upvotes=25, weekly_top_10_posts=[{"id": "post"}])
+        store.apply_weekly_rolling_average([result])
+        self.assertEqual(history.updates[0]["values"], [WEEKLY_HISTORY_HEADERS])
+        self.assertEqual(history.values[-1][2], 25)
+
     def test_subscriber_counts_do_not_turn_missing_data_into_zero(self):
         for value in [None, "", False, True, -1, "unknown", 5.5]:
             self.assertIsNone(parse_subscriber_count(value))
