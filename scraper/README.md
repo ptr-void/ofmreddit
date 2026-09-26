@@ -16,7 +16,7 @@
 - CTA title evidence for `?`, `do`, `or`, `would`, `how`, and `what` after a one-hour survival window
 
 The minimum karma and age fields are **observed successful-poster minima**, not a direct read of hidden AutoModerator rules.
-The website labels them **Observed Minimums**; a high sampled value is not a verified posting threshold.
+The website labels them **Observed Minimums**; the displayed values are a three-successful-scrape rolling average, and a high sampled value is not a verified posting threshold. Raw observations are kept in a separate `Observed Metrics History` worksheet; the average builds from the next successful runs and excludes a metric when that run has no sample for it.
 Subscriber totals are distinct from Reddit's weekly visitor metric.
 
 ## Safety and recovery behavior

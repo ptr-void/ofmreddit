@@ -20,6 +20,7 @@ from scraper.subreddit_sync import (
     normalize_subreddit,
     parse_subscriber_count,
     parse_utc,
+    rolling_observed_minimums,
     rolling_weekly_metrics,
     select_sources,
     select_cycle_sources,
@@ -74,6 +75,62 @@ class SubredditSyncTests(unittest.TestCase):
     def test_weekly_metrics_use_three_recent_valid_snapshots(self):
         self.assertEqual(rolling_weekly_metrics((0, 0, 0), []), (0, 0, 0))
         self.assertEqual(rolling_weekly_metrics((30, 6, 3), [(999, 999, 999), (90, 12, 9), (60, 9, 6)]), (60, 9, 6))
+
+    def test_observed_minimums_average_each_metric_independently(self):
+        self.assertEqual(
+            rolling_observed_minimums((300, None, 60, 12), [(100, 50, 30, 6), (200, 80, None, 9)]),
+            (200, None, 45, 9),
+        )
+
+    def test_observed_minimum_history_keeps_raw_values_and_applies_three_scrape_mean(self):
+        from scraper.subreddit_sync import OBSERVED_HISTORY_HEADERS
+        history = FakeWorksheet(values=[
+            OBSERVED_HISTORY_HEADERS,
+            ["target", "2026-09-01T00:00:00Z", "90", "50", "100", "6", "12"],
+            ["target", "2026-09-08T00:00:00Z", "150", "70", "200", "12", "15"],
+        ])
+        history.append_rows = lambda rows, **kwargs: history.values.extend(rows)
+        store = object.__new__(GoogleSheetStore)
+        store.workbook = SimpleNamespace(worksheet=lambda _: history)
+        result = ScrapeResult(
+            subreddit="target", source_row=2, scraped_at_utc="2026-09-15T00:00:00Z",
+            min_post_karma=210, min_comment_karma=80, min_combined_karma=300,
+            min_account_age_days=18, observed_accounts=20,
+        )
+        store.apply_observed_minimum_rolling_average([result])
+        self.assertEqual(history.values[-1][2:6], [210, 80, 300, 18])
+        self.assertEqual(
+            (result.min_post_karma, result.min_comment_karma, result.min_combined_karma, result.min_account_age_days),
+            (150, 67, 200, 12),
+        )
+
+    def test_missing_minimum_sample_does_not_become_zero_or_overwrite_average(self):
+        from scraper.subreddit_sync import OBSERVED_HISTORY_HEADERS
+        history = FakeWorksheet(values=[
+            OBSERVED_HISTORY_HEADERS,
+            ["target", "2026-09-01T00:00:00Z", "90", "50", "100", "6", "12"],
+        ])
+        history.append_rows = lambda rows, **kwargs: history.values.extend(rows)
+        store = object.__new__(GoogleSheetStore)
+        store.workbook = SimpleNamespace(worksheet=lambda _: history)
+        result = ScrapeResult(subreddit="target", source_row=2, scraped_at_utc="2026-09-08T00:00:00Z")
+        store.apply_observed_minimum_rolling_average([result])
+        self.assertIsNone(result.min_post_karma)
+        self.assertEqual(len(history.values), 2)
+
+    def test_sheet_writer_retains_last_minimum_values_when_new_sample_is_missing(self):
+        from scraper.subreddit_sync import SHEET1_REQUIRED_HEADERS, column_letters
+        headers = list(SHEET1_REQUIRED_HEADERS)
+        store = object.__new__(GoogleSheetStore)
+        store._sheet1_values = None
+        store._sheet1_headers = headers
+        store.sheet1 = FakeWorksheet(values=[headers, ["target"]])
+        result = ScrapeResult(subreddit="target", source_row=2, scraped_at_utc="2026-09-08T00:00:00Z")
+        store.write_results([result])
+        updates = {item["range"] for batch, _ in store.sheet1.batch_updates for item in batch}
+        for header in ("Min Post Karma", "Min Comment Karma", "Min Total Karma", "Min Account Age"):
+            column = headers.index(header) + 1
+            self.assertNotIn(f"{column_letters(column)}2", updates)
 
     def test_history_keeps_raw_sample_and_displays_rolling_mean(self):
         from scraper.subreddit_sync import WEEKLY_HISTORY_HEADERS

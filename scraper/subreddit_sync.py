@@ -64,7 +64,14 @@ NO_VERIFICATION_PATTERNS = (
 BOT_BOUNCER_NAME = "botbouncer"
 CYCLE_METADATA_KEY = "ofmreddit_scraper_cycle_v1"
 WEEKLY_HISTORY_HEADERS = ["Subreddit", "Scraped At UTC", "Hot 1", "Hot 2-5 Avg", "Hot 6-10 Avg"]
+OBSERVED_HISTORY_HEADERS = [
+    "Subreddit", "Scraped At UTC", "Min Post Karma", "Min Comment Karma",
+    "Min Total Karma", "Min Account Age", "Observed Accounts",
+]
 WEEKLY_ROLLING_SAMPLES = 3
+OBSERVED_METRIC_FIELDS = (
+    "min_post_karma", "min_comment_karma", "min_combined_karma", "min_account_age_days",
+)
 
 try:
     from dotenv import load_dotenv
@@ -107,6 +114,23 @@ def rolling_weekly_metrics(current: Sequence[int], history: Sequence[Sequence[in
     """Average recent valid snapshots, including the current scrape."""
     window = list(history[-(samples - 1):]) + [current] if samples > 1 else [current]
     return tuple(average_int([int(row[index]) for row in window]) for index in range(3))
+
+
+def rolling_observed_minimums(
+    current: Sequence[int | None],
+    history: Sequence[Sequence[int | None]],
+    samples: int = WEEKLY_ROLLING_SAMPLES,
+) -> tuple[int | None, ...]:
+    """Average each available sampled-minimum metric across recent successful scrapes."""
+    window = list(history[-(samples - 1):]) + [current] if samples > 1 else [current]
+    result: list[int | None] = []
+    for index, value in enumerate(current):
+        if value is None:
+            result.append(None)
+            continue
+        observations = [int(row[index]) for row in window if index < len(row) and row[index] is not None]
+        result.append(average_int(observations) if observations else None)
+    return tuple(result)
 
 
 def parse_subscriber_count(value: Any) -> int | None:
@@ -711,6 +735,67 @@ class GoogleSheetStore:
         if additions:
             history_sheet.append_rows(additions, value_input_option="RAW")
 
+    def apply_observed_minimum_rolling_average(self, results: Sequence[ScrapeResult]) -> None:
+        """Persist raw sampled minima and publish a three-successful-scrape mean."""
+        valid = [
+            result for result in results
+            if result.status == "success"
+            and result.source_row >= 2
+            and any(getattr(result, field) is not None for field in OBSERVED_METRIC_FIELDS)
+        ]
+        if not valid:
+            return
+        title = "Observed Metrics History"
+        try:
+            history_sheet = self.workbook.worksheet(title)
+        except Exception as exc:
+            if getattr(getattr(exc, "response", None), "status_code", None) != 404 and type(exc).__name__ != "WorksheetNotFound":
+                raise
+            history_sheet = self.workbook.add_worksheet(title=title, rows=1000, cols=len(OBSERVED_HISTORY_HEADERS))
+        values = history_sheet.get_all_values()
+        if not values or not any(str(cell).strip() for cell in values[0]):
+            history_sheet.update(values=[OBSERVED_HISTORY_HEADERS], range_name="A1:G1")
+        elif values[0] != OBSERVED_HISTORY_HEADERS:
+            raise RuntimeError("Observed Metrics History headers changed; no rolling values were written")
+
+        history: dict[str, list[tuple[str, tuple[int | None, ...]]]] = {}
+        for row in values[1:]:
+            if len(row) < 2:
+                continue
+            key = normalize_subreddit(row[0])
+            if not key:
+                continue
+            sample: list[int | None] = []
+            for cell in row[2:6]:
+                clean = str(cell or "").replace(",", "").strip()
+                try:
+                    sample.append(int(clean) if clean else None)
+                except ValueError:
+                    sample.append(None)
+            sample.extend([None] * (len(OBSERVED_METRIC_FIELDS) - len(sample)))
+            if any(value is not None for value in sample):
+                history.setdefault(key, []).append((str(row[1] or ""), tuple(sample[:len(OBSERVED_METRIC_FIELDS)])))
+
+        additions: list[list[Any]] = []
+        for result in valid:
+            key = normalize_subreddit(result.subreddit)
+            raw = tuple(getattr(result, field) for field in OBSERVED_METRIC_FIELDS)
+            recorded = sorted(
+                (item for item in history.get(key, []) if item[0] <= result.scraped_at_utc),
+                key=lambda item: item[0],
+            )
+            previous = [sample for stamp, sample in recorded if stamp < result.scraped_at_utc]
+            same_run = next((sample for stamp, sample in recorded if stamp == result.scraped_at_utc), None)
+            current = same_run if same_run is not None else raw
+            rolling = rolling_observed_minimums(current, previous)
+            for field, value in zip(OBSERVED_METRIC_FIELDS, rolling):
+                setattr(result, field, value)
+            if same_run is None:
+                additions.append([result.subreddit, result.scraped_at_utc, *raw, result.observed_accounts])
+                history.setdefault(key, []).append((result.scraped_at_utc, raw))
+        if additions:
+            history_sheet.append_rows(additions, value_input_option="RAW")
+
     def write_results(self, results: Sequence[ScrapeResult]) -> None:
         if not results:
             return
@@ -753,6 +838,14 @@ class GoogleSheetStore:
                     managed.pop("Verification", None)
                 if result.subscribers is None:
                     managed.pop("Total Members", None)
+                # A scrape with no usable sample for one minimum is missing data,
+                # not a zero-value observation; retain the last known cell value.
+                for header, field in zip(
+                    ("Min Post Karma", "Min Comment Karma", "Min Total Karma", "Min Account Age"),
+                    OBSERVED_METRIC_FIELDS,
+                ):
+                    if getattr(result, field) is None:
+                        managed.pop(header, None)
                 # An empty weekly listing is missing evidence, not a measured zero.
                 # Retain the previous snapshot until Reddit returns weekly posts.
                 if not result.weekly_top_10_posts:
@@ -1218,6 +1311,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 LOG.error("SPREADSHEET_ID is required for --write-sheets")
                 return 2
             sheet_store = GoogleSheetStore(spreadsheet_id, allow_create=True)
+        sheet_store.apply_observed_minimum_rolling_average(results)
         sheet_store.apply_weekly_rolling_average(results)
         sheet_store.write_results(results)
         LOG.info("Google Sheets batch update completed")
