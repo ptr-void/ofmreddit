@@ -75,11 +75,6 @@ export default function SubredditCheckerPage() {
       toast({ title: "Error", description: "Please enter a subreddit name", variant: "destructive" })
       return
     }
-    if (!niche.trim()) {
-      toast({ title: "Error", description: "Please enter at least one niche tag", variant: "destructive" })
-      return
-    }
-
     try {
       setLoading(true)
       setResult(null)
@@ -91,7 +86,7 @@ export default function SubredditCheckerPage() {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`
         },
-        body: JSON.stringify({ subreddit: subreddit.trim(), niche: niche.trim(), limit: postLimit })
+        body: JSON.stringify({ subreddit: subreddit.trim(), niche: niche.trim() || undefined, limit: postLimit })
       })
 
       const data = await res.json()
@@ -151,7 +146,7 @@ export default function SubredditCheckerPage() {
 
             <div className="space-y-2">
               <label htmlFor="niche" className="text-sm font-medium text-muted-foreground">
-                Niche / Tags *
+                Niche / Tags (optional)
               </label>
               <NicheTagSelect
                 id="niche"
@@ -160,7 +155,7 @@ export default function SubredditCheckerPage() {
                 disabled={loading}
               />
               <span className="text-xs text-muted-foreground">
-                Required so new subreddits can enter the review queue with useful tags.
+                Leave blank if you want to add the niche later in the admin review.
               </span>
             </div>
             

@@ -56,6 +56,17 @@ function splitNiches(value: string) {
     .filter(Boolean)
 }
 
+function metricIndex(headers: string[], name: string) {
+  return headers.findIndex((header) => header.trim().toLowerCase() === name)
+}
+
+function numericCell(value: string | undefined): number | null {
+  const clean = String(value ?? "").replace(/,/g, "").trim()
+  if (!clean) return null
+  const result = Number(clean)
+  return Number.isFinite(result) ? result : null
+}
+
 export default function RedditDatabasePage() {
   const [sheetData, setSheetData] = useState<SheetData | null>(null)
   const [rowHealth, setRowHealth] = useState<Record<string, RowHealth>>({})
@@ -65,6 +76,9 @@ export default function RedditDatabasePage() {
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(false)
   const [selectedNiche, setSelectedNiche] = useState("all")
   const [search, setSearch] = useState("")
+  const [maxTotalKarma, setMaxTotalKarma] = useState("")
+  const [freshAccountOnly, setFreshAccountOnly] = useState(false)
+  const [performanceSort, setPerformanceSort] = useState("")
   const [showMinReqs, setShowMinReqs] = useState(false)
   const [sortState, setSortState] = useState<SortState>({ columnIndex: -1, direction: null })
   const intervalRef = useRef<number | null>(null)
@@ -75,6 +89,9 @@ export default function RedditDatabasePage() {
       setSelectedNiche("all")
       setSortState({ columnIndex: -1, direction: null })
       setSearch("")
+      setMaxTotalKarma("")
+      setFreshAccountOnly(false)
+      setPerformanceSort("")
     }
     setError(null)
     try {
@@ -134,16 +151,48 @@ export default function RedditDatabasePage() {
 
   const filteredRows = useMemo(() => {
     if (!sheetData) return []
+    const headers = sheetData.headers
+    const totalKarmaIndex = metricIndex(headers, "min total karma")
+    const accountAgeIndex = metricIndex(headers, "min account age")
     let rows = sheetData.rows
     if (selectedNiche !== "all" && nicheColumnIndex >= 0) {
       rows = rows.filter((row) => splitNiches(row[nicheColumnIndex] || "").includes(selectedNiche))
+    }
+    if (maxTotalKarma.trim() && totalKarmaIndex >= 0) {
+      const ceiling = Number(maxTotalKarma)
+      if (Number.isFinite(ceiling)) {
+        rows = rows.filter((row) => {
+          const observed = numericCell(row[totalKarmaIndex])
+          return observed !== null && observed < ceiling
+        })
+      }
+    }
+    if (freshAccountOnly && totalKarmaIndex >= 0 && accountAgeIndex >= 0) {
+      rows = rows.filter((row) => {
+        const totalKarma = numericCell(row[totalKarmaIndex])
+        const accountAge = numericCell(row[accountAgeIndex])
+        return totalKarma !== null && totalKarma < 500 && accountAge !== null && accountAge < 30
+      })
     }
     if (search.trim()) {
       const query = search.toLowerCase()
       rows = rows.filter((row) => row.some((cell) => String(cell || "").toLowerCase().includes(query)))
     }
+    if (performanceSort) {
+      const sortIndex = metricIndex(headers, performanceSort)
+      if (sortIndex >= 0) {
+        const direction = performanceSort.startsWith("hot ") ? -1 : 1
+        rows = [...rows].sort((a, b) => {
+          const left = numericCell(a[sortIndex])
+          const right = numericCell(b[sortIndex])
+          if (left === null) return right === null ? 0 : 1
+          if (right === null) return -1
+          return direction * (left - right)
+        })
+      }
+    }
     return rows
-  }, [sheetData, selectedNiche, nicheColumnIndex, search])
+  }, [sheetData, selectedNiche, nicheColumnIndex, search, maxTotalKarma, freshAccountOnly, performanceSort])
 
   const handleSort = (columnIndex: number) => {
     setSortState((previous) => {
@@ -221,6 +270,53 @@ export default function RedditDatabasePage() {
                     </SelectContent>
                   </Select>
                 </div>
+                <div className="flex w-44 flex-col gap-1">
+                  <label htmlFor="karmaCeiling" className="text-xs font-semibold text-muted-foreground">Min Total Karma &lt;</label>
+                  <input
+                    id="karmaCeiling"
+                    type="number"
+                    min="0"
+                    value={maxTotalKarma}
+                    onChange={(event) => {
+                      setMaxTotalKarma(event.target.value)
+                      if (event.target.value) setShowMinReqs(true)
+                    }}
+                    placeholder="No limit (e.g. 100)"
+                    className={s.csvinput}
+                  />
+                </div>
+                <label className="mb-1 inline-flex h-10 cursor-pointer items-center gap-2 rounded-md border border-border bg-card px-3 text-xs font-medium">
+                  <input
+                    type="checkbox"
+                    checked={freshAccountOnly}
+                    onChange={(event) => {
+                      setFreshAccountOnly(event.target.checked)
+                      if (event.target.checked) setShowMinReqs(true)
+                    }}
+                    className="size-4 accent-primary"
+                  />
+                  Observed fresh accounts (&lt;30d, &lt;500 karma)
+                </label>
+                <div className="flex w-52 flex-col gap-1">
+                  <label htmlFor="performanceSort" className="text-xs font-semibold text-muted-foreground">Order results by</label>
+                  <Select
+                    value={performanceSort || "none"}
+                    onValueChange={(value) => {
+                      setPerformanceSort(value === "none" ? "" : value)
+                      setSortState({ columnIndex: -1, direction: null })
+                    }}
+                  >
+                    <SelectTrigger id="performanceSort" className={s.csvinput}><SelectValue placeholder="Default order" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Default order</SelectItem>
+                      <SelectItem value="min account age">Freshest observed accounts</SelectItem>
+                      <SelectItem value="min total karma">Lowest observed total karma</SelectItem>
+                      <SelectItem value="hot 1 (weekly)">Top post (weekly)</SelectItem>
+                      <SelectItem value="hot 2-5 avg (weekly)">Top posts 2–5 average</SelectItem>
+                      <SelectItem value="hot 6-10 avg (weekly)">Top posts 6–10 average</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <div className="flex items-end gap-3">
                 <div className="mb-1 inline-flex h-10 items-center gap-3 rounded-md border border-border bg-card pl-3 pr-2 shadow-sm">
@@ -273,7 +369,7 @@ export default function RedditDatabasePage() {
             )}
             {showMinReqs && (
               <p className="text-xs text-muted-foreground">
-                Observed minimums come from sampled authors, not verified posting requirements. Small samples can produce unusually high values.
+                Observed minimums are three-scrape rolling averages of sampled authors, not verified posting requirements. Small samples can still vary.
               </p>
             )}
             <DatabaseTable

@@ -49,11 +49,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid subreddit name" }, { status: 400 })
     }
 
-    const nicheSelection = await validateNicheTags(niche || tags)
-    if (!nicheSelection.ok) {
+    const requestedNiche = String(niche || tags || "").trim()
+    const nicheSelection = requestedNiche ? await validateNicheTags(requestedNiche) : null
+    if (nicheSelection && !nicheSelection.ok) {
       return NextResponse.json({ error: nicheSelection.error }, { status: 400 })
     }
-    const nicheTags = nicheSelection.value
+    const nicheTags = nicheSelection?.ok ? nicheSelection.value : ""
 
     const authToken = (request.headers.get("authorization") || "").replace(/^Bearer\s+/i, "")
     const user = authToken ? verifyToken(authToken) : null

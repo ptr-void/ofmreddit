@@ -26,13 +26,13 @@ const COLUMN_INFO: Record<string, string> = {
   verification: "Yes when the scraper detects a creator verification requirement in the subreddit rules or description. The value is refreshed automatically.",
   "total members": "Reddit subscriber count at the last successful refresh, not weekly visitors. Stale rows retain previously stored values.",
   niche: "Manually entered niche tags.",
-  "min post karma": "Lowest post karma observed among recent surviving post authors sampled by the scraper. It is not a direct AutoModerator rule lookup.",
-  "min comment karma": "Lowest comment karma observed among recent surviving post authors sampled by the scraper. It is not a direct AutoModerator rule lookup.",
-  "min total karma": "Lowest combined karma observed among recent surviving post authors sampled by the scraper. It is not a direct AutoModerator rule lookup.",
-  "min account age": "Youngest account age observed among recent surviving post authors, shown in days. It is not a direct posting-rule lookup.",
-  "hot 1 (weekly)": "Upvote score of the subreddit’s highest-ranked post from Reddit’s weekly Top 10 listing.",
-  "hot 2-5 avg (weekly)": "Average upvote score of weekly Top posts ranked 2 through 5.",
-  "hot 6-10 avg (weekly)": "Average upvote score of weekly Top posts ranked 6 through 10.",
+  "min post karma": "Three-scrape rolling average of the lowest post karma observed among recent surviving post authors. This is not a direct AutoModerator rule lookup.",
+  "min comment karma": "Three-scrape rolling average of the lowest comment karma observed among recent surviving post authors. This is not a direct AutoModerator rule lookup.",
+  "min total karma": "Three-scrape rolling average of the lowest combined karma observed among recent surviving post authors. This is not a direct AutoModerator rule lookup.",
+  "min account age": "Three-scrape rolling average of the youngest account age observed among recent surviving post authors, shown in days. This is not a direct posting-rule lookup.",
+  "hot 1 (weekly)": "Three-scrape rolling average of the upvote score of the subreddit’s highest-ranked weekly Top post.",
+  "hot 2-5 avg (weekly)": "Three-scrape rolling average of the mean upvote score for weekly Top posts ranked 2 through 5.",
+  "hot 6-10 avg (weekly)": "Three-scrape rolling average of the mean upvote score for weekly Top posts ranked 6 through 10.",
   "bot bouncer": "The scraper searches for BotBouncer in the moderator list and reports the result to the database. A blank value means the moderator list could not be verified.",
   "cta captions": "Checks surviving recent post titles for question/CTA forms such as ?, would, how, what, do, or. This is observed behavior, not a direct rule lookup.",
 }
@@ -141,15 +141,15 @@ export default function DatabaseTable({ headers, rows, sortState, onSort, rowHea
   const hasCustomWidths = Object.keys(columnWidths).length > 0
 
   return (
-    <div className="relative w-full overflow-x-auto rounded-xl border border-border bg-card">
+    <div className="relative max-h-[72vh] w-full overflow-auto rounded-xl border border-border bg-card">
       <table 
-        className="w-full text-left text-xs md:text-sm"
+        className="w-full border-separate border-spacing-0 text-left text-xs md:text-sm"
         style={{ 
           tableLayout: hasCustomWidths ? "fixed" : "auto", 
           minWidth: `${Math.max(900, headers.length * 140)}px` 
         }}
       >
-        <thead className="border-b border-border bg-muted/60">
+        <thead className="sticky top-0 z-40 border-b border-border bg-muted/60">
           <tr>
             {headers.map((h, i) => {
               const active = sortState.columnIndex === i
@@ -163,9 +163,9 @@ export default function DatabaseTable({ headers, rows, sortState, onSort, rowHea
                     width: width ? `${width}px` : undefined,
                     minWidth: isSubredditColumn ? "190px" : undefined,
                   }}
-                  className={`relative px-4 py-3 text-xs font-semibold text-muted-foreground select-none group ${
+                  className={`sticky top-0 z-40 relative px-4 py-3 text-xs font-semibold text-muted-foreground select-none group ${
                     isSubredditColumn
-                      ? "sticky left-0 z-30 bg-muted shadow-[4px_0_8px_-5px_rgba(0,0,0,0.65)]"
+                      ? "sticky left-0 top-0 z-50 bg-muted shadow-[4px_0_8px_-5px_rgba(0,0,0,0.65)]"
                       : ""
                   }`}
                 >
