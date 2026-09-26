@@ -228,6 +228,11 @@ export default function SubscriptionTiers({
         <div className="px-5 pb-8 pt-6">
           {error && <div className="mb-5 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</div>}
           {loading && <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />Loading plans…</div>}
+          {!loading && !payment && tiers.length > 0 && (
+            <p className="mb-5 rounded-lg border border-border bg-muted/40 px-4 py-3 text-xs leading-relaxed text-muted-foreground">
+              Allowances are shown with their reset window: paid SPA uses are a total for the plan term, Database lookups refresh over the selected rolling period, and Min Req checks refresh over rolling 24 hours. Unlimited means no usage cap.
+            </p>
+          )}
 
           {!loading && payment && (
             <div className="mx-auto max-w-2xl space-y-5">
@@ -299,10 +304,10 @@ export default function SubscriptionTiers({
                         <div className="text-xs text-muted-foreground">{isFree ? "Ongoing free access" : `${duration} days`}</div>
                       </div>
                       <ul className="space-y-2 text-xs">
-                        <li className="flex items-center justify-between gap-2"><span className="text-muted-foreground">{isFree ? `SPA analyses / rolling ${period} days` : `SPA analyses / ${duration}-day plan`}</span><strong className="shrink-0">{fmt(termScrapes)}</strong></li>
-                        {!isFree && scraperLimit > 0 && <li className="text-[11px] text-muted-foreground">{scraperLimit} per {period} days × {Math.ceil(duration / period)} periods</li>}
+                        <li className="flex items-center justify-between gap-2"><span className="text-muted-foreground">{isFree ? `SPA uses / rolling ${period} days` : `SPA uses / ${duration}-day plan total`}</span><strong className="shrink-0">{fmt(termScrapes)}</strong></li>
+                        {!isFree && scraperLimit > 0 && <li className="text-[11px] text-muted-foreground">{scraperLimit} per {period}-day period × {Math.ceil(duration / period)} periods</li>}
                         <li className="flex items-center justify-between gap-2"><span className="text-muted-foreground">Database lookups / rolling {period} days</span><strong className="shrink-0">{fmt(tier.weekly_database_limit)}</strong></li>
-                        <li className="flex items-center justify-between gap-2"><span className="whitespace-nowrap text-muted-foreground">Daily Min Reqs</span><strong className="shrink-0">{fmt(tier.daily_subreddit_checker_limit)}</strong></li>
+                        <li className="flex items-center justify-between gap-2"><span className="text-muted-foreground">Min Req checks / rolling 24h</span><strong className="shrink-0">{fmt(tier.daily_subreddit_checker_limit)}</strong></li>
                       </ul>
                       <button
                         className={`w-full rounded-xl px-4 py-3 text-sm font-bold transition-opacity ${isCurrent || isFree ? "cursor-not-allowed bg-muted text-muted-foreground" : "cursor-pointer bg-gradient-to-r from-cyan-500 to-blue-600 text-white hover:opacity-90 disabled:cursor-pointer disabled:opacity-70"}`}

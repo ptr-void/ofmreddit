@@ -96,3 +96,23 @@ export async function PUT(req: Request) {
   )
   return NextResponse.json({ tier: updated[0] })
 }
+
+export async function PATCH(req: Request) {
+  if (!admin(req)) return NextResponse.json({ error: "Admin access required" }, { status: 401 })
+  const body = await req.json().catch(() => ({}))
+  const id = Number(body?.id)
+  if (!Number.isInteger(id) || id <= 0) return NextResponse.json({ error: "Invalid tier id" }, { status: 400 })
+  if (![true, false, 1, 0].includes(body?.is_active)) {
+    return NextResponse.json({ error: "is_active must be a boolean" }, { status: 400 })
+  }
+  const is_active = body.is_active === true || body.is_active === 1
+
+  const tier = await query<any>("SELECT id, name, price FROM subscription_tiers WHERE id = ? LIMIT 1", [id])
+  if (!tier.length) return NextResponse.json({ error: "Tier not found" }, { status: 404 })
+  if (!is_active && (String(tier[0].name).trim().toLowerCase() === "free" || tier[0].price == null || Number(tier[0].price) <= 0)) {
+    return NextResponse.json({ error: "The Free tier must stay available" }, { status: 400 })
+  }
+
+  await query("UPDATE subscription_tiers SET is_active = ?, updated_at = NOW() WHERE id = ?", [is_active ? 1 : 0, id])
+  return NextResponse.json({ id, is_active })
+}

@@ -41,7 +41,7 @@ export async function getActiveTierForUser(userId: number): Promise<Tier | null>
       t.saved_profile_limit,
       t.daily_subreddit_checker_limit
     FROM user_subscriptions us
-    JOIN subscription_tiers t ON t.id = us.tier_id AND t.is_active = 1
+    JOIN subscription_tiers t ON t.id = us.tier_id
     WHERE us.user_id = ?
       AND us.starts_at <= NOW()
       AND (us.ends_at IS NULL OR us.ends_at >= NOW())
@@ -203,7 +203,7 @@ export async function recordSubredditCheckerUsage(userId: number, meta?: any): P
       const [tiers]: any = await connection.execute(
         `SELECT t.daily_subreddit_checker_limit
            FROM user_subscriptions us
-           JOIN subscription_tiers t ON t.id = us.tier_id AND t.is_active = 1
+           JOIN subscription_tiers t ON t.id = us.tier_id
           WHERE us.user_id = ? AND us.starts_at <= NOW()
             AND (us.ends_at IS NULL OR us.ends_at >= NOW())
           ORDER BY us.starts_at DESC LIMIT 1`,

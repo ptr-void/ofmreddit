@@ -1,7 +1,7 @@
 "use client"
 import { useEffect, useState, useRef } from "react"
 import { useToast } from "@/hooks/use-toast"
-import { Loader2 } from "lucide-react"
+import { Loader2, RotateCcw, X } from "lucide-react"
 
 type ApiTier = {
   id: number
@@ -16,6 +16,7 @@ type ApiTier = {
   saved_username_limit: number | string | null
   saved_profile_limit: number | string | null
   daily_subreddit_checker_limit: number | string | null
+  is_active: number | boolean
 }
 
 type UiTier = {
@@ -24,6 +25,7 @@ type UiTier = {
   priceStr: string
   durationDays: string
   usagePeriodDays: string
+  isActive: boolean
   limits: {
     weekly_scraper_limit: string
     weekly_database_limit: string
@@ -38,9 +40,9 @@ const LIMIT_KEYS = [
 ] as const
 
 const LABELS: Record<(typeof LIMIT_KEYS)[number], string> = {
-  weekly_scraper_limit: "SPA Limit / selected period",
-  weekly_database_limit: "Database Limit / selected period",
-  daily_subreddit_checker_limit: "Daily Minimum Reqs Scraper Limit",
+  weekly_scraper_limit: "SPA uses / selected period",
+  weekly_database_limit: "Database lookups / selected period",
+  daily_subreddit_checker_limit: "Min Req checks / rolling 24h",
 }
 
 export function SubscriptionTierTab() {
@@ -68,6 +70,7 @@ export function SubscriptionTierTab() {
               : String(row.price),
           durationDays: row.duration_days == null ? "30" : String(row.duration_days),
           usagePeriodDays: row.usage_period_days == null ? "7" : String(row.usage_period_days),
+          isActive: row.is_active === true || Number(row.is_active) === 1,
           limits: {
             weekly_scraper_limit:
               row.weekly_scraper_limit == null ? "" : String(row.weekly_scraper_limit),
@@ -134,6 +137,29 @@ export function SubscriptionTierTab() {
     }
   }
 
+  const toggleTierAvailability = async (tier: UiTier) => {
+    const token = localStorage.getItem("token")
+    if (!token) return
+    setSavingTierId(tier.id)
+    try {
+      const res = await fetch("/api/admin/subscription-tiers", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ id: tier.id, is_active: !tier.isActive }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || "Failed to update tier availability")
+      setTiers((current) => current.map((item) => item.id === tier.id ? { ...item, isActive: !tier.isActive } : item))
+      setShowBanner(true)
+      if (timerRef.current) window.clearTimeout(timerRef.current)
+      timerRef.current = window.setTimeout(() => setShowBanner(false), 2000)
+    } catch (error: any) {
+      toast({ title: "Error", description: error.message, variant: "destructive" })
+    } finally {
+      setSavingTierId(null)
+    }
+  }
+
   if (loading) return <div className="text-sm text-muted-foreground">Loading…</div>
 
   return (
@@ -141,12 +167,24 @@ export function SubscriptionTierTab() {
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-xl font-semibold">Edit Subscription Tiers</h2>
       </div>
-      <p className="mb-4 text-sm text-muted-foreground">Database limits reset over the selected rolling period. Paid SPA limits are displayed and enforced as a total for the plan: SPA limit × rounded-up number of periods in the plan. Use -1 for unlimited access and 0 to disable a feature.</p>
+      <p className="mb-4 text-sm text-muted-foreground">SPA and database limits use the selected period (database resets on a rolling basis); on paid plans, SPA uses are multiplied across the full plan term. Min Req checks use a rolling 24-hour window. Use -1 for unlimited access and 0 to disable a feature. Free stays active as the default access tier; paid tiers can be retired or restored.</p>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-4">
         {tiers.map((tier, i) => (
-          <div key={tier.id} className="rounded-xl border border-border bg-card/40 p-4">
-            <div className="flex items-center justify-between gap-3 mb-3">
+          <div key={tier.id} className={`relative rounded-xl border border-border bg-card/40 p-4 ${tier.isActive ? "" : "opacity-60"}`}>
+            {tier.name.trim().toLowerCase() !== "free" && tier.priceStr.trim() !== "" && Number(tier.priceStr) > 0 && (
+              <button
+                type="button"
+                aria-label={`${tier.isActive ? "Retire" : "Restore"} ${tier.name} tier`}
+                title={tier.isActive ? "Hide from new signups (existing subscriptions stay active)" : "Make available to new signups"}
+                onClick={() => toggleTierAvailability(tier)}
+                disabled={savingTierId !== null}
+                className="absolute right-2 top-2 z-10 inline-flex size-8 items-center justify-center rounded-full border border-border bg-background text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:opacity-50"
+              >
+                {savingTierId === tier.id ? <Loader2 className="size-4 animate-spin" /> : tier.isActive ? <X className="size-4" /> : <RotateCcw className="size-4" />}
+              </button>
+            )}
+            <div className="flex items-center justify-between gap-3 mb-3 pr-8">
               <input
                 className="flex-1 min-w-0 rounded-md border border-border bg-background px-3 py-2 font-semibold"
                 value={tier.name}
@@ -172,6 +210,8 @@ export function SubscriptionTierTab() {
                 onChange={(e) => updateTier(i, (t) => ({ ...t, durationDays: e.target.value }))}
               />
             </div>
+
+            {!tier.isActive && <p className="mb-3 text-xs font-medium text-muted-foreground">Unavailable to new signups · current subscriptions remain active until expiry</p>}
 
             <div className="mb-3 grid grid-cols-2 items-center gap-2">
               <label className="text-sm text-muted-foreground">Usage limit period</label>

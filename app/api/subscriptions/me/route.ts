@@ -9,7 +9,7 @@ export async function GET(req: Request) {
   const subscription = await queryOne(
     `SELECT us.id, us.tier_id, st.name AS tier_name, us.starts_at, us.ends_at
        FROM user_subscriptions us
-       JOIN subscription_tiers st ON st.id=us.tier_id AND st.is_active=1
+       JOIN subscription_tiers st ON st.id=us.tier_id
       WHERE us.user_id=? AND us.starts_at <= NOW()
         AND (us.ends_at IS NULL OR us.ends_at >= NOW())
       ORDER BY us.starts_at DESC LIMIT 1`,
