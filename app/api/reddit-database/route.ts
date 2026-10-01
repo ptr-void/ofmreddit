@@ -55,8 +55,11 @@ export async function GET(req: Request) {
     const reader = await createWorkbookReader(parsed.spreadsheetId)
     const sourceSheet = await reader.readByGid(parsed.gid)
     const statusIndex = sourceSheet.headers.findIndex(header => header.trim().toLowerCase() === "sync status")
+    const identityIndex = sourceSheet.headers.findIndex(header => /^(subreddit|subreddit name)$/i.test(header.trim()))
+    const sourceLinkIndex = sourceSheet.headers.findIndex(header => header.trim().toLowerCase() === "link")
     sourceSheet.rows = sourceSheet.rows.filter(
-      row => String(row[statusIndex] || "").trim().toLowerCase() !== "archived",
+      row => Boolean(String(row[identityIndex] || "").trim() || String(row[sourceLinkIndex] || "").trim())
+        && String(row[statusIndex] || "").trim().toLowerCase() !== "archived",
     )
     const rowHealth = sourceRowHealth(sourceSheet.headers, sourceSheet.rows)
     const keepIndices = sourceSheet.headers

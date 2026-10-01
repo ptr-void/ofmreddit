@@ -17,8 +17,8 @@ test("member counts and karma have commas regardless of source formatting", () =
   for (const header of ["Total Members", "Min Post Karma", "Hot 1 (Weekly)"]) {
     assert.equal(formatDatabaseMetric(header, "1115693"), "1,115,693")
     assert.equal(formatDatabaseMetric(header, "1,115,693"), "1,115,693")
-    assert.equal(formatDatabaseMetric(header, "0"), "0")
-    assert.equal(formatDatabaseMetric(header, ""), "")
+    assert.equal(formatDatabaseMetric(header, "0"), header.startsWith("Hot ") ? "Awaiting data" : "0")
+    assert.equal(formatDatabaseMetric(header, ""), header.startsWith("Hot ") ? "Awaiting data" : "")
     assert.equal(formatDatabaseMetric(header, "Unknown"), "Unknown")
   }
   assert.equal(formatDatabaseMetric("Hot 2-5 Avg (Weekly)", "1234.5"), "1,234.5")
@@ -49,4 +49,26 @@ test("failed rows are marked stale, not dead or deleted", () => {
   assert.equal(subredditKey("https://www.reddit.com/r/Example/?x=1"), "example")
   assert.equal(subredditKey("r/Example/"), "example")
   assert.equal(subredditKey("https://www.reddit.com/r/Example/hot/"), "example")
+})
+
+const { compareDatabaseValues } = context.exports
+test("missing metrics sort last in both directions, with numeric comparison", () => {
+  for (const direction of ["asc", "desc"]) {
+    assert.equal(compareDatabaseValues("", "10", direction), 1)
+    assert.equal(compareDatabaseValues("10", "Unknown", direction), -1)
+    assert.equal(compareDatabaseValues("", "", direction), 0)
+  }
+  assert.ok(compareDatabaseValues("1,000", "900", "asc") > 0)
+  assert.ok(compareDatabaseValues("1,000", "900", "desc") < 0)
+  assert.ok(compareDatabaseValues("0", "10", "asc") < 0)
+})
+
+test("table uses opaque sticky headers and hover help without icon buttons", () => {
+  const table = fs.readFileSync(path.join(__dirname, "../components/reddit-database/database-table.tsx"), "utf8")
+  assert.doesNotMatch(table, /bg-muted\/60|<Info|z-40 relative/)
+  assert.match(table, /sticky top-0 z-40 bg-muted/)
+  assert.match(table, /TooltipTrigger asChild/)
+  const page = fs.readFileSync(path.join(__dirname, "../app/reddit-database/page.tsx"), "utf8")
+  assert.match(page, /verificationPosition \+ 1/)
+  assert.match(page, />Add a Subreddit<\/button>/)
 })

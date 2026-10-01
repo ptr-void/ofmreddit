@@ -195,11 +195,11 @@ export default function RedditDatabasePage() {
   }, [sheetData, selectedNiche, nicheColumnIndex, search, maxTotalKarma, freshAccountOnly, performanceSort])
 
   const handleSort = (columnIndex: number) => {
+    const firstDirection = renderHeaders[columnIndex]?.trim().toLowerCase().startsWith("hot ") ? "desc" : "asc"
     setSortState((previous) => {
-      if (previous.columnIndex !== columnIndex) return { columnIndex, direction: "asc" }
-      if (previous.direction === "asc") return { columnIndex, direction: "desc" }
-      if (previous.direction === "desc") return { columnIndex: -1, direction: null }
-      return { columnIndex, direction: "asc" }
+      if (previous.columnIndex !== columnIndex || !previous.direction) return { columnIndex, direction: firstDirection }
+      if (previous.direction === firstDirection) return { columnIndex, direction: firstDirection === "asc" ? "desc" : "asc" }
+      return { columnIndex: -1, direction: null }
     })
   }
 
@@ -213,6 +213,12 @@ export default function RedditDatabasePage() {
     const minimumIndices = renderHeaders
       .map((header, index) => (observedMinimums.has(header.trim().toLowerCase()) ? index : -1))
       .filter((index) => index >= 0)
+    const ctaPosition = normalIndices.findIndex(index => renderHeaders[index].trim().toLowerCase() === "cta captions")
+    if (ctaPosition >= 0) {
+      const [ctaIndex] = normalIndices.splice(ctaPosition, 1)
+      const verificationPosition = normalIndices.findIndex(index => renderHeaders[index].trim().toLowerCase() === "verification")
+      normalIndices.splice(verificationPosition >= 0 ? verificationPosition + 1 : 1, 0, ctaIndex)
+    }
     const displayIndices = showMinReqs ? [...normalIndices, ...minimumIndices] : normalIndices
     renderHeaders = displayIndices.map((index) => renderHeaders[index])
     renderRows = renderRows.map((row) => displayIndices.map((index) => row[index] ?? ""))
@@ -222,7 +228,12 @@ export default function RedditDatabasePage() {
     <div className={`min-h-screen bg-background p-4 md:p-6 ${s.bgPattern}`}>
       <div className="mx-auto max-w-7xl space-y-6">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Subreddit Database</h1>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Subreddit Database</h1>
+            <SubmitSubredditModal>
+              <button type="button" className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">Add a Subreddit</button>
+            </SubmitSubredditModal>
+          </div>
           <p className="text-sm text-muted-foreground">
             Browse and filter the consolidated subreddit table by niche and scraper metrics. The scraper completes a
             full pass, rests for 24 hours, then starts the next pass.
@@ -346,11 +357,6 @@ export default function RedditDatabasePage() {
               >
                 {showMinReqs ? "Hide Observed Minimums" : "Show Observed Minimums"}
               </button>
-              <SubmitSubredditModal>
-                <button type="button" className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition hover:bg-primary/90">
-                  Submit a Subreddit
-                </button>
-              </SubmitSubredditModal>
             </div>
 
             <div className="px-1 text-xs text-muted-foreground">

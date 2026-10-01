@@ -1,10 +1,9 @@
 "use client"
 
 import { useMemo, useState, useRef, useCallback } from "react"
-import { Info } from "lucide-react"
 import { SortIcon } from "@/components/reddit-database/icons"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { databaseColumnLabel, formatDatabaseMetric, subredditKey, type RowHealth } from "@/lib/reddit-database-display"
+import { compareDatabaseValues, databaseColumnLabel, formatDatabaseMetric, subredditKey, type RowHealth } from "@/lib/reddit-database-display"
 
 type SortDirection = "asc" | "desc" | null
 
@@ -30,9 +29,9 @@ const COLUMN_INFO: Record<string, string> = {
   "min comment karma": "Three-scrape rolling average of the lowest comment karma observed among recent surviving post authors. This is not a direct AutoModerator rule lookup.",
   "min total karma": "Three-scrape rolling average of the lowest combined karma observed among recent surviving post authors. This is not a direct AutoModerator rule lookup.",
   "min account age": "Three-scrape rolling average of the youngest account age observed among recent surviving post authors, shown in days. This is not a direct posting-rule lookup.",
-  "hot 1 (weekly)": "Three-scrape rolling average of the upvote score of the subreddit’s highest-ranked weekly Top post.",
-  "hot 2-5 avg (weekly)": "Three-scrape rolling average of the mean upvote score for weekly Top posts ranked 2 through 5.",
-  "hot 6-10 avg (weekly)": "Three-scrape rolling average of the mean upvote score for weekly Top posts ranked 6 through 10.",
+  "hot 1 (weekly)": "Mean of the latest three positive observations of the upvote score of the subreddit’s highest-ranked weekly Top post. Empty or zero-score refreshes retain positive history; this is a smoothed indicator, not the current raw score.",
+  "hot 2-5 avg (weekly)": "Mean of the latest three positive observations of the mean upvote score for weekly Top posts ranked 2 through 5.",
+  "hot 6-10 avg (weekly)": "Mean of the latest three positive observations of the mean upvote score for weekly Top posts ranked 6 through 10.",
   "bot bouncer": "The scraper searches for BotBouncer in the moderator list and reports the result to the database. A blank value means the moderator list could not be verified.",
   "cta captions": "Checks surviving recent post titles for question/CTA forms such as ?, would, how, what, do, or. This is observed behavior, not a direct rule lookup.",
 }
@@ -47,23 +46,6 @@ function displaySubredditName(value: string) {
     .replace(/^https?:\/\/(?:www\.)?reddit\.com\/r\//i, "")
     .replace(/^r\//i, "")
     .replace(/\/+$/, "")
-}
-
-function parseSortableValue(value: string) {
-  if (!value) return { type: "string" as const, value: "" }
-  const clean = value.replace(/,/g, "").trim()
-  const numeric = Number(clean)
-  if (!Number.isNaN(numeric) && clean !== "") {
-    return { type: "number" as const, value: numeric }
-  }
-  
-  // Extract leading numbers from strings like "126d (u/user)"
-  const match = clean.match(/^-?\d+(\.\d+)?/)
-  if (match) {
-    return { type: "number" as const, value: Number(match[0]) }
-  }
-
-  return { type: "string" as const, value: value.toLowerCase() }
 }
 
 export default function DatabaseTable({ headers, rows, sortState, onSort, rowHealth = {} }: Props) {
@@ -110,25 +92,12 @@ export default function DatabaseTable({ headers, rows, sortState, onSort, rowHea
     if (sortState.columnIndex === -1 || !sortState.direction) return rows
     const col = sortState.columnIndex
     const dir = sortState.direction
-    
+
     const sorted = [...rows].sort((a, b) => {
-      const valA = a[col] ?? ""
-      const valB = b[col] ?? ""
-
-      const av = parseSortableValue(valA)
-      const bv = parseSortableValue(valB)
-
-      if (av.type === "number" && bv.type === "number") {
-        return dir === "asc" ? av.value - bv.value : bv.value - av.value
-      }
-      const aa = String(av.value)
-      const bb = String(bv.value)
-      if (aa < bb) return dir === "asc" ? -1 : 1
-      if (aa > bb) return dir === "asc" ? 1 : -1
-      return 0
+      return compareDatabaseValues(formatDatabaseMetric(headers[col], a[col] ?? ""), formatDatabaseMetric(headers[col], b[col] ?? ""), dir)
     })
     return sorted
-  }, [rows, sortState])
+  }, [rows, sortState, headers])
 
   if (!headers.length) {
     return (
@@ -138,18 +107,22 @@ export default function DatabaseTable({ headers, rows, sortState, onSort, rowHea
     )
   }
 
-  const hasCustomWidths = Object.keys(columnWidths).length > 0
+  const widths = headers.map((header, index) => columnWidths[index] ?? (
+    index === 0 ? 210 : header.toLowerCase().startsWith("min ") ? 165 :
+    header.toLowerCase().startsWith("hot ") ? 155 : header.toLowerCase() === "niche" ? 150 : 115
+  ))
 
   return (
     <div className="relative max-h-[72vh] w-full overflow-auto rounded-xl border border-border bg-card">
-      <table 
+      <table
         className="w-full border-separate border-spacing-0 text-left text-xs md:text-sm"
-        style={{ 
-          tableLayout: hasCustomWidths ? "fixed" : "auto", 
-          minWidth: `${Math.max(900, headers.length * 140)}px` 
+        style={{
+          tableLayout: "fixed",
+          minWidth: `${widths.reduce((sum, width) => sum + width, 0)}px`
         }}
       >
-        <thead className="sticky top-0 z-40 border-b border-border bg-muted/60">
+        <colgroup>{widths.map((width, index) => <col key={index} style={{ width }} />)}</colgroup>
+        <thead className="sticky top-0 z-40 border-b border-border bg-muted">
           <tr>
             {headers.map((h, i) => {
               const active = sortState.columnIndex === i
@@ -157,46 +130,31 @@ export default function DatabaseTable({ headers, rows, sortState, onSort, rowHea
               const width = columnWidths[i]
               const isSubredditColumn = i === 0
               return (
-                <th 
-                  key={i} 
+                <th
+                  key={i}
+                  aria-sort={direction === "asc" ? "ascending" : direction === "desc" ? "descending" : "none"}
                   style={{
                     width: width ? `${width}px` : undefined,
                     minWidth: isSubredditColumn ? "190px" : undefined,
                   }}
-                  className={`sticky top-0 z-40 relative px-4 py-3 text-xs font-semibold text-muted-foreground select-none group ${
+                  className={`sticky top-0 z-40 bg-muted px-2 py-3 text-xs font-semibold text-muted-foreground select-none group ${
                     isSubredditColumn
                       ? "sticky left-0 top-0 z-50 bg-muted shadow-[4px_0_8px_-5px_rgba(0,0,0,0.65)]"
                       : ""
                   }`}
                 >
-                  <div className="flex w-full items-center gap-1.5 overflow-hidden pr-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!isResizingRef.current) onSort(i)
-                      }}
-                      className="group inline-flex min-w-0 flex-1 items-center gap-1 overflow-hidden text-left"
-                    >
-                      <span className="truncate">{databaseColumnLabel(h)}</span>
-                      <SortIcon direction={direction} />
-                    </button>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          aria-label={`About ${databaseColumnLabel(h)}`}
-                          onClick={(event) => event.stopPropagation()}
-                          className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        >
-                          <Info className="h-3.5 w-3.5" aria-hidden="true" />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" align="center" className="max-w-xs text-xs leading-relaxed">
-                        <p className="font-semibold">{databaseColumnLabel(h)}</p>
-                        <p className="mt-1 font-normal opacity-90">{columnInfo(h)}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button type="button"
+                        onClick={() => { if (!isResizingRef.current) onSort(i) }}
+                        className="inline-flex w-full items-center gap-1 text-left pr-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        aria-label={`Sort by ${databaseColumnLabel(h)}`}>
+                        <span>{databaseColumnLabel(h)}</span>
+                        <SortIcon direction={direction} />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">{columnInfo(h)}</TooltipContent>
+                  </Tooltip>
                   {/* Resizer Handle */}
                   <div
                     onMouseDown={(e) => handleResizeStart(i, e)}
@@ -240,11 +198,11 @@ export default function DatabaseTable({ headers, rows, sortState, onSort, rowHea
 
                 if (isLink) {
                   return (
-                    <td key={ci} className={`px-4 py-2 text-xs md:text-sm overflow-hidden ${stickyColumnClass}`}>
+                    <td key={ci} className={`px-2 py-2 text-xs md:text-sm overflow-hidden ${stickyColumnClass}`}>
                       <div className="flex items-center gap-2 overflow-hidden">
-                        <a 
-                          href={displayValue} 
-                          target="_blank" 
+                        <a
+                          href={displayValue}
+                          target="_blank"
                           rel="noreferrer"
                           className="truncate text-primary hover:underline"
                           title={displayValue}
@@ -278,7 +236,7 @@ export default function DatabaseTable({ headers, rows, sortState, onSort, rowHea
                 return (
                   <td
                     key={ci}
-                    className={`truncate px-4 py-2 text-xs md:text-sm ${stickyColumnClass} ${displayValue === "••••••" ? "pointer-events-none select-none blur-sm" : ""}`}
+                    className={`truncate px-2 py-2 text-xs md:text-sm ${stickyColumnClass} ${displayValue === "••••••" ? "pointer-events-none select-none blur-sm" : ""}`}
                     title={displayValue === "••••••" ? undefined : formattedValue}
                   >
                     {formattedValue}

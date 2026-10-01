@@ -27,8 +27,8 @@ export const SortIcon: React.FC<SortIconProps> = ({ direction }) => {
     return (
       <svg
         xmlns="http://www.w3.org/2000/svg"
-        width="16"
-        height="16"
+        width="12"
+        height="12"
         viewBox="0 0 24 24"
         fill="currentColor"
         stroke="currentColor"
@@ -44,8 +44,8 @@ export const SortIcon: React.FC<SortIconProps> = ({ direction }) => {
     return (
       <svg
         xmlns="http://www.w3.org/2000/svg"
-        width="16"
-        height="16"
+        width="12"
+        height="12"
         viewBox="0 0 24 24"
         fill="currentColor"
         stroke="currentColor"
@@ -60,15 +60,15 @@ export const SortIcon: React.FC<SortIconProps> = ({ direction }) => {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
-      width="16"
-      height="16"
+      width="12"
+      height="12"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className="opacity-30 group-hover:opacity-100 transition-opacity"
+      className="shrink-0 opacity-30 group-hover:opacity-100 transition-opacity"
     >
       <path d="M12 4v16m8-8-8 8-8-8" />
     </svg>

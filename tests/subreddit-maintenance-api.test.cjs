@@ -35,7 +35,7 @@ test('the website follows Sheet rows without merging approved DB-only records', 
       parseSpreadsheetUrl: () => ({ spreadsheetId: 'fixture', gid: '0' }),
       createWorkbookReader: async () => ({ readByGid: async () => ({
         title: 'Sheet1', headers: ['Subreddit', 'Link', 'Total Members', 'Sync Status'],
-        rows: [['Live', '', '100', 'success'], ['Sheet_Archived', '', '123', 'archived'], ['DB_Archived', '', '456', 'success']],
+        rows: [[], ['', '', '999', 'success'], ['Live', '', '100', 'success'], ['Sheet_Archived', '', '123', 'archived'], ['DB_Archived', '', '456', 'success']],
       }) }),
     },
   }, { SUBREDDIT_SHEET_URL: 'fixture' })

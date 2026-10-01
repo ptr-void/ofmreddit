@@ -8,6 +8,7 @@ const numberFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 
 export function formatDatabaseMetric(header: string, value: string): string {
   if (!NUMERIC_COLUMNS.has(header.trim().toLowerCase())) return value
   const trimmed = value.trim()
+  if (header.trim().toLowerCase().startsWith("hot ") && (!trimmed || trimmed === "0")) return "Awaiting data"
   if (!/^-?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?$/.test(trimmed)) return value
   const number = Number(trimmed.replace(/,/g, ""))
   return Number.isFinite(number) ? numberFormatter.format(number) : value
@@ -48,4 +49,19 @@ export function sourceRowHealth(headers: string[], rows: string[][]): Record<str
     }
   }
   return result
+}
+
+/** Missing values stay at the bottom in either direction. */
+export function compareDatabaseValues(left: string, right: string, direction: "asc" | "desc"): number {
+  const a = left.trim(), b = right.trim()
+  const missing = (value: string) => !value || /^(unknown|n\/a|awaiting data)$/i.test(value)
+  if (missing(a)) return missing(b) ? 0 : 1
+  if (missing(b)) return -1
+  const number = (value: string) => {
+    const match = value.replace(/,/g, "").match(/^-?\d+(?:\.\d+)?/)
+    return match ? Number(match[0]) : null
+  }
+  const an = number(a), bn = number(b)
+  const result = an !== null && bn !== null ? an - bn : a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
+  return direction === "asc" ? result : -result
 }
