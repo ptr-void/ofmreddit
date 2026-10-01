@@ -72,3 +72,12 @@ test("table uses opaque sticky headers and hover help without icon buttons", () 
   assert.match(page, /verificationPosition \+ 1/)
   assert.match(page, />Add a Subreddit<\/button>/)
 })
+
+test("review text reflects the 400-upvote policy and explains the limits of Reddit's 18+ flag", () => {
+  const review = fs.readFileSync(path.join(__dirname, "../components/admin/pending-subreddits-tab.tsx"), "utf8")
+  assert.match(review, /at least 400 upvotes/)
+  assert.doesNotMatch(review, /at least 100 upvotes/)
+  assert.match(review, /flag alone does not verify/)
+  const page = fs.readFileSync(path.join(__dirname, "../app/reddit-database/page.tsx"), "utf8")
+  assert.match(page, /does not mean rolling averages are disabled/)
+})

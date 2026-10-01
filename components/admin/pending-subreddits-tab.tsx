@@ -77,7 +77,7 @@ export function PendingSubredditsTab() {
       <Button variant="outline" size="sm" onClick={fetchPending}>Refresh</Button>
     </div>
     <p className="text-sm text-muted-foreground">
-      Discoveries and user submissions stay here until approved. Automatic discovery requires at least 100,000 members, a post within 30 days, and a weekly top post with at least 100 upvotes. The niche is suggested from the discovery query.
+      Discoveries and user submissions stay here until approved. Automatic discovery requires at least 100,000 members, a post within 30 days, and a weekly top post with at least 400 upvotes. Candidates must be marked 18+ by Reddit; this flag alone does not verify their content or suitability. The niche is suggested from the discovery query.
     </p>
     {!subreddits.length ? <p className="text-sm text-muted-foreground">No pending candidates.</p> : <div className="overflow-x-auto rounded-md border">
       <Table>
