@@ -73,7 +73,7 @@ class FakeWorkbook:
 
 class SubredditSyncTests(unittest.TestCase):
     def test_weekly_metrics_use_three_recent_valid_snapshots(self):
-        self.assertEqual(rolling_weekly_metrics((0, 0, 0), []), (0, 0, 0))
+        self.assertEqual(rolling_weekly_metrics((0, 0, 0), []), (None, None, None))
         self.assertEqual(rolling_weekly_metrics((30, 6, 3), [(999, 999, 999), (90, 12, 9), (60, 9, 6)]), (60, 9, 6))
 
     def test_observed_minimums_average_each_metric_independently(self):
@@ -149,6 +149,38 @@ class SubredditSyncTests(unittest.TestCase):
         self.assertEqual(history.values[-1][2:], [30, 6, 3])
         self.assertEqual((result.weekly_top_1_upvotes, result.weekly_top_2_5_avg_upvotes,
                           result.weekly_top_6_10_avg_upvotes), (60, 9, 6))
+
+    def test_missing_weekly_listing_recovers_history_without_duplicate_sample(self):
+        from scraper.subreddit_sync import WEEKLY_HISTORY_HEADERS
+        history = FakeWorksheet(values=[WEEKLY_HISTORY_HEADERS,
+            ["target", "2026-09-01T00:00:00Z", "90", "12", "9"],
+            ["target", "2026-09-08T00:00:00Z", "0", "", "0"]])
+        history.append_rows = lambda rows, **kwargs: history.values.extend(rows)
+        store = object.__new__(GoogleSheetStore)
+        store.workbook = SimpleNamespace(worksheet=lambda _: history)
+        result = ScrapeResult(subreddit="target", source_row=2, scraped_at_utc="2026-09-15T00:00:00Z")
+        store.apply_weekly_rolling_average([result])
+        self.assertEqual((result.weekly_top_1_upvotes, result.weekly_top_2_5_avg_upvotes,
+                          result.weekly_top_6_10_avg_upvotes), (90, 12, 9))
+        self.assertEqual(len(history.values), 3)
+        self.assertEqual(rolling_weekly_metrics((0, None, 0), [(90, 12, 9)]), (90, 12, 9))
+        self.assertEqual(rolling_weekly_metrics((None, None, None), []), (None, None, None))
+
+    def test_weekly_history_rerun_is_idempotent(self):
+        from scraper.subreddit_sync import WEEKLY_HISTORY_HEADERS
+        history = FakeWorksheet(values=[WEEKLY_HISTORY_HEADERS,
+            ["target", "2026-09-01T00:00:00Z", "90", "12", "9"]])
+        history.append_rows = lambda rows, **kwargs: history.values.extend(rows)
+        store = object.__new__(GoogleSheetStore)
+        store.workbook = SimpleNamespace(worksheet=lambda _: history)
+        def scrape():
+            return ScrapeResult(subreddit="target", source_row=2, scraped_at_utc="2026-09-15T00:00:00Z",
+                                weekly_top_1_upvotes=30, weekly_top_2_5_avg_upvotes=6, weekly_top_6_10_avg_upvotes=3)
+        first, second = scrape(), scrape()
+        store.apply_weekly_rolling_average([first])
+        store.apply_weekly_rolling_average([second])
+        self.assertEqual(first.weekly_top_1_upvotes, second.weekly_top_1_upvotes)
+        self.assertEqual(len(history.values), 3)
 
     def test_blank_history_sheet_initializes_headers(self):
         from scraper.subreddit_sync import WEEKLY_HISTORY_HEADERS

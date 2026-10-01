@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 import copy
 import re
 
@@ -113,6 +113,55 @@ class MaintenanceTests(unittest.TestCase):
         for changes in [{'subscribers': None}, {'subscribers': 99999}, {'over18': False}, {'subreddit_type': 'private'},
                         {'latest_post_utc': NOW.timestamp() - 31 * 86400}, {'latest_post_utc': None}, {'name': '../bad'}]:
             self.assertFalse(candidate_eligible({**valid, **changes}, NOW))
+
+    def test_rejection_is_pending_discovery_only_and_includes_400(self):
+        worker = Maintenance(None, None, None, apply=True)
+        records = [
+            {'subreddit_name': 'low', 'discovery_json': '{"top1_weekly":399}'},
+            {'subreddit_name': 'boundary', 'discovery_json': '{"top1_weekly":400}'},
+            {'subreddit_name': 'unknown', 'discovery_json': '{}'},
+            {'subreddit_name': 'manual', 'discovery_json': None},
+            {'subreddit_name': 'malformed', 'discovery_json': '[]'},
+        ]
+        worker.sql = Mock(side_effect=lambda sql, params=(): records if sql.startswith('SELECT') else [])
+        worker.reject_low_performance_discoveries(400)
+        updates = [call for call in worker.sql.call_args_list if call.args[0].startswith('UPDATE master')]
+        self.assertEqual(len(updates), 1)
+        self.assertEqual(updates[0].args[1], ('low',))
+        self.assertIn("status='pending'", updates[0].args[0])
+        self.assertEqual(worker.report['actions'][0]['action'], 'rejected_below_weekly_threshold')
+        worker.apply = False
+        worker.sql.reset_mock()
+        worker.reject_low_performance_discoveries(400)
+        self.assertFalse(any(call.args[0].startswith('UPDATE') for call in worker.sql.call_args_list))
+
+    def test_discovery_rotates_three_queries_and_checks_score_boundary(self):
+        worker = Maintenance(None, None, None, apply=True)
+        worker.table = Mock(return_value=([], {'niche': 0}, {'existing': [(2, ['fitness, general, glamour, lingerie'])]}))
+        def sql(statement, params=()):
+            if 'SELECT * FROM subreddit_maintenance_control' in statement:
+                return [{'last_discovery_at': None, 'discovery_cursor': 0}]
+            return []
+        worker.sql = Mock(side_effect=sql)
+        calls = []
+        def search(query, **kwargs):
+            calls.append((query, kwargs['limit']))
+            def candidate(name, score):
+                return SimpleNamespace(display_name=name, _fetch=lambda: None, over18=True,
+                    subreddit_type='public', subscribers=120000, title='Women', public_description='',
+                    new=lambda **kwargs: [SimpleNamespace(created_utc=NOW.timestamp(), removed_by_category=None)],
+                    top=lambda **kwargs: [SimpleNamespace(score=score)])
+            return [candidate('low_' + query, 399), candidate('valid_' + query, 400)]
+        worker.analyzer = SimpleNamespace(_call=lambda fn, label: fn(),
+            reddit=SimpleNamespace(subreddits=SimpleNamespace(search=search)))
+        with patch('scraper.subreddit_maintenance.utc_now', return_value=NOW), patch.dict('os.environ',
+                {'DISCOVERY_MIN_TOP1_UPVOTES': '400', 'DISCOVERY_QUERIES_PER_DAY': '3', 'DISCOVERY_SEARCH_LIMIT': '50'}):
+            worker.discover(10)
+        self.assertEqual(len(calls), 3)
+        self.assertEqual([limit for _, limit in calls], [50, 50, 50])
+        self.assertEqual(len(worker.report['discovered']), 3)
+        self.assertTrue(all(item['top1_weekly'] == 400 for item in worker.report['discovered']))
+        self.assertTrue(any(len(call.args) > 1 and call.args[1] == (3,) for call in worker.sql.call_args_list))
 
     def test_discovery_excludes_male_focused_candidates(self):
         self.assertTrue(discovery_excluded({'name': 'chubbydudes'}))

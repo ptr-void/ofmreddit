@@ -349,6 +349,31 @@ class Maintenance:
             except Exception as exc:
                 self.report['errors'].append(f'r/{name}: {str(exc)[:250]}')
 
+    def reject_low_performance_discoveries(self, threshold=None):
+        """Retire only pending automatic suggestions with a measured score below the cutoff."""
+        threshold = threshold if threshold is not None else int(os.getenv('DISCOVERY_MIN_TOP1_UPVOTES', '400'))
+        pending = self.sql("SELECT m.subreddit_name, m.discovery_json FROM subreddit_maintenance m "
+                           "JOIN master_subreddits s ON LOWER(s.subreddit_name)=m.subreddit_name "
+                           "WHERE s.status='pending' AND m.discovery_json IS NOT NULL")
+        for row in pending:
+            try:
+                metadata = json.loads(row['discovery_json'])
+                if not isinstance(metadata, dict):
+                    continue
+                score = metadata.get('top1_weekly')
+                if score is None or int(score) >= threshold:
+                    continue
+            except (ValueError, TypeError, json.JSONDecodeError):
+                continue
+            name = row['subreddit_name']
+            detail = {'top1_weekly': int(score), 'minimum': threshold}
+            if self.apply:
+                self.sql("UPDATE master_subreddits SET status='rejected' WHERE LOWER(subreddit_name)=%s AND status='pending'", (name,))
+                self.sql("UPDATE subreddit_maintenance SET requested_action=NULL WHERE subreddit_name=%s", (name,))
+                self.event(name, 'rejected_below_weekly_threshold', detail)
+            else:
+                self.report['actions'].append({'subreddit': name, 'action': 'would_reject_below_weekly_threshold', **detail})
+
     def discover(self, limit):
         if limit <= 0:
             return
@@ -368,18 +393,24 @@ class Maintenance:
                     niches.update(tag.strip().lower() for tag in value.split(',') if tag.strip())
         queries = sorted(niches) or ['nsfw']
         position = int(control['discovery_cursor']) % len(queries)
-        query = queries[position]
+        query_count = min(len(queries), max(1, min(10, int(os.getenv('DISCOVERY_QUERIES_PER_DAY', '3')))))
+        selected_queries = [queries[(position + offset) % len(queries)] for offset in range(query_count)]
+        search_limit = max(1, min(100, int(os.getenv('DISCOVERY_SEARCH_LIMIT', '50'))))
         known = set(rows)
         known.update(normalize_subreddit(r['subreddit_name']) for r in self.sql('SELECT subreddit_name FROM master_subreddits'))
         known.update(r['subreddit_name'] for r in self.sql('SELECT subreddit_name FROM subreddit_maintenance'))
-        candidates = self.analyzer._call(
-            lambda: list(self.analyzer.reddit.subreddits.search(query, limit=25, params={'include_over_18': 'on'})),
-            'Discovery search',
-        )
+        def search_candidates():
+            for query in selected_queries:
+                candidates = self.analyzer._call(
+                    lambda: list(self.analyzer.reddit.subreddits.search(query, limit=search_limit, params={'include_over_18': 'on'})),
+                    'Discovery search',
+                )
+                for candidate in candidates:
+                    yield query, candidate
         minimum = int(os.getenv('DISCOVERY_MIN_MEMBERS', '100000'))
         max_age = int(os.getenv('DISCOVERY_MAX_POST_AGE_DAYS', '30'))
-        minimum_top1 = int(os.getenv('DISCOVERY_MIN_TOP1_UPVOTES', '100'))
-        for sub in candidates:
+        minimum_top1 = int(os.getenv('DISCOVERY_MIN_TOP1_UPVOTES', '400'))
+        for query, sub in search_candidates():
             name = normalize_subreddit(str(sub.display_name))
             if name in known or not NAME.fullmatch(name):
                 continue
@@ -414,15 +445,16 @@ class Maintenance:
             except Exception as exc:
                 self.report['errors'].append(f'Discovery r/{name}: {type(exc).__name__}')
         if self.apply:
-            self.sql('UPDATE subreddit_maintenance_control SET last_discovery_at=UTC_TIMESTAMP(), discovery_cursor=%s WHERE id=1', (position + 1,))
-        self.report['discovery_query'] = query
+            self.sql('UPDATE subreddit_maintenance_control SET last_discovery_at=UTC_TIMESTAMP(), discovery_cursor=%s WHERE id=1', (position + query_count,))
+        self.report['discovery_queries'] = selected_queries
+        self.report['discovery_min_top1'] = minimum_top1
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apply', action='store_true')
     parser.add_argument('--max-checks', type=int, default=20)
-    parser.add_argument('--discovery-limit', type=int, default=5)
+    parser.add_argument('--discovery-limit', type=int, default=10)
     args = parser.parse_args()
     if not 0 <= args.max_checks <= 100 or not 0 <= args.discovery_limit <= 20:
         parser.error('Use 0..100 availability checks and 0..20 discoveries')
@@ -438,6 +470,7 @@ def main():
         if not locked:
             print('Another maintenance worker is active; deferred.')
             return 0
+        maintenance.reject_low_performance_discoveries()
         maintenance.process_queue()
         maintenance.cleanup(args.max_checks)
         maintenance.discover(args.discovery_limit)

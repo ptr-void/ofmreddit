@@ -110,10 +110,19 @@ def average_int(values: Sequence[int]) -> int:
     return round(sum(values) / len(values)) if values else 0
 
 
-def rolling_weekly_metrics(current: Sequence[int], history: Sequence[Sequence[int]], samples: int = WEEKLY_ROLLING_SAMPLES) -> tuple[int, int, int]:
-    """Average recent valid snapshots, including the current scrape."""
-    window = list(history[-(samples - 1):]) + [current] if samples > 1 else [current]
-    return tuple(average_int([int(row[index]) for row in window]) for index in range(3))
+def rolling_weekly_metrics(current: Sequence[int | None], history: Sequence[Sequence[int | None]], samples: int = WEEKLY_ROLLING_SAMPLES) -> tuple[int | None, ...]:
+    """Mean of the latest positive observations per metric; missing/zero samples retain history.
+
+    These are smoothed performance indicators, not the current raw Reddit score.
+    No available positive observation remains unknown rather than inventing a score.
+    """
+    window = list(history) + [current]
+    means = []
+    for index in range(3):
+        observed = [int(row[index]) for row in window
+                    if index < len(row) and row[index] is not None and int(row[index]) > 0]
+        means.append(average_int(observed[-max(1, samples):]) if observed else None)
+    return tuple(means)
 
 
 def rolling_observed_minimums(
@@ -257,9 +266,9 @@ class ScrapeResult:
     observed_accounts: int = 0
     has_bot_bouncer: bool | None = None
     requires_verification: bool | None = None
-    weekly_top_1_upvotes: int = 0
-    weekly_top_2_5_avg_upvotes: int = 0
-    weekly_top_6_10_avg_upvotes: int = 0
+    weekly_top_1_upvotes: int | None = None
+    weekly_top_2_5_avg_upvotes: int | None = None
+    weekly_top_6_10_avg_upvotes: int | None = None
     weekly_top_10_posts: list[dict[str, Any]] = field(default_factory=list)
     allows_cta_captions: bool | None = None
     cta_match_count: int = 0
@@ -479,9 +488,9 @@ class RedditAnalyzer:
             observed_accounts=len(post_karma),
             has_bot_bouncer=has_bot_bouncer,
             requires_verification=requires_verification,
-            weekly_top_1_upvotes=weekly_scores[0] if weekly_scores else 0,
-            weekly_top_2_5_avg_upvotes=average_int(weekly_scores[1:5]),
-            weekly_top_6_10_avg_upvotes=average_int(weekly_scores[5:10]),
+            weekly_top_1_upvotes=weekly_scores[0] if weekly_scores else None,
+            weekly_top_2_5_avg_upvotes=average_int(weekly_scores[1:5]) if weekly_scores[1:5] else None,
+            weekly_top_6_10_avg_upvotes=average_int(weekly_scores[5:10]) if weekly_scores[5:10] else None,
             weekly_top_10_posts=compact_top_posts(weekly_posts),
             allows_cta_captions=cta_allowed,
             cta_match_count=cta_matches,
@@ -691,7 +700,7 @@ class GoogleSheetStore:
 
     def apply_weekly_rolling_average(self, results: Sequence[ScrapeResult]) -> None:
         """Persist raw weekly samples and display a three-scrape rolling mean."""
-        valid = [result for result in results if result.status == "success" and result.weekly_top_10_posts and result.source_row >= 2]
+        valid = [result for result in results if result.status == "success" and result.source_row >= 2]
         if not valid:
             return
         title = "Weekly Metrics History"
@@ -708,13 +717,14 @@ class GoogleSheetStore:
             history_sheet.update(values=[WEEKLY_HISTORY_HEADERS], range_name="A1:E1")
         elif values[0] != WEEKLY_HISTORY_HEADERS:
             raise RuntimeError("Weekly Metrics History headers changed; no rolling values were written")
-        previous: dict[str, list[tuple[str, tuple[int, int, int]]]] = {}
+        previous: dict[str, list[tuple[str, tuple[int | None, ...]]]] = {}
         for row in values[1:]:
-            if len(row) < 5:
+            if len(row) < 3 or not str(row[1]).strip():
                 continue
+            row = list(row) + [""] * max(0, 5 - len(row))
             key = normalize_subreddit(row[0])
             try:
-                sample = tuple(int(value) for value in row[2:5])
+                sample = tuple(int(value) if str(value).strip() else None for value in row[2:5])
             except ValueError:
                 continue
             previous.setdefault(key, []).append((row[1], sample))
@@ -726,11 +736,12 @@ class GoogleSheetStore:
             # Re-runs of the same scrape must not weight one observation twice.
             if any(stamp == result.scraped_at_utc for stamp, _ in recorded):
                 samples = [sample for stamp, sample in recorded if stamp <= result.scraped_at_utc]
-                mean = tuple(average_int([sample[index] for sample in samples[-WEEKLY_ROLLING_SAMPLES:]]) for index in range(3))
+                mean = rolling_weekly_metrics((None, None, None), samples)
             else:
                 mean = rolling_weekly_metrics(raw, [sample for _, sample in recorded])
-                additions.append([result.subreddit, result.scraped_at_utc, *raw])
-                previous.setdefault(key, []).append((result.scraped_at_utc, raw))
+                if any(value is not None for value in raw):
+                    additions.append([result.subreddit, result.scraped_at_utc, *[value if value is not None else "" for value in raw]])
+                    previous.setdefault(key, []).append((result.scraped_at_utc, raw))
             result.weekly_top_1_upvotes, result.weekly_top_2_5_avg_upvotes, result.weekly_top_6_10_avg_upvotes = mean
         if additions:
             history_sheet.append_rows(additions, value_input_option="RAW")
@@ -846,10 +857,12 @@ class GoogleSheetStore:
                 ):
                     if getattr(result, field) is None:
                         managed.pop(header, None)
-                # An empty weekly listing is missing evidence, not a measured zero.
-                # Retain the previous snapshot until Reddit returns weekly posts.
-                if not result.weekly_top_10_posts:
-                    for header in ("Hot 1 (Weekly)", "Hot 2-5 Avg (Weekly)", "Hot 6-10 Avg (Weekly)"):
+                # Retain a recovered history mean even when this listing was empty.
+                for header, field in zip(
+                    ("Hot 1 (Weekly)", "Hot 2-5 Avg (Weekly)", "Hot 6-10 Avg (Weekly)"),
+                    ("weekly_top_1_upvotes", "weekly_top_2_5_avg_upvotes", "weekly_top_6_10_avg_upvotes"),
+                ):
+                    if getattr(result, field) is None:
                         managed.pop(header, None)
                 managed.pop("Subreddit", None)
             for target_row in target_rows:
@@ -972,10 +985,7 @@ class MySQLStore:
                 for field_name, column in self.FIELD_MAP.items():
                     if column not in self.columns:
                         continue
-                    if not result.weekly_top_10_posts and field_name in {
-                        "weekly_top_1_upvotes", "weekly_top_2_5_avg_upvotes",
-                        "weekly_top_6_10_avg_upvotes", "weekly_top_10_posts",
-                    }:
+                    if not result.weekly_top_10_posts and field_name == "weekly_top_10_posts":
                         continue
                     value = self._db_value(field_name, getattr(result, field_name))
                     if value is not None:

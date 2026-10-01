@@ -170,10 +170,13 @@ attribution table; it does not rewrite existing users or subreddit rows.
 ### Discovery and admission
 
 * Once per 24 hours, rotate through existing manually entered niche vocabulary.
-  Search at most 25 results; queue at most five eligible new communities.
-* Default eligibility: public, adult-designated, at least 100 subscribers and
+  Search up to 50 results per niche across three niches; queue at most ten eligible new communities.
+  Configure with `DISCOVERY_QUERIES_PER_DAY`, `DISCOVERY_SEARCH_LIMIT`, and `--discovery-limit`.
+* Default eligibility: public, adult-designated, weekly top-1 score at least 400,
   at least 100,000 members and a surviving recent post within 30 days. Override with `DISCOVERY_MIN_MEMBERS`
-  and `DISCOVERY_MAX_POST_AGE_DAYS`. These are candidate filters, NOT deletion
+  and `DISCOVERY_MAX_POST_AGE_DAYS`, `DISCOVERY_MIN_TOP1_UPVOTES`. Pending automatic suggestions
+  with a recorded weekly score below the cutoff are rejected before queue publication.
+  Missing scores, manual submissions, and approved rows are preserved. These are candidate filters, NOT deletion
   criteria. Admin review determines suitability.
 * Normalize/deduplicate against Sheets, every master row (including rejected),
   and the archive registry. Never replace curated niche tags or reset rejected
@@ -213,3 +216,25 @@ restores for archived rows before reverting the feature. Stop maintenance by
 removing only its workflow stage; retain archive snapshots and the public
 archive filter until any needed restores finish. No destructive table drop or
 production row deletion is part of this feature.
+
+### Weekly performance smoothing
+
+Weekly columns display the mean of the latest three positive samples per metric.
+Empty listings, missing ranks, and zero-score refreshes do not displace positive history.
+This is deliberately a smoothed performance indicator, not the current raw score.
+Without any positive history the metric remains unknown (website: Awaiting data).
+Raw samples remain in Weekly Metrics History; retries of the same timestamp are idempotent.
+Old zero cells recover as each row is refreshed. No minimum eligibility score is fabricated.
+
+To restore legacy blank/zero weekly cells immediately, without a new scrape:
+
+```powershell
+python scraper/repair_weekly_metrics.py
+python scraper/repair_weekly_metrics.py --apply
+```
+
+Only positive history-backed weekly cells are written. Approved rows and manual
+fields/checkpoints are preserved; archived rows are skipped. Backups and readback
+reports are saved under ignored `output/`. For rollback, rematch each audited
+subreddit/header, require its current value to equal the reported `after`, then
+restore only that cell's `before`; never restore an entire old grid.
