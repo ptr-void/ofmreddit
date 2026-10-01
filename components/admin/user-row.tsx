@@ -98,6 +98,9 @@ export function UserRow({ user, onBan, onDelete, onUpdateUsername, onUpdateCusto
       <td className="p-3">
         <div className="flex flex-col gap-1">
           <p className="text-sm font-medium">{user.email}</p>
+          <span className="text-xs text-muted-foreground">
+            {user.telegram_username ? `@${user.telegram_username.replace(/^@/, "")}` : "Telegram not linked"}
+          </span>
           {user.is_admin ? (
             <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded w-max">Admin</span>
           ) : (
@@ -176,11 +179,6 @@ export function UserRow({ user, onBan, onDelete, onUpdateUsername, onUpdateCusto
             </button>
           </div>
         )}
-      </td>
-      <td className="p-3 text-sm">
-        <span className={`truncate ${user.telegram_username ? "" : "text-muted-foreground/70 italic"}`}>
-          {user.telegram_username ? `@${user.telegram_username}` : "None"}
-        </span>
       </td>
       <td className="p-3 text-sm">
         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary">
