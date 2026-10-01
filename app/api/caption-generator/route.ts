@@ -5,9 +5,11 @@ import { NextRequest, NextResponse } from "next/server"
 import { verifyToken } from "@/lib/auth"
 import { query, queryOne } from "@/lib/db"
 import mammoth from "mammoth"
+import { DOMParser } from "@xmldom/xmldom"
+import { setTimeout as delay } from "node:timers/promises"
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash"
+const GEMINI_MODEL = process.env.CAPTION_GEMINI_MODEL || "gemini-3.8-flash"
 const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent`
 const CAPTION_PROMPT_NAME = "caption_generator"
 const MAX_KNOWLEDGE_FILE_BYTES = 20 * 1024 * 1024
@@ -56,34 +58,62 @@ function normalizeMimeType(fileType: string, filename: string) {
   return fileType || "application/octet-stream"
 }
 
-function extractCaptions(rawResponse: string): Caption[] {
-  const cleaned = rawResponse.replace(/```(?:json)?|```/gi, "").trim()
-  try {
-    const jsonMatch = cleaned.match(/\{[\s\S]*\}|\[[\s\S]*\]/)
-    const parsed = JSON.parse(jsonMatch?.[0] || cleaned) as unknown
-    const values = Array.isArray(parsed)
-      ? parsed
-      : parsed && typeof parsed === "object"
-        ? (parsed as Record<string, unknown>).caption_results ?? (parsed as Record<string, unknown>).captions ?? (parsed as Record<string, unknown>).posts
-        : []
-    const items = Array.isArray(values)
-      ? values
-      : values && typeof values === "object" && Array.isArray((values as Record<string, unknown>).captions)
-        ? (values as Record<string, unknown>).captions as unknown[]
-        : []
-
-    return items
-      .map((item, index) => {
-        if (typeof item === "string") return { option: `Caption ${index + 1}`, text: item.trim() }
-        if (!item || typeof item !== "object") return null
-        const record = item as Record<string, unknown>
-        const text = String(record.text ?? record.caption ?? record.content ?? "").trim()
-        return text ? { option: String(record.option ?? `Caption ${index + 1}`), text } : null
-      })
-      .filter((caption): caption is Caption => Boolean(caption?.text))
-  } catch {
-    return []
+function extractCaptions(rawResponse: string, postId: string): Caption[] {
+  const cleaned = rawResponse.replace(/^```(?:xml|json)?\s*|\s*```$/gi, "").trim()
+  if (cleaned.startsWith("<")) {
+    // Parse XML as data, never HTML. Reject DTDs, external entities and malformed output.
+    if (/<!DOCTYPE|<!ENTITY/i.test(cleaned)) return []
+    try {
+      const document = new DOMParser({ onError: () => { throw new Error("Invalid caption XML") } })
+        .parseFromString(cleaned, "application/xml")
+      const root = document.documentElement
+      if (!root || root.tagName !== "caption_results") return []
+      const posts = Array.from(root.getElementsByTagName("post"))
+      const selected = posts.length ? posts.find(post => post.getAttribute("id") === postId) : root
+      if (!selected) return []
+      const elements = Array.from(selected.getElementsByTagName("caption"))
+      const texts = elements.length
+        ? elements.map(element => element.textContent?.trim() || "")
+        : selected.textContent?.split(/\r?\n/).map(line => line.trim().replace(/^(?:[-*•]|\d+[.)])\s+/, "")).filter(Boolean) || []
+      return texts.filter(Boolean).map((text, index) => ({ option: `Caption ${index + 1}`, text }))
+    } catch { return [] }
   }
+  // Backward compatibility with JSON returned by older saved prompt versions.
+  try {
+    const parsed = JSON.parse(cleaned) as unknown
+    const values = Array.isArray(parsed) ? parsed : parsed && typeof parsed === "object"
+      ? (parsed as Record<string, unknown>).caption_results ?? (parsed as Record<string, unknown>).captions : []
+    const items = Array.isArray(values) ? values : []
+    return items.map((item, index) => {
+      const record = item && typeof item === "object" ? item as Record<string, unknown> : null
+      const text = typeof item === "string" ? item.trim() : String(record?.text ?? record?.caption ?? "").trim()
+      return { option: String(record?.option ?? `Caption ${index + 1}`), text }
+    }).filter(caption => Boolean(caption.text))
+  } catch { return [] }
+}
+
+function expectedCaptionCount(prompt: string): number {
+  const match = prompt.replace(/`/g, "").match(/exactly\s+(one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+(?:<caption>|captions?)/i)
+  const words = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]
+  const token = match?.[1]?.toLowerCase() || "five"
+  const count = words.includes(token) ? words.indexOf(token) + 1 : Number(token)
+  return Number.isInteger(count) && count >= 1 && count <= MAX_CAPTIONS ? count : 5
+}
+
+function normalizeFeatures(value: unknown): string[] {
+  const values = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : []
+  return values.filter((item): item is string => typeof item === "string").map(item => item.trim()).filter(Boolean)
+}
+
+function optionalContext(input: Record<string, unknown>): Record<string, unknown> {
+  const fields = {
+    caption_mood: input.caption_mood ?? input.captionMood,
+    creative_style: input.creative_style ?? input.creativeStyle,
+    subreddit_type: input.subreddit_type ?? input.subredditType,
+    subreddit_name: input.subreddit_name ?? input.subredditName,
+    rules: input.rules,
+  }
+  return Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined && value !== null && value !== ""))
 }
 
 function postInput(body: Record<string, unknown>) {
@@ -151,6 +181,9 @@ export async function POST(request: NextRequest) {
     if (!rawBody || typeof rawBody !== "object" || Array.isArray(rawBody)) {
       return NextResponse.json({ error: "Invalid caption request" }, { status: 400 })
     }
+    if (Array.isArray(rawBody.posts) && rawBody.posts.length > 1) {
+      return NextResponse.json({ error: "Generate captions for one post per request." }, { status: 400 })
+    }
     const input = postInput(rawBody as Record<string, unknown>)
     const interactiveMode = normalizeInteractiveMode(input.isInteractive ?? input.interactive_mode ?? input.interactiveMode)
 
@@ -178,96 +211,99 @@ export async function POST(request: NextRequest) {
       posts: [{
         id: String(input.id || "post_001"),
         gender: input.gender || "female",
-        niche_features: input.niche_features ?? input.nicheFeatures ?? input.physicalFeatures ?? [],
+        niche_features: normalizeFeatures(input.niche_features ?? input.nicheFeatures ?? input.physicalFeatures),
         degen_scale: input.degen_scale ?? input.degenScale ?? 2,
         interactive_mode: interactiveMode,
+        clickbait_style: input.clickbait_style === "y" || input.clickbait_style === "n"
+          ? input.clickbait_style : interactiveMode === "ON" ? "y" : "n",
         visual_context: input.visual_context ?? input.visualContext ?? "",
-        content_type: input.content_type ?? input.contentType ?? "Picture",
-        caption_mood: input.caption_mood ?? input.captionMood ?? "",
-        creative_style: input.creativeStyle ?? "",
-        subreddit_type: input.subreddit_type ?? input.subredditType ?? "",
-        subreddit_name: input.subreddit_name ?? input.subredditName ?? "",
-        rules: input.rules ?? "",
+        content_type: String(input.content_type ?? input.contentType ?? "Picture").replace(/^./, letter => letter.toUpperCase()),
+        ...(input.mode === "quick" ? {} : optionalContext(input)),
       }],
     }
 
-    const systemInstruction = `${prompt.prompt_text.trim()}\n\n` +
-      "API adapter: use the administrator instructions and every attached knowledge file as the generation source. " +
-      "Return JSON only, using {\"caption_results\":[{\"option\":\"...\",\"text\":\"...\"}]}. " +
-      "Do not include markdown, XML tags, reasoning, document excerpts, or any text outside that JSON object. " +
-      "Follow the requested caption count from the administrator instructions; if they do not specify one, generate five."
-
+    const expectedCount = expectedCaptionCount(prompt.prompt_text)
+    // Preserve the Gem instructions verbatim. Convert output for UI cards only AFTER generation.
     const payload = {
-      systemInstruction: { parts: [{ text: systemInstruction }] },
+      systemInstruction: { parts: [{ text: prompt.prompt_text }] },
       contents: [{
         role: "user",
         parts: [
-          { text: "Read every attached knowledge file before producing the requested caption results." },
           ...knowledgeParts,
           { text: `<request_data>\n${JSON.stringify(requestData, null, 2)}\n</request_data>` },
         ],
       }],
       generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 4096,
-        thinkingConfig: { thinkingBudget: 0 },
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: "OBJECT",
-          properties: {
-            caption_results: {
-              type: "ARRAY",
-              minItems: 1,
-              maxItems: MAX_CAPTIONS,
-              items: {
-                type: "OBJECT",
-                properties: {
-                  option: { type: "STRING" },
-                  text: { type: "STRING" },
-                },
-                required: ["option", "text"],
-              },
-            },
-          },
-          required: ["caption_results"],
-        },
+        maxOutputTokens: 8192,
+        thinkingConfig: { thinkingLevel: "medium" },
       },
     }
 
-    const response = await fetch(API_URL, {
-      method: "POST",
-      headers: { "x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    })
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error("Caption Gemini API error:", response.status, errorText.slice(0, 1_000))
-      return NextResponse.json({ error: "AI Generation Failed" }, { status: 502 })
+    let response: Response | undefined
+    // Retry only explicit transient responses; keep the requested model and prompt unchanged.
+    const signal = AbortSignal.timeout(60_000)
+    for (let attempt = 0; attempt < 3; attempt++) {
+      response = await fetch(API_URL, {
+        method: "POST",
+        signal,
+        headers: { "x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+      if (response.ok || ![429, 500, 502, 503, 504].includes(response.status) || attempt === 2) break
+      const retryAfter = response.headers.get("retry-after")
+      const seconds = retryAfter ? Number(retryAfter) : NaN
+      const retryMilliseconds = retryAfter
+        ? (Number.isFinite(seconds) ? seconds * 1000 : Date.parse(retryAfter) - Date.now())
+        : 1000 * (2 ** attempt)
+      if (Number.isFinite(retryMilliseconds) && retryMilliseconds > 5000) break
+      await response.body?.cancel()
+      await delay(Math.max(0, Number.isFinite(retryMilliseconds) ? retryMilliseconds : 1000 * (2 ** attempt)), undefined, { signal })
+    }
+    if (!response?.ok) {
+      const status = response?.status === 429 ? 429 : response?.status === 503 ? 503 : 502
+      console.error("Caption Gemini API error", { model: GEMINI_MODEL, status: response?.status })
+      return NextResponse.json({
+        error: status === 429 ? "Caption generation is temporarily rate limited. Please try again shortly."
+          : status === 503 ? "Gemini is experiencing high demand. Please try again shortly." : "AI Generation Failed",
+        model: GEMINI_MODEL,
+      }, { status })
     }
 
     const data = await response.json()
-    const rawResponse = (data.candidates?.[0]?.content?.parts || [])
+    const candidate = data.candidates?.[0]
+    if (candidate?.finishReason && candidate.finishReason !== "STOP") {
+      return NextResponse.json({ error: "The AI did not finish generating captions. Please try again." }, { status: 502 })
+    }
+    const rawResponse = (candidate?.content?.parts || [])
+      .filter((part: { thought?: boolean }) => !part.thought)
       .map((part: { text?: string }) => part.text || "")
       .join("")
       .trim()
-    const captions = extractCaptions(rawResponse)
-    if (!captions.length || captions.length > MAX_CAPTIONS) {
-      console.error("Caption response did not contain usable caption_results", JSON.stringify(data).slice(0, 1_000))
+    const captions = extractCaptions(rawResponse, requestData.posts[0].id)
+    if (captions.length !== expectedCount) {
+      console.error("Caption response did not match expected result count", { expectedCount, received: captions.length })
       return NextResponse.json({ error: "AI Generation Failed" }, { status: 502 })
     }
 
     return NextResponse.json({
       captions,
+      rawOutput: rawResponse,
       meta: {
         interactiveMode,
         model: GEMINI_MODEL,
         knowledgeDocuments: documents.length,
         promptSource: "admin",
+        generationMode: "gem-style",
+        expectedCount,
       },
     })
   } catch (error) {
+    const name = error && typeof error === "object" && "name" in error ? String(error.name) : "Error"
+    if (name === "TimeoutError" || name === "AbortError") {
+      return NextResponse.json({ error: "Caption generation timed out. Please try again shortly.", model: GEMINI_MODEL }, { status: 504 })
+    }
     const message = error instanceof Error ? error.message : "Internal Server Error"
-    console.error("Caption generation error:", message)
-    return NextResponse.json({ error: message }, { status: 500 })
+    console.error("Caption generation error:", { name, message })
+    return NextResponse.json({ error: "Caption generation failed. Please try again.", model: GEMINI_MODEL }, { status: 500 })
   }
 }

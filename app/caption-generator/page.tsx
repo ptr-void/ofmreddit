@@ -31,7 +31,7 @@ export type FormData = {
   captionMood: string
   rules: string
   creativeStyle: string
-  isInteractive: false
+  isInteractive: boolean
   subredditName: string
   contentType: string
 }

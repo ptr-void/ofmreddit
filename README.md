@@ -113,3 +113,32 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 ## License
 
 MIT
+
+## Caption generator model and Gem-style requests
+
+The caption route defaults to `gemini-3.8-flash`. An optional
+`CAPTION_GEMINI_MODEL` deployment variable overrides only this caption route.
+The previous `GEMINI_MODEL` override is no longer used here, so an old 2.5 setting
+cannot accidentally pin caption generation to the previous model.
+
+The saved `caption_generator` admin prompt is sent unchanged as the system
+instruction. Every attached knowledge document is included in every request;
+DOCX files are extracted in full. XML output is parsed into the existing UI
+caption cards after generation, without a competing JSON-only instruction.
+JSON output remains readable for older prompt versions. The UI interactive flag
+maps to the prompt's `clickbait_style` (`y`/`n`), and quick mode omits unused
+advanced-form defaults. The route handles one post per request and validates
+its ID and the caption count required by the prompt (five by default).
+
+Gemini 3.8 uses `thinkingLevel: medium`; deprecated temperature and thinking-budget
+parameters are omitted. Explicit transient HTTP errors have at most two retries,
+with the same model and payload. Long provider cooldowns and generation timeouts
+are shown as retryable errors; there is no silent downgrade to another model.
+
+This recreates the supplied instructions and knowledge, not a call to a hosted
+Gem in the Gemini app. Identical wording or subjective client approval is not
+guaranteed. Compare matched inputs against client-approved Gem examples before
+claiming output parity. Model access and unit tests alone do not prove caption
+quality or live generation availability.
+
+Migration reference: https://ai.google.dev/gemini-api/docs/generate-content/latest-model

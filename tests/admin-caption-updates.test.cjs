@@ -9,13 +9,11 @@ test("analytics uses all recorded history and distinguishes unique visitors", ()
   assert.match(visits, /COUNT\(DISTINCT/)
 })
 
-test("caption generation uses Gemini JSON and administrator-defined result count", () => {
+test("caption generation preserves Gem instructions with the current Flash model", () => {
   const caption = fs.readFileSync(path.join(__dirname, "../app/api/caption-generator/route.ts"), "utf8")
-  assert.match(caption, /generativelanguage\.googleapis\.com/)
-  assert.match(caption, /responseMimeType:\s*"application\/json"/)
-  assert.match(caption, /minItems:\s*1/)
-  assert.match(caption, /maxItems:\s*MAX_CAPTIONS/)
-  assert.match(caption, /caption count from the administrator instructions/)
+  assert.match(caption, /gemini-3\.8-flash/)
+  assert.match(caption, /text: prompt\.prompt_text/)
   assert.match(caption, /\.\.\.knowledgeParts/)
-  assert.doesNotMatch(caption, /router\.huggingface\.co/)
+  assert.match(caption, /thinkingLevel: "medium"/)
+  assert.doesNotMatch(caption, /responseSchema|thinkingBudget|Return JSON only/)
 })
