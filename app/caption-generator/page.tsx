@@ -176,8 +176,17 @@ export default function CaptionGeneratorPage() {
       })
 
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || `HTTP ${response.status}`)
+        const errorData = await response.json().catch(() => ({
+          error: `Caption service returned HTTP ${response.status}.`,
+          retryable: [429, 502, 503, 504].includes(response.status),
+        }))
+        const message = errorData.error || `HTTP ${response.status}`
+        if (errorData.retryable || [429, 503, 504].includes(response.status)) {
+          setError(`${message} Retry in ${errorData.retryAfterSeconds || 10} seconds; your inputs are unchanged.`)
+          setAiMessage("The caption service is temporarily unavailable. Your inputs are kept; retry shortly.")
+          return
+        }
+        throw new Error(message)
       }
 
       const data = await response.json()

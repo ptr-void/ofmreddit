@@ -131,8 +131,8 @@ advanced-form defaults. The route handles one post per request and validates
 its ID and the caption count required by the prompt (five by default).
 
 Gemini 3.8 uses `thinkingLevel: medium`; deprecated temperature and thinking-budget
-parameters are omitted. Explicit transient HTTP errors have at most two retries,
-with the same model and payload. Long provider cooldowns and generation timeouts
+parameters are omitted. Explicit transient HTTP errors have at most three retries
+with exponential backoff and jitter, using the same model and payload. Long provider cooldowns and generation timeouts
 are shown as retryable errors; there is no silent downgrade to another model.
 
 This recreates the supplied instructions and knowledge, not a call to a hosted
@@ -151,3 +151,9 @@ values or writing to Sheets. Only the five history columns are fetched, and only
 when weekly values are missing. Missing/invalid history does not prevent the main
 sheet from loading. A dash means no positive history exists, not that rolling
 averages are pending. Free previews never fetch or expose history.
+
+Caption generation retains the configured model, admin prompt and all documents.
+The route allows 90 seconds on Vercel, including a 60-second generation/retry
+window. Provider cooldowns are passed to the UI; no automatic browser retries or
+silent model switches occur. A successful live test is a point-in-time check,
+not a guarantee against later provider overload.

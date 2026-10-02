@@ -95,12 +95,13 @@ test('temporary model errors retry the same request and model',async()=>{
   assert.ok(generations.every(call=>call.url===generations[0].url && call.options.body===generations[0].options.body))
 })
 test('persistent overload and long cooldowns surface useful errors without model fallback',async()=>{
-  let fixtureCase=fixture({statuses:[503,503,503]})
+  let fixtureCase=fixture({statuses:[503,503,503,503]})
   let response=await fixtureCase.route.POST(request())
   assert.equal(response.status,503);assert.equal(response.body.model,'gemini-3.8-flash')
   fixtureCase=fixture({statuses:[429],retryAfter:'120'})
   response=await fixtureCase.route.POST(request())
   assert.equal(response.status,429)
+  assert.equal(response.body.retryAfterSeconds,120);assert.equal(response.body.retryable,true)
   assert.equal(fixtureCase.calls.filter(call=>call.url.includes('generativelanguage.googleapis.com')).length,1)
 })
 test('quick mode does not inject unused advanced-form defaults into Gem input',async()=>{
@@ -117,4 +118,21 @@ test('generation timeouts return a retryable status rather than a generic server
   const {route}=fixture({fetchError:new DOMException('Timed out','TimeoutError')})
   const response=await route.POST(request())
   assert.equal(response.status,504);assert.match(response.body.error,/timed out/)
+})
+
+test('a fourth attempt can recover an overload, while non-transient errors are not retried',async()=>{
+  let f=fixture({statuses:[503,503,503,200],output:xml()})
+  let response=await f.route.POST(request())
+  assert.equal(response.status,200);assert.equal(response.body.meta.attempts,4)
+  assert.equal(f.route.maxDuration,90)
+  f=fixture({statuses:[400]});response=await f.route.POST(request())
+  assert.equal(response.body.retryable,false)
+  assert.equal(f.calls.filter(call=>call.url.includes('generativelanguage.googleapis.com')).length,1)
+  f=fixture({statuses:[408,200],output:xml()});assert.equal((await f.route.POST(request())).status,200)
+})
+test('caption UI keeps provider failures distinct from invalid-input feedback',()=>{
+  const page=fs.readFileSync(path.join(__dirname,'../app/caption-generator/page.tsx'),'utf8')
+  const generate=page.slice(page.indexOf('const handleGenerateCaptions'),page.indexOf('const handleClearCaptions'))
+  assert.match(generate,/errorData.retryable/);assert.match(generate,/Retry in/)
+  assert.match(generate,/your inputs are unchanged/)
 })

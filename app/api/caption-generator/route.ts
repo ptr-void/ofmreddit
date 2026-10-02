@@ -1,5 +1,7 @@
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
+// Leave room for knowledge downloads plus the bounded 60-second generation/retry window.
+export const maxDuration = 90
 
 import { NextRequest, NextResponse } from "next/server"
 import { verifyToken } from "@/lib/auth"
@@ -240,33 +242,42 @@ export async function POST(request: NextRequest) {
     }
 
     let response: Response | undefined
+    let attempts = 0
     // Retry only explicit transient responses; keep the requested model and prompt unchanged.
     const signal = AbortSignal.timeout(60_000)
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      attempts++
       response = await fetch(API_URL, {
         method: "POST",
         signal,
         headers: { "x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       })
-      if (response.ok || ![429, 500, 502, 503, 504].includes(response.status) || attempt === 2) break
+      if (response.ok || ![408, 429, 500, 502, 503, 504].includes(response.status) || attempt === 3) break
       const retryAfter = response.headers.get("retry-after")
       const seconds = retryAfter ? Number(retryAfter) : NaN
       const retryMilliseconds = retryAfter
         ? (Number.isFinite(seconds) ? seconds * 1000 : Date.parse(retryAfter) - Date.now())
-        : 1000 * (2 ** attempt)
+        : 1000 * (2 ** attempt) + Math.floor(Math.random() * 250)
       if (Number.isFinite(retryMilliseconds) && retryMilliseconds > 5000) break
       await response.body?.cancel()
       await delay(Math.max(0, Number.isFinite(retryMilliseconds) ? retryMilliseconds : 1000 * (2 ** attempt)), undefined, { signal })
     }
     if (!response?.ok) {
       const status = response?.status === 429 ? 429 : response?.status === 503 ? 503 : 502
-      console.error("Caption Gemini API error", { model: GEMINI_MODEL, status: response?.status })
+      console.error("Caption Gemini API error", { model: GEMINI_MODEL, status: response?.status, attempts })
+      const retryAfter = response?.headers.get("retry-after")
+      const retrySeconds = retryAfter ? Number(retryAfter) : NaN
+      const retryAfterSeconds = Math.max(1, Math.ceil(Number.isFinite(retrySeconds) ? retrySeconds
+        : retryAfter && Number.isFinite(Date.parse(retryAfter)) ? (Date.parse(retryAfter) - Date.now()) / 1000 : 10))
+      const retryable = Boolean(response && [408, 429, 500, 502, 503, 504].includes(response.status))
       return NextResponse.json({
         error: status === 429 ? "Caption generation is temporarily rate limited. Please try again shortly."
           : status === 503 ? "Gemini is experiencing high demand. Please try again shortly." : "AI Generation Failed",
         model: GEMINI_MODEL,
-      }, { status })
+        retryable,
+        ...(retryable ? { retryAfterSeconds } : {}),
+      }, { status, ...(retryable ? { headers: { "Retry-After": String(retryAfterSeconds) } } : {}) })
     }
 
     const data = await response.json()
@@ -295,12 +306,14 @@ export async function POST(request: NextRequest) {
         promptSource: "admin",
         generationMode: "gem-style",
         expectedCount,
+        attempts,
       },
     })
   } catch (error) {
     const name = error && typeof error === "object" && "name" in error ? String(error.name) : "Error"
     if (name === "TimeoutError" || name === "AbortError") {
-      return NextResponse.json({ error: "Caption generation timed out. Please try again shortly.", model: GEMINI_MODEL }, { status: 504 })
+      return NextResponse.json({ error: "Caption generation timed out. Please try again shortly.", model: GEMINI_MODEL,
+        retryable: true, retryAfterSeconds: 10 }, { status: 504, headers: { "Retry-After": "10" } })
     }
     const message = error instanceof Error ? error.message : "Internal Server Error"
     console.error("Caption generation error:", { name, message })
