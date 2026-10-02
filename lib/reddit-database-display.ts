@@ -86,6 +86,69 @@ export function restoreWeeklyAverages(
   })
 }
 
+export type WeeklyBaseline = { value: number; start: string; end: string; observedAt: string; postCount: number }
+export type WeeklyBaselines = Record<string, Record<string, WeeklyBaseline>>
+const BASELINE_HEADERS = ["Subreddit", "Metric", "Window Start UTC", "Window End UTC", "Observed At UTC", "Score", "Post Count", "Post IDs JSON"]
+
+/** A dated historical fallback is separate from live observations and never overwrites a weekly average. */
+export function applyHistoricalWeeklyBaselines(
+  headers: string[], rows: string[][], baselineHeaders: string[], baselineRows: string[][], now = Date.now(),
+): { rows: string[][]; baselines: WeeklyBaselines } {
+  if (baselineHeaders.length !== BASELINE_HEADERS.length ||
+      baselineHeaders.some((header, index) => header !== BASELINE_HEADERS[index])) {
+    throw new Error("Weekly Metric Baselines headers do not match the expected format")
+  }
+  const normalized = headers.map(header => header.trim().toLowerCase())
+  const nameIndex = normalized.findIndex(header => header === "subreddit" || header === "subreddit name")
+  const recorded: WeeklyBaselines = Object.create(null)
+  const baselines: WeeklyBaselines = Object.create(null)
+  for (const row of baselineRows) {
+    const name = subredditKey(row[0] || ""), metric = (row[1] || "").toLowerCase()
+    const metricIndex = WEEKLY_HEADERS.indexOf(metric)
+    const dates = [row[2], row[3], row[4]]
+    if (!name || metricIndex < 0 || dates.some(value => !/^\d{4}-\d{2}-\d{2}T.*(?:Z|\+00:00)$/.test(value || ""))) continue
+    const [start, end, observed] = dates.map(Date.parse)
+    const value = /^\d+$/.test(row[5] || "") ? Number(row[5]) : NaN
+    const postCount = /^\d+$/.test(row[6] || "") ? Number(row[6]) : NaN
+    if (!Number.isSafeInteger(value) || value <= 0 || !Number.isSafeInteger(postCount) || postCount < [1, 2, 6][metricIndex] ||
+        ![start, end, observed].every(Number.isFinite) || end - start !== 7 * 86400_000 ||
+        end >= now - 7 * 86400_000 || observed < end || observed > now) continue
+    try {
+      const ids = JSON.parse(row[7] || "")
+      if (!Array.isArray(ids) || ids.some(id => typeof id !== "string" || !id) ||
+          new Set(ids).size !== ids.length || ids.length !== Math.min(postCount, 10)) continue
+    } catch { continue }
+    if (!recorded[name]) recorded[name] = Object.create(null)
+    const previous = recorded[name][metric]
+    if (!previous || observed > Date.parse(previous.observedAt)) {
+      recorded[name][metric] = { value, start: row[2], end: row[3], observedAt: row[4], postCount }
+    }
+  }
+  return { baselines, rows: rows.map(row => {
+    const name = subredditKey(row[nameIndex] || "")
+    const restored = [...row]
+    normalized.forEach((metric, index) => {
+      const baseline = recorded[name]?.[metric]
+      if (!baseline || !missingWeekly(row[index])) return
+      restored[index] = String(baseline.value)
+      if (!baselines[name]) baselines[name] = Object.create(null)
+      baselines[name][metric] = baseline
+    })
+    return restored
+  }) }
+}
+
+export function weeklyBaselineLabel(baseline: WeeklyBaseline): string {
+  const start = new Date(baseline.start), end = new Date(baseline.end)
+  const sameYear = start.getUTCFullYear() === end.getUTCFullYear()
+  const date = (value: Date, year: boolean) => new Intl.DateTimeFormat("en-US", {
+    month: "short", day: "numeric", ...(year ? { year: "numeric" as const } : {}), timeZone: "UTC",
+  }).format(value)
+  if (!sameYear) return `Historical · ${date(start, true)}–${date(end, true)}`
+  const endLabel = start.getUTCMonth() === end.getUTCMonth() ? String(end.getUTCDate()) : date(end, false)
+  return `Historical · ${date(start, false)}–${endLabel}, ${end.getUTCFullYear()}`
+}
+
 export type RowHealth = { status: "stale" | "unverified"; lastAttemptAt: string }
 
 export function sourceRowHealth(headers: string[], rows: string[][]): Record<string, RowHealth> {

@@ -62,7 +62,7 @@ export async function createWorkbookReader(spreadsheetId: string) {
   const workbookTitle = metadata.data.properties?.title || "Google Sheet"
   const sheetProperties = metadata.data.sheets?.map((sheet) => sheet.properties).filter(Boolean) || []
 
-  const read = async (sheetName: string, columns: "A:ZZ" | "A:E" = "A:ZZ"): Promise<SheetData> => {
+  const read = async (sheetName: string, columns: "A:ZZ" | "A:E" | "A:H" = "A:ZZ"): Promise<SheetData> => {
     const response = await client.spreadsheets.values.get({
       spreadsheetId,
       range: `${quoteSheetName(sheetName)}!${columns}`,
@@ -85,7 +85,7 @@ export async function createWorkbookReader(spreadsheetId: string) {
     return read(properties.title)
   }
 
-  const readByName = async (name: string, columns: "A:ZZ" | "A:E" = "A:ZZ"): Promise<SheetData> => {
+  const readByName = async (name: string, columns: "A:ZZ" | "A:E" | "A:H" = "A:ZZ"): Promise<SheetData> => {
     const properties = sheetProperties.find(
       (sheet) => sheet?.title?.trim().toLowerCase() === name.trim().toLowerCase(),
     )

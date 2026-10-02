@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { createWorkbookReader, parseSpreadsheetUrl } from "@/lib/google-sheets-reader"
-import { sourceRowHealth, needsWeeklyHistory, restoreWeeklyAverages } from "@/lib/reddit-database-display"
+import { sourceRowHealth, needsWeeklyHistory, restoreWeeklyAverages, applyHistoricalWeeklyBaselines, type WeeklyBaselines } from "@/lib/reddit-database-display"
 import { verifyToken } from "@/lib/auth"
 import { getActiveTierForUser } from "@/lib/limits"
 
@@ -62,6 +62,7 @@ export async function GET(req: Request) {
         && String(row[statusIndex] || "").trim().toLowerCase() !== "archived",
     )
     const rowHealth = sourceRowHealth(sourceSheet.headers, sourceSheet.rows)
+    let weeklyBaselines: WeeklyBaselines = {}
     if (!freePreview && needsWeeklyHistory(sourceSheet.headers, sourceSheet.rows)) {
       try {
         const history = await reader.readByName("Weekly Metrics History", "A:E")
@@ -69,6 +70,16 @@ export async function GET(req: Request) {
       } catch (error) {
         // Missing history must not take the main database offline or invent a metric.
         console.warn("Weekly history fallback unavailable:", error instanceof Error ? error.message : "Unknown error")
+      }
+    }
+    if (!freePreview && needsWeeklyHistory(sourceSheet.headers, sourceSheet.rows)) {
+      try {
+        const historical = await reader.readByName("Weekly Metric Baselines", "A:H")
+        const restored = applyHistoricalWeeklyBaselines(sourceSheet.headers, sourceSheet.rows, historical.headers, historical.rows)
+        sourceSheet.rows = restored.rows
+        weeklyBaselines = restored.baselines
+      } catch (error) {
+        console.warn("Historical weekly baseline unavailable:", error instanceof Error ? error.message : "Unknown error")
       }
     }
     const keepIndices = sourceSheet.headers
@@ -112,7 +123,7 @@ export async function GET(req: Request) {
     }
 
     return NextResponse.json(
-      { mainSheet, rowHealth: freePreview ? {} : rowHealth, freePreview, maskedColumnIndices },
+      { mainSheet, rowHealth: freePreview ? {} : rowHealth, weeklyBaselines: freePreview ? {} : weeklyBaselines, freePreview, maskedColumnIndices },
       { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } },
     )
   } catch (error) {

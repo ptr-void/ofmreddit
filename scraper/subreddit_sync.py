@@ -1325,6 +1325,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         sheet_store.apply_weekly_rolling_average(results)
         sheet_store.write_results(results)
         LOG.info("Google Sheets batch update completed")
+        baseline_names = [result.subreddit for result in results if result.status == "success"
+                          and result.source_row >= 2 and any(value is None for value in (
+                              result.weekly_top_1_upvotes, result.weekly_top_2_5_avg_upvotes,
+                              result.weekly_top_6_10_avg_upvotes))]
+        if baseline_names:
+            try:
+                try:
+                    from scraper.weekly_baselines import backfill
+                except ModuleNotFoundError:
+                    from weekly_baselines import backfill
+                baseline_report = backfill(sheet_store, analyzer, names=baseline_names, apply=True,
+                                           max_subreddits=len(baseline_names))
+                if baseline_report["errors"]:
+                    LOG.warning("Some dated historical baselines were deferred; inspect the baseline report")
+            except Exception as exc:
+                # Optional historical context must not interrupt current weekly progress or chaining.
+                LOG.warning("Historical weekly baseline backfill deferred: %s", exc)
     else:
         LOG.info("Google Sheets dry-run: no values changed")
 

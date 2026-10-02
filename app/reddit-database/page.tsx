@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import DatabaseTable from "@/components/reddit-database/database-table"
 import SubmitSubredditModal from "@/components/reddit-database/submit-subreddit-modal"
 import s from "@/styles/scraper.module.css"
-import type { RowHealth } from "@/lib/reddit-database-display"
+import type { RowHealth, WeeklyBaselines } from "@/lib/reddit-database-display"
 
 type SheetData = {
   title: string
@@ -17,6 +17,7 @@ type SheetData = {
 type ApiResponse = {
   mainSheet: SheetData
   rowHealth?: Record<string, RowHealth>
+  weeklyBaselines?: WeeklyBaselines
   freePreview?: boolean
 }
 type SortDirection = "asc" | "desc" | null
@@ -70,6 +71,7 @@ function numericCell(value: string | undefined): number | null {
 export default function RedditDatabasePage() {
   const [sheetData, setSheetData] = useState<SheetData | null>(null)
   const [rowHealth, setRowHealth] = useState<Record<string, RowHealth>>({})
+  const [weeklyBaselines, setWeeklyBaselines] = useState<WeeklyBaselines>({})
   const [freePreview, setFreePreview] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -108,9 +110,10 @@ export default function RedditDatabasePage() {
         } catch {}
         throw new Error(message)
       }
-      const { mainSheet, rowHealth: health, freePreview: preview }: ApiResponse = await response.json()
+      const { mainSheet, rowHealth: health, weeklyBaselines: baselines, freePreview: preview }: ApiResponse = await response.json()
       setSheetData(mainSheet)
       setRowHealth(health ?? {})
+      setWeeklyBaselines(baselines ?? {})
       setFreePreview(Boolean(preview))
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "An unknown error occurred while fetching the sheet.")
@@ -366,6 +369,8 @@ export default function RedditDatabasePage() {
             <p className="px-1 text-xs text-muted-foreground">
               Weekly stats show rolling averages of the latest three positive readings and retain previous values
               when a refresh has no data. “—” means no positive reading is available for that metric yet.
+              {" "}Where no weekly history exists, a dated “Historical” baseline uses measured scores of posts from
+              an older seven-day period; it is not current weekly activity or an archived score from that date.
             </p>
             {freePreview && (
               <div className="rounded-lg border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-foreground">
@@ -388,6 +393,7 @@ export default function RedditDatabasePage() {
               sortState={sortState}
               onSort={handleSort}
               rowHealth={rowHealth}
+              weeklyBaselines={weeklyBaselines}
             />
           </section>
         )}

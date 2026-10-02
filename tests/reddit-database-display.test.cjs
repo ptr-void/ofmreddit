@@ -115,3 +115,35 @@ test('history validates headers, supports partial metric observations and matche
   assert.equal(formatDatabaseMetric('Hot 1 (Weekly)', '0.0'), '—')
   for (const direction of ['asc','desc']) assert.equal(compareDatabaseValues('—', '10', direction), 1)
 })
+
+const baselineHeaders = ['Subreddit','Metric','Window Start UTC','Window End UTC','Observed At UTC','Score','Post Count','Post IDs JSON']
+const { applyHistoricalWeeklyBaselines, weeklyBaselineLabel } = context.exports
+const baselineRow = (metric='Hot 1 (Weekly)', value='1234') => ['example',metric,'2026-06-14T00:00:00Z','2026-06-21T00:00:00Z','2026-10-02T00:00:00Z',value,'10',JSON.stringify(Array.from({length:10},(_,i)=>`p${i}`))]
+test('historical baselines fill only unresolved weekly stats and carry explicit date provenance',()=>{
+  const rows=[['r/Example/','0','99',''], ['NoHistory','','','']]
+  const before=JSON.stringify(rows)
+  const result=applyHistoricalWeeklyBaselines(weeklyHeaders,rows,baselineHeaders,[baselineRow(),baselineRow('Hot 2-5 Avg (Weekly)','50'),baselineRow('Hot 6-10 Avg (Weekly)','20')],Date.parse('2026-10-03T00:00:00Z'))
+  assert.equal(result.rows[0][1],'1234');assert.equal(result.rows[0][2],'99');assert.equal(result.rows[0][3],'20')
+  assert.equal(result.baselines.example['hot 1 (weekly)'].end,'2026-06-21T00:00:00Z')
+  assert.equal(result.baselines.example['hot 2-5 avg (weekly)'],undefined)
+  assert.equal(weeklyBaselineLabel(result.baselines.example['hot 1 (weekly)']),'Historical · Jun 14–21, 2026')
+  assert.equal(formatDatabaseMetric('Hot 1 (Weekly)',result.rows[0][1]),'1,234')
+  assert.equal(JSON.stringify(rows),before)
+})
+test('invalid, future, current-week and unsupported historical rank groups are rejected',()=>{
+  const now=Date.parse('2026-10-03T00:00:00Z')
+  for(const [index,value] of [[2,'bad'],[4,'2099-01-01T00:00:00Z'],[5,'0'],[6,'0'],[7,'[]'],[7,'["p","p"]']]) {
+    const row=baselineRow();row[index]=value
+    const result=applyHistoricalWeeklyBaselines(weeklyHeaders,[['example','','','']],baselineHeaders,[row],now)
+    assert.equal(result.rows[0][1],'');assert.equal(Object.keys(result.baselines).length,0)
+  }
+  const recent=baselineRow();recent[2]='2026-09-25T00:00:00Z';recent[3]='2026-10-02T00:00:00Z'
+  assert.equal(applyHistoricalWeeklyBaselines(weeklyHeaders,[['example','','','']],baselineHeaders,[recent],now).rows[0][1],'')
+  assert.throws(()=>applyHistoricalWeeklyBaselines(weeklyHeaders,[],['wrong'],[],now),/headers/)
+})
+test('historical cells show their period and measurement date separately from current weekly figures',()=>{
+  const table=fs.readFileSync(path.join(__dirname,'../components/reddit-database/database-table.tsx'),'utf8')
+  assert.match(table,/weeklyBaselineLabel/);assert.match(table,/Scores measured/)
+  assert.match(table,/not current weekly activity or archived scores/)
+  assert.match(table,/baselineLabel/)
+})

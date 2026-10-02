@@ -152,6 +152,35 @@ when weekly values are missing. Missing/invalid history does not prevent the mai
 sheet from loading. A dash means no positive history exists, not that rolling
 averages are pending. Free previews never fetch or expose history.
 
+### Dated historical weekly baselines
+
+When a stat has neither a published weekly average nor positive weekly history,
+the database can show a **Historical** seven-day baseline with its date range.
+The score is measured at the recorded observation time for older posts; it is not
+current weekly activity or an archived score from that historical date. Sparse
+rank groups may use different older periods, each labelled individually.
+
+The scraper stores these separately in `Weekly Metric Baselines`, not in the
+live sheet's weekly cells or `Weekly Metrics History`. Valid current averages
+always take precedence. The regular sync backfills missing baselines once and
+retains them; users do not have to run it manually. It examines at most 1,000
+recent posts per affected subreddit and publishes only complete seven-day
+periods. A group with no complete positive period stays unavailable, never made
+up or copied from a different rank group.
+
+For an initial audit/backfill:
+
+```powershell
+python scraper/weekly_baselines.py --max-subreddits 30
+# Review the generated report, then apply it without fetching Reddit again:
+python scraper/weekly_baselines.py --apply --apply-report output/weekly-baseline-backfill-TIMESTAMP.json
+```
+
+Application rechecks active membership, missing cells and existing baseline keys,
+saves the pre-write worksheet snapshot plus exact appended records, and verifies
+readback. Rollback is limited to those appended records in the baseline worksheet
+using the saved snapshot; do not replace the live sheet or newer weekly history.
+
 Caption generation retains the configured model, admin prompt and all documents.
 The route allows 90 seconds on Vercel, including a 60-second generation/retry
 window. Provider cooldowns are passed to the UI; no automatic browser retries or
