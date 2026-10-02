@@ -130,9 +130,11 @@ maps to the prompt's `clickbait_style` (`y`/`n`), and quick mode omits unused
 advanced-form defaults. The route handles one post per request and validates
 its ID and the caption count required by the prompt (five by default).
 
-Gemini 3.8 uses `thinkingLevel: medium`; deprecated temperature and thinking-budget
-parameters are omitted. Explicit transient HTTP errors have at most three retries
-with exponential backoff and jitter, using the same model and payload. Long provider cooldowns and generation timeouts
+Gemini 3.8 defaults to `thinkingLevel: low` for caption latency; optional
+`CAPTION_GEMINI_THINKING_LEVEL=medium` or `high` retains a higher reasoning setting.
+Deprecated temperature and thinking-budget parameters are omitted. Transient HTTP
+errors, per-attempt timeouts and interrupted connections have at most three retries
+with exponential backoff and jitter, using the same model, instructions and files. Long provider cooldowns and generation timeouts
 are shown as retryable errors; there is no silent downgrade to another model.
 
 This recreates the supplied instructions and knowledge, not a call to a hosted
@@ -181,8 +183,31 @@ saves the pre-write worksheet snapshot plus exact appended records, and verifies
 readback. Rollback is limited to those appended records in the baseline worksheet
 using the saved snapshot; do not replace the live sheet or newer weekly history.
 
+### Caption timeout handling
+
 Caption generation retains the configured model, admin prompt and all documents.
-The route allows 90 seconds on Vercel, including a 60-second generation/retry
-window. Provider cooldowns are passed to the UI; no automatic browser retries or
+The route allows 180 seconds on Vercel, including a bounded 120-second
+generation/retry window. Each attempt (including reading its response body) has a
+45-second deadline, so one stalled call does not exhaust every retry. Cooldowns
+from both `Retry-After` and Google `RetryInfo.retryDelay` are respected and passed
+to the UI; no automatic browser retries or
 silent model switches occur. A successful live test is a point-in-time check,
 not a guarantee against later provider overload.
+
+Daily request quota exhaustion is returned as `DAILY_QUOTA_EXHAUSTED`, with the
+provider's actual limit and reported retry timestamp when supplied. It is not
+retried as an overload or shown as a ten-second outage. Quotas belong to the API
+project/model, not the Gemini app subscription. A higher-quota billing tier/key
+must be configured separately; this code never changes billing or rotates keys.
+
+### Live caption website smoke test
+
+Run `node scripts/test-caption-website.cjs` with `CAPTION_WEBSITE_URL` set to the
+canonical site origin and `CAPTION_TEST_TOKEN` set to a test account's login token.
+This is opt-in and incurs real Gemini usage. It opens the actual form, enters
+neutral fitness context at level 1, clicks Generate three times (including the
+interactive mode), and verifies that all five returned captions appear in cards.
+It checks the model, all three knowledge documents, retained inputs and low
+thinking metadata. Reports/screenshots are saved under ignored `output/`; tokens
+and caption text are not included in the JSON report. API mocks alone do not
+count as passing this browser test.

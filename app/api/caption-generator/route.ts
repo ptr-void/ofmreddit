@@ -1,7 +1,7 @@
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
-// Leave room for knowledge downloads plus the bounded 60-second generation/retry window.
-export const maxDuration = 90
+// Leave room for knowledge downloads plus the bounded 120-second generation/retry window.
+export const maxDuration = 180
 
 import { NextRequest, NextResponse } from "next/server"
 import { verifyToken } from "@/lib/auth"
@@ -17,6 +17,43 @@ const CAPTION_PROMPT_NAME = "caption_generator"
 const MAX_KNOWLEDGE_FILE_BYTES = 20 * 1024 * 1024
 const MAX_CAPTIONS = 10
 const MAX_KNOWLEDGE_TEXT_CHARACTERS = 150_000
+const GENERATION_TIMEOUT_MS = 120_000
+const ATTEMPT_TIMEOUT_MS = 45_000
+const requestedThinking = process.env.CAPTION_GEMINI_THINKING_LEVEL
+const THINKING_LEVEL = requestedThinking === "medium" || requestedThinking === "high" ? requestedThinking : "low"
+
+interface GeminiResponse {
+  candidates?: Array<{
+    finishReason?: string
+    content?: { parts?: Array<{ thought?: boolean; text?: string }> }
+  }>
+}
+
+interface GeminiErrorResponse {
+  error?: { status?: string; details?: Array<{ "@type"?: string; retryDelay?: string;
+    violations?: Array<{ quotaId?: string; quotaValue?: string }> }> }
+}
+
+function dailyQuota(error?: GeminiErrorResponse): { limit?: number } | undefined {
+  const violation = error?.error?.details
+    ?.filter(detail => detail["@type"] === "type.googleapis.com/google.rpc.QuotaFailure")
+    .flatMap(detail => detail.violations || [])
+    .find(violation => /requests.*perday|requests.*daily/i.test(violation.quotaId || ""))
+  if (!violation) return undefined
+  const limit = Number(violation.quotaValue)
+  return { ...(Number.isSafeInteger(limit) && limit > 0 ? { limit } : {}) }
+}
+
+function providerRetryMilliseconds(response: Response, error?: GeminiErrorResponse): number | undefined {
+  const header = response.headers.get("retry-after")
+  const seconds = header ? Number(header) : NaN
+  const headerDelay = header ? Number.isFinite(seconds) ? seconds * 1000 : Date.parse(header) - Date.now() : NaN
+  const retryInfo = error?.error?.details?.find(detail => detail["@type"] === "type.googleapis.com/google.rpc.RetryInfo")
+  const duration = retryInfo?.retryDelay?.match(/^(\d+(?:\.\d+)?)s$/)
+  const bodyDelay = duration ? Number(duration[1]) * 1000 : NaN
+  const valid = [headerDelay, bodyDelay].filter(value => Number.isFinite(value) && value >= 0)
+  return valid.length ? Math.max(...valid) : undefined
+}
 
 type InteractiveMode = "ON" | "OFF"
 
@@ -237,42 +274,84 @@ export async function POST(request: NextRequest) {
       }],
       generationConfig: {
         maxOutputTokens: 8192,
-        thinkingConfig: { thinkingLevel: "medium" },
+        thinkingConfig: { thinkingLevel: THINKING_LEVEL },
       },
     }
 
     let response: Response | undefined
+    let data: GeminiResponse | undefined
+    let transportFailure: string | undefined
+    let providerError: GeminiErrorResponse | undefined
     let attempts = 0
-    // Retry only explicit transient responses; keep the requested model and prompt unchanged.
-    const signal = AbortSignal.timeout(60_000)
+    // A stalled attempt must not consume the whole retry budget. Body reads share
+    // its deadline too: receiving headers is not a completed generation.
+    const signal = AbortSignal.timeout(GENERATION_TIMEOUT_MS)
     for (let attempt = 0; attempt < 4; attempt++) {
       attempts++
-      response = await fetch(API_URL, {
-        method: "POST",
-        signal,
-        headers: { "x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      })
-      if (response.ok || ![408, 429, 500, 502, 503, 504].includes(response.status) || attempt === 3) break
-      const retryAfter = response.headers.get("retry-after")
-      const seconds = retryAfter ? Number(retryAfter) : NaN
-      const retryMilliseconds = retryAfter
-        ? (Number.isFinite(seconds) ? seconds * 1000 : Date.parse(retryAfter) - Date.now())
+      response = undefined
+      data = undefined
+      transportFailure = undefined
+      providerError = undefined
+      try {
+        response = await fetch(API_URL, {
+          method: "POST",
+          signal: AbortSignal.any([signal, AbortSignal.timeout(ATTEMPT_TIMEOUT_MS)]),
+          headers: { "x-goog-api-key": GEMINI_API_KEY, "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
+        if (response.ok) {
+          data = await response.json() as GeminiResponse
+          break
+        }
+        if (![408, 429, 500, 502, 503, 504].includes(response.status)) break
+        // Google often puts its cooldown in RetryInfo instead of Retry-After.
+        providerError = await response.json().catch(error => {
+          if (error?.name === "SyntaxError") return undefined
+          throw error
+        }) as GeminiErrorResponse | undefined
+        // Per-day request exhaustion is not a transient overload. Retrying it
+        // inside this invocation wastes requests and will never restore service.
+        if (response.status === 429 && dailyQuota(providerError)) break
+      } catch (error) {
+        const name = error && typeof error === "object" && "name" in error ? String(error.name) : "Error"
+        if (signal.aborted) throw error
+        if (!["TimeoutError", "AbortError", "TypeError"].includes(name)) throw error
+        transportFailure = name
+        await response?.body?.cancel().catch(() => {})
+        response = undefined
+        console.warn("Caption Gemini attempt interrupted", { model: GEMINI_MODEL, attempt: attempts, name })
+      }
+      if (attempt === 3) break
+      const retryMilliseconds = response ? providerRetryMilliseconds(response, providerError)
+        ?? 1000 * (2 ** attempt) + Math.floor(Math.random() * 250)
         : 1000 * (2 ** attempt) + Math.floor(Math.random() * 250)
       if (Number.isFinite(retryMilliseconds) && retryMilliseconds > 5000) break
-      await response.body?.cancel()
+      if (!response?.bodyUsed) await response?.body?.cancel().catch(() => {})
       await delay(Math.max(0, Number.isFinite(retryMilliseconds) ? retryMilliseconds : 1000 * (2 ** attempt)), undefined, { signal })
     }
-    if (!response?.ok) {
-      const status = response?.status === 429 ? 429 : response?.status === 503 ? 503 : 502
-      console.error("Caption Gemini API error", { model: GEMINI_MODEL, status: response?.status, attempts })
-      const retryAfter = response?.headers.get("retry-after")
-      const retrySeconds = retryAfter ? Number(retryAfter) : NaN
-      const retryAfterSeconds = Math.max(1, Math.ceil(Number.isFinite(retrySeconds) ? retrySeconds
-        : retryAfter && Number.isFinite(Date.parse(retryAfter)) ? (Date.parse(retryAfter) - Date.now()) / 1000 : 10))
-      const retryable = Boolean(response && [408, 429, 500, 502, 503, 504].includes(response.status))
+    if (!response?.ok || !data) {
+      const timedOut = transportFailure === "TimeoutError" || transportFailure === "AbortError"
+      const status = timedOut ? 504 : response?.status === 429 ? 429 : response?.status === 503 || transportFailure ? 503 : 502
+      console.error("Caption Gemini API error", { model: GEMINI_MODEL, status: response?.status,
+        providerStatus: providerError?.error?.status, transportFailure, attempts })
+      const retryAfterSeconds = Math.max(1, Math.ceil((response ? providerRetryMilliseconds(response, providerError) ?? 10_000 : 10_000) / 1000))
+      const quota = response?.status === 429 ? dailyQuota(providerError) : undefined
+      if (quota) {
+        const cooldown = response ? providerRetryMilliseconds(response, providerError) : undefined
+        const quotaLimit = quota.limit ? ` (${quota.limit} requests/day)` : ""
+        return NextResponse.json({
+          error: `The Gemini API project's daily request limit for ${GEMINI_MODEL}${quotaLimit} has been reached. Short retries will not restore generation; wait for the quota reset or use a higher-quota API project.`,
+          code: "DAILY_QUOTA_EXHAUSTED", model: GEMINI_MODEL, retryable: false,
+          quota: { period: "day", ...quota },
+          ...(cooldown !== undefined ? { retryAfterSeconds,
+            retryAvailableAt: new Date(Date.now() + cooldown).toISOString() } : {}),
+        }, { status: 429, ...(cooldown !== undefined ? { headers: { "Retry-After": String(retryAfterSeconds) } } : {}) })
+      }
+      const retryable = Boolean(transportFailure || response && [408, 429, 500, 502, 503, 504].includes(response.status))
       return NextResponse.json({
-        error: status === 429 ? "Caption generation is temporarily rate limited. Please try again shortly."
+        error: timedOut ? "Caption generation timed out. Please try again shortly."
+          : transportFailure ? "The caption service connection was interrupted. Please try again shortly."
+          : status === 429 ? "Caption generation is temporarily rate limited. Please try again shortly."
           : status === 503 ? "Gemini is experiencing high demand. Please try again shortly." : "AI Generation Failed",
         model: GEMINI_MODEL,
         retryable,
@@ -280,7 +359,6 @@ export async function POST(request: NextRequest) {
       }, { status, ...(retryable ? { headers: { "Retry-After": String(retryAfterSeconds) } } : {}) })
     }
 
-    const data = await response.json()
     const candidate = data.candidates?.[0]
     if (candidate?.finishReason && candidate.finishReason !== "STOP") {
       return NextResponse.json({ error: "The AI did not finish generating captions. Please try again." }, { status: 502 })
@@ -302,6 +380,7 @@ export async function POST(request: NextRequest) {
       meta: {
         interactiveMode,
         model: GEMINI_MODEL,
+        thinkingLevel: THINKING_LEVEL,
         knowledgeDocuments: documents.length,
         promptSource: "admin",
         generationMode: "gem-style",

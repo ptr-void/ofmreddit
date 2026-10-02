@@ -181,6 +181,12 @@ export default function CaptionGeneratorPage() {
           retryable: [429, 502, 503, 504].includes(response.status),
         }))
         const message = errorData.error || `HTTP ${response.status}`
+        if (errorData.code === "DAILY_QUOTA_EXHAUSTED") {
+          const retryAt = errorData.retryAvailableAt ? new Date(errorData.retryAvailableAt) : null
+          setError(`${message}${retryAt && Number.isFinite(retryAt.getTime()) ? ` Google's reported retry time: ${retryAt.toLocaleString()}.` : ""}`)
+          setAiMessage("Daily Gemini API quota reached. Your inputs are kept; a short retry will not help.")
+          return
+        }
         if (errorData.retryable || [429, 503, 504].includes(response.status)) {
           setError(`${message} Retry in ${errorData.retryAfterSeconds || 10} seconds; your inputs are unchanged.`)
           setAiMessage("The caption service is temporarily unavailable. Your inputs are kept; retry shortly.")

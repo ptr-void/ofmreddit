@@ -2,7 +2,7 @@ const assert = require('node:assert/strict')
 const { test } = require('node:test')
 const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm'), ts = require('typescript')
 const source = fs.readFileSync(path.join(__dirname, '../app/api/caption-generator/route.ts'), 'utf8')
-function fixture({ authenticated = true, brokenDocument = false, output, finishReason, thought, model, statuses = [], retryAfter, fetchError } = {}) {
+function fixture({ authenticated = true, brokenDocument = false, output, finishReason, thought, model, statuses = [], retryAfter, fetchError, fetchErrors = [], jsonErrors = [], thinking, expireTotal = false, providerError } = {}) {
   const calls = [], documents = [1,2,3].map(id => ({id,filename:`knowledge-${id}.docx`,cloudinary_url:`https://files.test/${id}`,file_type:'docx',file_size:20}))
   const dependencies = {
     'next/server': {NextResponse:{json:(body,init={})=>({body,status:init.status||200})}},
@@ -12,17 +12,19 @@ function fixture({ authenticated = true, brokenDocument = false, output, finishR
     'node:timers/promises': {setTimeout:async()=>{}},
     mammoth:{extractRawText:async({buffer})=>({value:`EXTRACTED:${buffer.toString()}`})},
   }
-  const context = {exports:{},Buffer,AbortSignal,process:{env:{GEMINI_API_KEY:'fixture-key', ...(model ? {CAPTION_GEMINI_MODEL:model} : {})}},console:{error:()=>{}},
+  const deadlines=[]; const signals={any:AbortSignal.any.bind(AbortSignal),timeout:ms=>{deadlines.push(ms);if(expireTotal && ms===120000){const c=new AbortController();c.abort();return c.signal}return AbortSignal.timeout(ms)}};
+  const context = {exports:{},Buffer,AbortSignal:signals,process:{env:{GEMINI_API_KEY:'fixture-key', ...(model ? {CAPTION_GEMINI_MODEL:model} : {}), ...(thinking ? {CAPTION_GEMINI_THINKING_LEVEL:thinking} : {})}},console:{error:()=>{},warn:()=>{}},
     require:name=>dependencies[name],fetch:async(url,options)=>{
       calls.push({url,options})
       if (url.startsWith('https://files.test/')) return {ok:!brokenDocument,status:brokenDocument?404:200,arrayBuffer:async()=>Buffer.from(`FILE-${url.split('/').pop()}`)}
       if (fetchError) throw fetchError
+      const attemptError=fetchErrors.shift();if(attemptError)throw attemptError
       const status = statuses.shift() || 200
-      if (status !== 200) return {ok:false,status,headers:{get:()=>retryAfter||null},body:{cancel:async()=>{}}}
-      return {ok:true,status,headers:{get:()=>null},json:async()=>({candidates:[{finishReason,content:{parts:[...(thought ? [{thought:true,text:thought}] : []),{text:output ?? JSON.stringify({caption_results:Array.from({length:5},(_,i)=>({option:`Option ${i+1}`,text:`Fitness caption ${i+1}`}))})}]}}]})}
+      if (status !== 200) return {ok:false,status,headers:{get:()=>retryAfter||null},body:{cancel:async()=>{}},json:async()=>providerError||{}}
+      return {ok:true,status,headers:{get:()=>null},json:async()=>{const error=jsonErrors.shift();if(error)throw error;return ({candidates:[{finishReason,content:{parts:[...(thought ? [{thought:true,text:thought}] : []),{text:output ?? JSON.stringify({caption_results:Array.from({length:5},(_,i)=>({option:`Option ${i+1}`,text:`Fitness caption ${i+1}`}))})}]}}]})}}
     }}
   vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true}}).outputText,context)
-  return {route:context.exports,calls}
+  return {route:context.exports,calls,deadlines}
 }
 const request=()=>new Request('http://fixture.test/api/caption-generator',{method:'POST',headers:{authorization:'Bearer fixture','content-type':'application/json'},body:JSON.stringify({posts:[{id:'post_001',gender:'female',niche_features:['fitness'],degen_scale:0,interactive_mode:'OFF',visual_context:'gym selfie',content_type:'Picture'}]})})
 
@@ -34,7 +36,7 @@ test('caption request includes the saved admin instructions and all three extrac
   const payload=JSON.parse(api.options.body)
   assert.equal(payload.systemInstruction.parts[0].text,'ADMIN_PROMPT: produce five captions')
   assert.ok(api.url.includes('gemini-3.8-flash:generateContent'))
-  assert.equal(payload.generationConfig.thinkingConfig.thinkingLevel,'medium')
+  assert.equal(payload.generationConfig.thinkingConfig.thinkingLevel,'low')
   assert.equal(payload.generationConfig.temperature,undefined)
   assert.equal(payload.generationConfig.responseSchema,undefined)
   assert.equal(payload.generationConfig.thinkingConfig.thinkingBudget,undefined)
@@ -124,7 +126,7 @@ test('a fourth attempt can recover an overload, while non-transient errors are n
   let f=fixture({statuses:[503,503,503,200],output:xml()})
   let response=await f.route.POST(request())
   assert.equal(response.status,200);assert.equal(response.body.meta.attempts,4)
-  assert.equal(f.route.maxDuration,90)
+  assert.equal(f.route.maxDuration,180)
   f=fixture({statuses:[400]});response=await f.route.POST(request())
   assert.equal(response.body.retryable,false)
   assert.equal(f.calls.filter(call=>call.url.includes('generativelanguage.googleapis.com')).length,1)
@@ -135,4 +137,70 @@ test('caption UI keeps provider failures distinct from invalid-input feedback',(
   const generate=page.slice(page.indexOf('const handleGenerateCaptions'),page.indexOf('const handleClearCaptions'))
   assert.match(generate,/errorData.retryable/);assert.match(generate,/Retry in/)
   assert.match(generate,/your inputs are unchanged/)
+})
+
+test('a timed-out attempt gets a fresh deadline and retries without changing input',async()=>{
+  const f=fixture({fetchErrors:[new DOMException('Timed out','TimeoutError'),null],output:xml()})
+  const response=await f.route.POST(request())
+  assert.equal(response.status,200);assert.equal(response.body.meta.attempts,2)
+  const generations=f.calls.filter(c=>c.url.includes('generativelanguage.googleapis.com'))
+  assert.notEqual(generations[0].options.signal,generations[1].options.signal)
+  assert.equal(generations[0].options.body,generations[1].options.body)
+  assert.equal(f.deadlines.filter(ms=>ms===120000).length,1)
+  assert.equal(f.deadlines.filter(ms=>ms===45000).length,2)
+})
+
+test('response-body interruptions and network failures also retry',async()=>{
+  let f=fixture({jsonErrors:[new DOMException('Stalled body','TimeoutError'),null],output:xml()})
+  let response=await f.route.POST(request())
+  assert.equal(response.status,200);assert.equal(response.body.meta.attempts,2)
+  f=fixture({fetchErrors:[new TypeError('fetch failed'),null],output:xml()})
+  response=await f.route.POST(request())
+  assert.equal(response.status,200);assert.equal(response.body.meta.attempts,2)
+  f=fixture({fetchError:new TypeError('fetch failed')})
+  response=await f.route.POST(request())
+  assert.equal(response.status,503);assert.equal(response.body.retryable,true)
+})
+
+test('an exhausted shared budget stops retrying immediately',async()=>{
+  const f=fixture({expireTotal:true,fetchError:new DOMException('Total deadline','TimeoutError')})
+  const response=await f.route.POST(request())
+  assert.equal(response.status,504)
+  assert.equal(f.calls.filter(c=>c.url.includes('generativelanguage.googleapis.com')).length,1)
+})
+
+test('low thinking is the latency default and explicit higher effort stays configurable',async()=>{
+  for(const [thinking,expected] of [[undefined,'low'],['medium','medium'],['high','high'],['minimal','low']]){
+    const f=fixture({thinking});const response=await f.route.POST(request())
+    assert.equal(response.status,200);assert.equal(response.body.meta.thinkingLevel,expected)
+    const generation=f.calls.find(c=>c.url.includes('generativelanguage.googleapis.com'))
+    assert.equal(JSON.parse(generation.options.body).generationConfig.thinkingConfig.thinkingLevel,expected)
+  }
+})
+
+test('Google RetryInfo cooldowns are respected even without Retry-After headers',async()=>{
+  const providerError={error:{status:'RESOURCE_EXHAUSTED',details:[{'@type':'type.googleapis.com/google.rpc.RetryInfo',retryDelay:'47.25s'}]}}
+  let f=fixture({statuses:[429],providerError});let response=await f.route.POST(request())
+  assert.equal(response.status,429);assert.equal(response.body.retryAfterSeconds,48)
+  assert.equal(f.calls.filter(c=>c.url.includes('generativelanguage.googleapis.com')).length,1)
+  f=fixture({statuses:[429],providerError,retryAfter:'120'});response=await f.route.POST(request())
+  assert.equal(response.body.retryAfterSeconds,120)
+  f=fixture({statuses:[503,200],providerError:{error:{details:[{'@type':'type.googleapis.com/google.rpc.RetryInfo',retryDelay:'1.5s'}]}}})
+  assert.equal((await f.route.POST(request())).status,200)
+})
+
+test('daily request quota exhaustion is reported once, never treated as a ten-second outage',async()=>{
+  const providerError={error:{status:'RESOURCE_EXHAUSTED',details:[
+    {'@type':'type.googleapis.com/google.rpc.QuotaFailure',violations:[{quotaId:'GenerateRequestsPerDayPerProjectPerModel-FreeTier',quotaValue:'20'}]},
+    {'@type':'type.googleapis.com/google.rpc.RetryInfo',retryDelay:'20088s'}
+  ]}}
+  const f=fixture({statuses:[429],providerError});const response=await f.route.POST(request())
+  assert.equal(response.status,429);assert.equal(response.body.code,'DAILY_QUOTA_EXHAUSTED')
+  assert.equal(response.body.retryable,false);assert.equal(response.body.quota.limit,20)
+  assert.equal(response.body.retryAfterSeconds,20088);assert.ok(Date.parse(response.body.retryAvailableAt)>Date.now())
+  assert.equal(f.calls.filter(c=>c.url.includes('generativelanguage.googleapis.com')).length,1)
+  assert.match(response.body.error,/20 requests\/day/)
+  const page=fs.readFileSync(path.join(__dirname,'../app/caption-generator/page.tsx'),'utf8')
+  assert.ok(page.indexOf('errorData.code === "DAILY_QUOTA_EXHAUSTED"')<page.indexOf('if (errorData.retryable'))
+  assert.match(page,/short retry will not help/)
 })

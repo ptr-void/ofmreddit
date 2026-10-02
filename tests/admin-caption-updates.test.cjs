@@ -14,6 +14,6 @@ test("caption generation preserves Gem instructions with the current Flash model
   assert.match(caption, /gemini-3\.8-flash/)
   assert.match(caption, /text: prompt\.prompt_text/)
   assert.match(caption, /\.\.\.knowledgeParts/)
-  assert.match(caption, /thinkingLevel: "medium"/)
+  assert.match(caption, /thinkingLevel: THINKING_LEVEL/)
   assert.doesNotMatch(caption, /responseSchema|thinkingBudget|Return JSON only/)
 })
