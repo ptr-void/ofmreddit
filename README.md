@@ -142,3 +142,12 @@ claiming output parity. Model access and unit tests alone do not prove caption
 quality or live generation availability.
 
 Migration reference: https://ai.google.dev/gemini-api/docs/generate-content/latest-model
+
+### Weekly history display fallback
+
+Paid database views recover blank/zero weekly metrics from `Weekly Metrics History`
+using the scraper's latest-three-positive mean, without changing published nonzero
+values or writing to Sheets. Only the five history columns are fetched, and only
+when weekly values are missing. Missing/invalid history does not prevent the main
+sheet from loading. A dash means no positive history exists, not that rolling
+averages are pending. Free previews never fetch or expose history.

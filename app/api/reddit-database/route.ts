@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { createWorkbookReader, parseSpreadsheetUrl } from "@/lib/google-sheets-reader"
-import { sourceRowHealth } from "@/lib/reddit-database-display"
+import { sourceRowHealth, needsWeeklyHistory, restoreWeeklyAverages } from "@/lib/reddit-database-display"
 import { verifyToken } from "@/lib/auth"
 import { getActiveTierForUser } from "@/lib/limits"
 
@@ -62,6 +62,15 @@ export async function GET(req: Request) {
         && String(row[statusIndex] || "").trim().toLowerCase() !== "archived",
     )
     const rowHealth = sourceRowHealth(sourceSheet.headers, sourceSheet.rows)
+    if (!freePreview && needsWeeklyHistory(sourceSheet.headers, sourceSheet.rows)) {
+      try {
+        const history = await reader.readByName("Weekly Metrics History", "A:E")
+        sourceSheet.rows = restoreWeeklyAverages(sourceSheet.headers, sourceSheet.rows, history.headers, history.rows)
+      } catch (error) {
+        // Missing history must not take the main database offline or invent a metric.
+        console.warn("Weekly history fallback unavailable:", error instanceof Error ? error.message : "Unknown error")
+      }
+    }
     const keepIndices = sourceSheet.headers
       .map((header, index) => (INTERNAL_HEADERS.has(header.trim().toLowerCase()) ? -1 : index))
       .filter((index) => index !== -1)

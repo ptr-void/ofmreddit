@@ -17,8 +17,8 @@ test("member counts and karma have commas regardless of source formatting", () =
   for (const header of ["Total Members", "Min Post Karma", "Hot 1 (Weekly)"]) {
     assert.equal(formatDatabaseMetric(header, "1115693"), "1,115,693")
     assert.equal(formatDatabaseMetric(header, "1,115,693"), "1,115,693")
-    assert.equal(formatDatabaseMetric(header, "0"), header.startsWith("Hot ") ? "Awaiting data" : "0")
-    assert.equal(formatDatabaseMetric(header, ""), header.startsWith("Hot ") ? "Awaiting data" : "")
+    assert.equal(formatDatabaseMetric(header, "0"), header.startsWith("Hot ") ? "—" : "0")
+    assert.equal(formatDatabaseMetric(header, ""), header.startsWith("Hot ") ? "—" : "")
     assert.equal(formatDatabaseMetric(header, "Unknown"), "Unknown")
   }
   assert.equal(formatDatabaseMetric("Hot 2-5 Avg (Weekly)", "1234.5"), "1,234.5")
@@ -79,5 +79,39 @@ test("review text reflects the 400-upvote policy and explains the limits of Redd
   assert.doesNotMatch(review, /at least 100 upvotes/)
   assert.match(review, /flag alone does not verify/)
   const page = fs.readFileSync(path.join(__dirname, "../app/reddit-database/page.tsx"), "utf8")
-  assert.match(page, /does not mean rolling averages are disabled/)
+  assert.match(page, /latest three positive readings/)
+})
+
+const { needsWeeklyHistory, restoreWeeklyAverages } = context.exports
+const weeklyHeaders = ['Subreddit', 'Hot 1 (Weekly)', 'Hot 2-5 Avg (Weekly)', 'Hot 6-10 Avg (Weekly)']
+const historyHeaders = ['Subreddit', 'Scraped At UTC', 'Hot 1', 'Hot 2-5 Avg', 'Hot 6-10 Avg']
+test('missing weekly stats recover independent latest-three-positive means without overwriting published values', () => {
+  const rows = [['r/Example/', '0', '', '99'], ['no_history', '', '0', '']]
+  const before = JSON.stringify(rows)
+  const history = [
+    ['example', '2026-09-01T00:00:00Z', '100', '40', '20'],
+    ['example', '2026-09-03T00:00:00Z', '400', '0', '30'],
+    ['example', '2026-09-02T00:00:00+00:00', '200', '60'],
+    ['EXAMPLE', '2026-09-04T00:00:00Z', '600', '80'],
+    ['example', '2026-09-04T00:00:00Z', '600', '80'],
+    ['example', '2026-09-05T00:00:00Z', '0', ''],
+    ['example', '2099-09-01T00:00:00Z', '9999', '9999', '9999'],
+    ['example', 'not-a-date', '9999', '9999', '9999'],
+  ]
+  assert.equal(needsWeeklyHistory(weeklyHeaders, rows), true)
+  const result = restoreWeeklyAverages(weeklyHeaders, rows, historyHeaders, history, Date.parse('2026-10-01T00:00:00Z'))
+  assert.equal(result[0][1], '400'); assert.equal(result[0][2], '60'); assert.equal(result[0][3], '99')
+  assert.equal(JSON.stringify(result[1]), JSON.stringify(rows[1]))
+  assert.equal(JSON.stringify(rows), before)
+  assert.equal(needsWeeklyHistory(weeklyHeaders, [['example', '100', '60', '20']]), false)
+  assert.equal(needsWeeklyHistory(['Subreddit', 'Members'], [['example', '0']]), false)
+})
+test('history validates headers, supports partial metric observations and matches Python rounding', () => {
+  const history = [ ['example','2026-09-01T00:00:00Z','2','3','invalid'],
+    ['example','2026-09-02T00:00:00Z','3','4','0'] ]
+  const result = restoreWeeklyAverages(weeklyHeaders, [['example','','','']], historyHeaders, history)
+  assert.equal(result[0][1], '2'); assert.equal(result[0][2], '4'); assert.equal(result[0][3], '')
+  assert.throws(() => restoreWeeklyAverages(weeklyHeaders, [], ['wrong'], []), /headers/)
+  assert.equal(formatDatabaseMetric('Hot 1 (Weekly)', '0.0'), '—')
+  for (const direction of ['asc','desc']) assert.equal(compareDatabaseValues('—', '10', direction), 1)
 })

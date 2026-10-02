@@ -364,8 +364,8 @@ export default function RedditDatabasePage() {
               {renderHeaders.length.toLocaleString()} columns
             </div>
             <p className="px-1 text-xs text-muted-foreground">
-              Weekly averages retain previous positive readings. “Awaiting data” means no usable positive value has
-              been published for that metric yet; it does not mean rolling averages are disabled.
+              Weekly stats show rolling averages of the latest three positive readings and retain previous values
+              when a refresh has no data. “—” means no positive reading is available for that metric yet.
             </p>
             {freePreview && (
               <div className="rounded-lg border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-foreground">

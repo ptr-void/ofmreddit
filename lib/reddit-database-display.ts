@@ -8,7 +8,7 @@ const numberFormatter = new Intl.NumberFormat("en-US", { maximumFractionDigits: 
 export function formatDatabaseMetric(header: string, value: string): string {
   if (!NUMERIC_COLUMNS.has(header.trim().toLowerCase())) return value
   const trimmed = value.trim()
-  if (header.trim().toLowerCase().startsWith("hot ") && (!trimmed || trimmed === "0")) return "Awaiting data"
+  if (header.trim().toLowerCase().startsWith("hot ") && (!trimmed || Number(trimmed) === 0)) return "—"
   if (!/^-?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?$/.test(trimmed)) return value
   const number = Number(trimmed.replace(/,/g, ""))
   return Number.isFinite(number) ? numberFormatter.format(number) : value
@@ -27,6 +27,63 @@ export function subredditKey(value: string): string {
     .replace(/[?#].*$/, "")
     .replace(/\/(?:hot|new|top|rising|controversial)(?:\/.*)?$/, "")
     .replace(/\/+$/, "")
+}
+
+const WEEKLY_HEADERS = ["hot 1 (weekly)", "hot 2-5 avg (weekly)", "hot 6-10 avg (weekly)"]
+const HISTORY_HEADERS = ["subreddit", "scraped at utc", "hot 1", "hot 2-5 avg", "hot 6-10 avg"]
+const missingWeekly = (value: string | undefined) => !value?.trim() || Number(value) === 0
+
+export function needsWeeklyHistory(headers: string[], rows: string[][]): boolean {
+  const columns = headers.map(header => header.trim().toLowerCase())
+    .map((header, index) => WEEKLY_HEADERS.includes(header) ? index : -1).filter(index => index >= 0)
+  return rows.some(row => columns.some(index => missingWeekly(row[index])))
+}
+
+/** Fill only missing weekly cells from the same latest-three-positive mean used by the scraper. */
+export function restoreWeeklyAverages(
+  headers: string[], rows: string[][], historyHeaders: string[], historyRows: string[][], now = Date.now(),
+): string[][] {
+  if (historyHeaders.length !== HISTORY_HEADERS.length ||
+      historyHeaders.some((header, index) => header.trim().toLowerCase() !== HISTORY_HEADERS[index])) {
+    throw new Error("Weekly Metrics History headers do not match the expected format")
+  }
+  const normalized = headers.map(header => header.trim().toLowerCase())
+  let nameIndex = normalized.findIndex(header => header === "subreddit" || header === "subreddit name")
+  if (nameIndex < 0) nameIndex = normalized.indexOf("link")
+  if (nameIndex < 0) return rows
+  const columns = WEEKLY_HEADERS.map(header => normalized.indexOf(header))
+  const samples = new Map<string, Map<number, (number | null)[]>>()
+  for (const row of historyRows) {
+    const name = subredditKey(row[0] || "")
+    const timestamp = row[1] || ""
+    // Require a timestamp with an explicit UTC offset, not locale-dependent dates.
+    if (!name || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|\+00:00)$/.test(timestamp)) continue
+    const time = Date.parse(timestamp)
+    if (!Number.isFinite(time) || time > now) continue
+    const values = columns.map((_, index) => {
+      const raw = (row[index + 2] || "").trim()
+      const value = /^\d+$/.test(raw) ? Number(raw) : NaN
+      return Number.isSafeInteger(value) && value > 0 ? value : null
+    })
+    if (!samples.has(name)) samples.set(name, new Map())
+    samples.get(name)!.set(time, values) // Rerun timestamps count once, as in the repair worker.
+  }
+  return rows.map(row => {
+    const observations = [...(samples.get(subredditKey(row[nameIndex] || "")) || new Map()).entries()]
+      .sort(([left], [right]) => left - right).map(([, values]) => values)
+    const restored = [...row]
+    columns.forEach((column, metric) => {
+      if (column < 0 || !missingWeekly(row[column])) return
+      const positive = observations.map(values => values[metric])
+        .filter((value): value is number => value !== null).slice(-3)
+      if (!positive.length) return
+      const mean = positive.reduce((sum, value) => sum + value, 0) / positive.length
+      // Python's round uses ties-to-even; match the scraper rather than rounding .5 upward.
+      const lower = Math.floor(mean)
+      restored[column] = String(mean - lower === 0.5 ? lower + (lower % 2) : Math.round(mean))
+    })
+    return restored
+  })
 }
 
 export type RowHealth = { status: "stale" | "unverified"; lastAttemptAt: string }
@@ -54,7 +111,7 @@ export function sourceRowHealth(headers: string[], rows: string[][]): Record<str
 /** Missing values stay at the bottom in either direction. */
 export function compareDatabaseValues(left: string, right: string, direction: "asc" | "desc"): number {
   const a = left.trim(), b = right.trim()
-  const missing = (value: string) => !value || /^(unknown|n\/a|awaiting data)$/i.test(value)
+  const missing = (value: string) => !value || /^(unknown|n\/a|awaiting data|—)$/i.test(value)
   if (missing(a)) return missing(b) ? 0 : 1
   if (missing(b)) return -1
   const number = (value: string) => {

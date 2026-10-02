@@ -48,6 +48,56 @@ test('the website follows Sheet rows without merging approved DB-only records', 
   assert.doesNotMatch(source, /FROM master_subreddits/)
 })
 
+test('paid views restore weekly history before display; free previews never read it', async () => {
+  for (const tier of [2, 1]) {
+    let historyCalls = 0
+    const route = load('app/api/reddit-database/route.ts', {
+      'next/server': next,
+      '@/lib/auth': { verifyToken: () => ({ userId: 7 }) },
+      '@/lib/limits': { getActiveTierForUser: async () => ({ id: tier }) },
+      '@/lib/reddit-database-display': display,
+      '@/lib/google-sheets-reader': {
+        parseSpreadsheetUrl: () => ({ spreadsheetId: 'fixture', gid: '0' }),
+        createWorkbookReader: async () => ({
+          readByGid: async () => ({ title: 'Sheet1', headers: ['Subreddit', 'Link', 'Hot 1 (Weekly)', 'Sync Status'],
+            rows: [['Example', '', '0', 'success']] }),
+          readByName: async (name, columns) => {
+            historyCalls++
+            assert.equal(name, 'Weekly Metrics History'); assert.equal(columns, 'A:E')
+            return { headers: ['Subreddit', 'Scraped At UTC', 'Hot 1', 'Hot 2-5 Avg', 'Hot 6-10 Avg'],
+              rows: [['example', '2026-09-01T00:00:00Z', '200'], ['example', '2026-09-02T00:00:00Z', '400']] }
+          },
+        }),
+      },
+    }, { SUBREDDIT_SHEET_URL: 'fixture' })
+    const response = await route.GET(new Request('https://example.test', { headers: { authorization: 'Bearer fixture' } }))
+    assert.equal(response.status, 200)
+    assert.equal(historyCalls, tier === 1 ? 0 : 1)
+    assert.equal(response.body.mainSheet.rows[0][1], tier === 1 ? '••••••' : '300')
+  }
+})
+
+test('an unavailable history sheet leaves published data intact and the database accessible', async () => {
+  const route = load('app/api/reddit-database/route.ts', {
+    'next/server': next,
+    '@/lib/auth': { verifyToken: () => ({ userId: 7 }) },
+    '@/lib/limits': { getActiveTierForUser: async () => ({ id: 2 }) },
+    '@/lib/reddit-database-display': display,
+    '@/lib/google-sheets-reader': {
+      parseSpreadsheetUrl: () => ({ spreadsheetId: 'fixture', gid: '0' }),
+      createWorkbookReader: async () => ({
+        readByGid: async () => ({ title: 'Sheet1', headers: ['Subreddit', 'Hot 1 (Weekly)', 'Hot 2-5 Avg (Weekly)'],
+          rows: [['Example', '500', '']] }),
+        readByName: async () => { throw new Error('History unavailable') },
+      }),
+    },
+  }, { SUBREDDIT_SHEET_URL: 'fixture' })
+  const response = await route.GET(new Request('https://example.test', { headers: { authorization: 'Bearer fixture' } }))
+  assert.equal(response.status, 200)
+  assert.equal(response.body.mainSheet.rows[0][1], '500')
+  assert.equal(response.body.mainSheet.rows[0][2], '')
+})
+
 test('review reads and writes require admin authentication before any DB access', async () => {
   const route = load('app/api/admin/pending/route.ts', {
     'next/server': next, '@/lib/auth': { verifyAdminToken: () => null },
