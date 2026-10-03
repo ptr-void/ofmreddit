@@ -9,7 +9,7 @@ function load(relative, dependencies, env = {}) {
   const code = ts.transpileModule(fs.readFileSync(path.join(__dirname, '..', relative), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
   }).outputText
-  const context = { exports: {}, process: { env }, console, require: name => {
+  const context = { exports: {}, process: { env }, Date: class extends Date { static now() { return Date.parse("2026-10-03T00:00:00Z") } }, console, require: name => {
     if (!(name in dependencies)) throw new Error(`Unexpected import ${name}`)
     return dependencies[name]
   } }
@@ -73,7 +73,7 @@ test('paid views restore weekly history before display; free previews never read
     const response = await route.GET(new Request('https://example.test', { headers: { authorization: 'Bearer fixture' } }))
     assert.equal(response.status, 200)
     assert.equal(historyCalls, tier === 1 ? 0 : 1)
-    assert.equal(response.body.mainSheet.rows[0][1], tier === 1 ? '••••••' : '300')
+    assert.equal(response.body.mainSheet.rows[0][1], tier === 1 ? '••••••' : '400')
   }
 })
 
@@ -98,49 +98,38 @@ test('an unavailable history sheet leaves published data intact and the database
   assert.equal(response.body.mainSheet.rows[0][2], '')
 })
 
-test('historical baselines follow real weekly history, carry dates, and stay hidden in free previews', async () => {
-  for (const tier of [2, 1]) {
-    const calls = []
-    const route = load('app/api/reddit-database/route.ts', {
-      'next/server': next,
-      '@/lib/auth': { verifyToken: () => ({ userId: 7 }) },
-      '@/lib/limits': { getActiveTierForUser: async () => ({ id: tier }) },
-      '@/lib/reddit-database-display': display,
-      '@/lib/google-sheets-reader': {
-        parseSpreadsheetUrl: () => ({ spreadsheetId: 'fixture', gid: '0' }),
-        createWorkbookReader: async () => ({
-          readByGid: async () => ({ title: 'Sheet1',
-            headers: ['Subreddit','Link','Hot 1 (Weekly)','Hot 2-5 Avg (Weekly)','Hot 6-10 Avg (Weekly)'],
-            rows: [['Example','','0','','50']] }),
-          readByName: async (name, columns) => {
-            calls.push([name,columns])
-            if(name === 'Weekly Metrics History') return {
-              headers: ['Subreddit','Scraped At UTC','Hot 1','Hot 2-5 Avg','Hot 6-10 Avg'],
-              rows: [['example','2026-09-01T00:00:00Z','300']] }
-            assert.equal(name,'Weekly Metric Baselines'); assert.equal(columns,'A:H')
-            return {
-              headers: ['Subreddit','Metric','Window Start UTC','Window End UTC','Observed At UTC','Score','Post Count','Post IDs JSON'],
-              rows: ['Hot 1 (Weekly)','Hot 2-5 Avg (Weekly)','Hot 6-10 Avg (Weekly)'].map(metric =>
-                ['example',metric,'2026-06-14T00:00:00Z','2026-06-21T00:00:00Z','2026-09-02T00:00:00Z','200','10',JSON.stringify(Array.from({length:10},(_,i)=>`p${i}`))]),
-            }
+test('four-week display recalculates published cells without ever loading dated baselines',async()=>{
+  for (const tier of [2,1]) {
+    const calls=[]
+    const route=load('app/api/reddit-database/route.ts',{
+      'next/server':next,
+      '@/lib/auth':{verifyToken:()=>({userId:7})},
+      '@/lib/limits':{getActiveTierForUser:async()=>({id:tier})},
+      '@/lib/reddit-database-display':display,
+      '@/lib/google-sheets-reader':{
+        parseSpreadsheetUrl:()=>({spreadsheetId:'fixture',gid:'0'}),
+        createWorkbookReader:async()=>({
+          readByGid:async()=>({title:'Sheet1',headers:['Subreddit','Link','Hot 1 (Weekly)','Hot 2-5 Avg (Weekly)','Hot 6-10 Avg (Weekly)'],rows:[['Example','','9999','9999','50']]}),
+          readByName:async(name,columns)=>{
+            calls.push([name,columns]);assert.equal(name,'Weekly Metrics History');assert.equal(columns,'A:E')
+            return {headers:['Subreddit','Scraped At UTC','Hot 1','Hot 2-5 Avg','Hot 6-10 Avg'],rows:[
+              ['example','2026-09-11T00:00:00Z','100','50'],
+              ['example','2026-09-18T00:00:00Z','200','60'],
+              ['example','2026-09-25T00:00:00Z','300','70'],
+              ['example','2026-09-30T00:00:00Z','400','80'],
+            ]}
           },
         }),
       },
-    }, { SUBREDDIT_SHEET_URL: 'fixture' })
-    const response = await route.GET(new Request('https://example.test',{headers:{authorization:'Bearer fixture'}}))
-    assert.equal(response.status,200)
-    if(tier === 1) {
-      assert.equal(calls.length,0); assert.equal(Object.keys(response.body.weeklyBaselines).length,0)
-      assert.equal(response.body.mainSheet.rows[0][1],'••••••')
-    } else {
-      assert.equal(calls.length,2)
-      assert.equal(response.body.mainSheet.rows[0][1],'300')
-      assert.equal(response.body.mainSheet.rows[0][2],'200')
-      assert.equal(response.body.mainSheet.rows[0][3],'50')
-      assert.equal(Object.keys(response.body.weeklyBaselines.example).length,1)
-      assert.equal(response.body.weeklyBaselines.example['hot 2-5 avg (weekly)'].end,'2026-06-21T00:00:00Z')
-    }
+    },{SUBREDDIT_SHEET_URL:'fixture'})
+    const response=await route.GET(new Request('https://example.test',{headers:{authorization:'Bearer fixture'}}))
+    assert.equal(response.status,200);assert.equal(response.body.weeklyBaselines,undefined)
+    assert.equal(calls.length,tier===1?0:1)
+    if(tier===2) assert.deepEqual(Array.from(response.body.mainSheet.rows[0].slice(1)),['250','65','50'])
+    else assert.equal(response.body.mainSheet.rows[0][1],'••••••')
   }
+  const source=fs.readFileSync(path.join(__dirname,'../app/api/reddit-database/route.ts'),'utf8')
+  assert.doesNotMatch(source,/Weekly Metric Baselines|applyHistoricalWeeklyBaselines/)
 })
 
 test('review reads and writes require admin authentication before any DB access', async () => {

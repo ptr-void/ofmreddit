@@ -145,43 +145,26 @@ quality or live generation availability.
 
 Migration reference: https://ai.google.dev/gemini-api/docs/generate-content/latest-model
 
-### Weekly history display fallback
+### Four-week performance averages
 
-Paid database views recover blank/zero weekly metrics from `Weekly Metrics History`
-using the scraper's latest-three-positive mean, without changing published nonzero
-values or writing to Sheets. Only the five history columns are fetched, and only
-when weekly values are missing. Missing/invalid history does not prevent the main
-sheet from loading. A dash means no positive history exists, not that rolling
-averages are pending. Free previews never fetch or expose history.
+Top 1, Top 2–5 and Top 6–10 display equal-weight averages of four UTC calendar
+weeks, **not four scrape runs**. Each week contributes its latest positive raw
+reading for that rank group. Current-week samples enter the displayed average
+only from Wednesday 00:00 UTC; before that, the previous four completed weeks
+remain selected. Each group handles missing readings independently. Missing or
+zero refreshes retain the last published average rather than forcing it to zero.
 
-### Dated historical weekly baselines
+The existing sync records raw readings in `Weekly Metrics History`; both the
+worker and website use the same calendar-window rules. The paid database view
+recomputes every performance cell from this history, not only missing cells.
+Free previews do not read or expose it. Fewer than four recorded weeks use the
+available eligible weeks while history builds; no extra weeks or scores are
+fabricated. If no eligible reading exists, the last published sheet value stays.
 
-When a stat has neither a published weekly average nor positive weekly history,
-the database can show a **Historical** seven-day baseline with its date range.
-The score is measured at the recorded observation time for older posts; it is not
-current weekly activity or an archived score from that historical date. Sparse
-rank groups may use different older periods, each labelled individually.
-
-The scraper stores these separately in `Weekly Metric Baselines`, not in the
-live sheet's weekly cells or `Weekly Metrics History`. Valid current averages
-always take precedence. The regular sync backfills missing baselines once and
-retains them; users do not have to run it manually. It examines at most 1,000
-recent posts per affected subreddit and publishes only complete seven-day
-periods. A group with no complete positive period stays unavailable, never made
-up or copied from a different rank group.
-
-For an initial audit/backfill:
-
-```powershell
-python scraper/weekly_baselines.py --max-subreddits 30
-# Review the generated report, then apply it without fetching Reddit again:
-python scraper/weekly_baselines.py --apply --apply-report output/weekly-baseline-backfill-TIMESTAMP.json
-```
-
-Application rechecks active membership, missing cells and existing baseline keys,
-saves the pre-write worksheet snapshot plus exact appended records, and verifies
-readback. Rollback is limited to those appended records in the baseline worksheet
-using the saved snapshot; do not replace the live sheet or newer weekly history.
+The former `Weekly Metric Baselines` worksheet is preserved for audit only: it
+is not read by the website or generated automatically by the sync. Historical
+post-period estimates and per-cell date badges are removed. `—` remains for
+metrics with neither recorded eligible history nor a published positive value.
 
 ### Caption timeout handling
 

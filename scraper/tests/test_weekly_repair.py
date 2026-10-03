@@ -18,7 +18,7 @@ class WeeklyRepairTests(unittest.TestCase):
         import copy
         before = copy.deepcopy(matrix)
         plan = repair_plan(matrix, history, datetime(2026, 10, 1, tzinfo=timezone.utc))
-        self.assertEqual([(p["range"], p["after"]) for p in plan], [("B2", 150), ("D2", 10)])
+        self.assertEqual([(p["range"], p["after"]) for p in plan], [("B2", 200), ("D2", 10)])
         self.assertEqual(matrix, before)
 
     def test_history_header_mismatch_aborts(self):

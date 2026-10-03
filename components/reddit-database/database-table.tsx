@@ -3,7 +3,7 @@
 import { useMemo, useState, useRef, useCallback } from "react"
 import { SortIcon } from "@/components/reddit-database/icons"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { compareDatabaseValues, databaseColumnLabel, formatDatabaseMetric, subredditKey, weeklyBaselineLabel, type RowHealth, type WeeklyBaselines } from "@/lib/reddit-database-display"
+import { compareDatabaseValues, databaseColumnLabel, formatDatabaseMetric, subredditKey, type RowHealth } from "@/lib/reddit-database-display"
 
 type SortDirection = "asc" | "desc" | null
 
@@ -18,7 +18,6 @@ type Props = {
   sortState: SortState
   onSort: (index: number) => void
   rowHealth?: Record<string, RowHealth>
-  weeklyBaselines?: WeeklyBaselines
 }
 
 const COLUMN_INFO: Record<string, string> = {
@@ -30,9 +29,9 @@ const COLUMN_INFO: Record<string, string> = {
   "min comment karma": "Three-scrape rolling average of the lowest comment karma observed among recent surviving post authors. This is not a direct AutoModerator rule lookup.",
   "min total karma": "Three-scrape rolling average of the lowest combined karma observed among recent surviving post authors. This is not a direct AutoModerator rule lookup.",
   "min account age": "Three-scrape rolling average of the youngest account age observed among recent surviving post authors, shown in days. This is not a direct posting-rule lookup.",
-  "hot 1 (weekly)": "Mean of the latest three positive observations of the upvote score of the subreddit’s highest-ranked weekly Top post. Empty or zero-score refreshes retain positive history; this is a smoothed indicator, not the current raw score.",
-  "hot 2-5 avg (weekly)": "Mean of the latest three positive observations of the mean upvote score for weekly Top posts ranked 2 through 5.",
-  "hot 6-10 avg (weekly)": "Mean of the latest three positive observations of the mean upvote score for weekly Top posts ranked 6 through 10.",
+  "hot 1 (weekly)": "Average of the latest positive weekly Top 1 reading in each of four UTC calendar weeks. The current week joins from Wednesday. Missing readings retain the last published average; incomplete history uses available weeks.",
+  "hot 2-5 avg (weekly)": "Four-week average of weekly Top posts ranked 2 through 5, using one latest positive reading per week. Current-week readings join from Wednesday.",
+  "hot 6-10 avg (weekly)": "Four-week average of weekly Top posts ranked 6 through 10, using one latest positive reading per week. Current-week readings join from Wednesday.",
   "bot bouncer": "The scraper searches for BotBouncer in the moderator list and reports the result to the database. A blank value means the moderator list could not be verified.",
   "cta captions": "Checks surviving recent post titles for question/CTA forms such as ?, would, how, what, do, or. This is observed behavior, not a direct rule lookup.",
 }
@@ -49,7 +48,7 @@ function displaySubredditName(value: string) {
     .replace(/\/+$/, "")
 }
 
-export default function DatabaseTable({ headers, rows, sortState, onSort, rowHealth = {}, weeklyBaselines = {} }: Props) {
+export default function DatabaseTable({ headers, rows, sortState, onSort, rowHealth = {} }: Props) {
   const [columnWidths, setColumnWidths] = useState<Record<number, number>>({})
   const isResizingRef = useRef(false)
 
@@ -186,8 +185,6 @@ export default function DatabaseTable({ headers, rows, sortState, onSort, rowHea
               {headers.map((header, ci) => {
                 const displayValue = row[ci] ?? ""
                 const formattedValue = formatDatabaseMetric(header, displayValue)
-                const baseline = weeklyBaselines[subredditKey(row[0] || "")]?.[header.trim().toLowerCase()]
-                const baselineLabel = baseline ? weeklyBaselineLabel(baseline) : ""
                 const health = header === "Subreddit Name" ? rowHealth[subredditKey(displayValue)] : undefined
                 const isSubredditColumn = ci === 0
                 const stickyColumnClass = isSubredditColumn
@@ -240,15 +237,9 @@ export default function DatabaseTable({ headers, rows, sortState, onSort, rowHea
                   <td
                     key={ci}
                     className={`truncate px-2 py-2 text-xs md:text-sm ${stickyColumnClass} ${displayValue === "••••••" ? "pointer-events-none select-none blur-sm" : ""}`}
-                    title={displayValue === "••••••" ? undefined : baseline
-                      ? `${baselineLabel}. Scores measured ${baseline.observedAt.slice(0, 10)} for older posts; not current weekly activity or archived scores.` : formattedValue}
+                    title={displayValue === "••••••" ? undefined : formattedValue}
                   >
                     {formattedValue}
-                    {baseline && (
-                      <span className="block whitespace-normal text-[10px] text-amber-700 dark:text-amber-400">
-                        {baselineLabel}
-                      </span>
-                    )}
                   </td>
                 );
               })}

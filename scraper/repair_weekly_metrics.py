@@ -36,10 +36,7 @@ def repair_plan(matrix, history, now=None):
         if not stamp or stamp > now:
             continue
         row = list(row) + [""] * max(0, 5 - len(row))
-        try:
-            values = tuple(int(value) if str(value).strip() else None for value in row[2:5])
-        except (ValueError, TypeError):
-            continue
+        values = tuple(int(value) if re.fullmatch(r"\d+", str(value).strip()) else None for value in row[2:5])
         samples.setdefault(normalize_subreddit(row[0]), {})[stamp] = values
     plan = []
     for number, row in enumerate(matrix[1:], 2):
@@ -47,7 +44,7 @@ def repair_plan(matrix, history, now=None):
         if not name or (si >= 0 and len(row) > si and row[si].strip().lower() == "archived"):
             continue
         recorded = samples.get(name, {})
-        means = rolling_weekly_metrics((None, None, None), [values for _, values in sorted(recorded.items())])
+        means = rolling_weekly_metrics(list(recorded.items()), now=now)
         for column, header, mean in zip(columns, HEADERS, means):
             before = str(row[column]) if len(row) > column else ""
             if mean is not None and before.strip() in ("", "0"):

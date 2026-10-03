@@ -72,9 +72,12 @@ class FakeWorkbook:
 
 
 class SubredditSyncTests(unittest.TestCase):
-    def test_weekly_metrics_use_three_recent_valid_snapshots(self):
-        self.assertEqual(rolling_weekly_metrics((0, 0, 0), []), (None, None, None))
-        self.assertEqual(rolling_weekly_metrics((30, 6, 3), [(999, 999, 999), (90, 12, 9), (60, 9, 6)]), (60, 9, 6))
+    def test_weekly_metrics_use_four_calendar_weeks(self):
+        from pathlib import Path
+        cases = json.loads((Path(__file__).resolve().parents[2] / "tests/fixtures/four-week-metrics.json").read_text())
+        for case in cases:
+            with self.subTest(case["name"]):
+                self.assertEqual(rolling_weekly_metrics(case["samples"], now=parse_utc(case["now"])), tuple(case["expected"]))
 
     def test_observed_minimums_average_each_metric_independently(self):
         self.assertEqual(
@@ -142,7 +145,7 @@ class SubredditSyncTests(unittest.TestCase):
         history.append_rows = lambda rows, **kwargs: history.values.extend(rows)
         store = object.__new__(GoogleSheetStore)
         store.workbook = SimpleNamespace(worksheet=lambda _: history)
-        result = ScrapeResult(subreddit="target", source_row=2, scraped_at_utc="2026-09-15T00:00:00Z",
+        result = ScrapeResult(subreddit="target", source_row=2, scraped_at_utc="2026-09-16T00:00:00Z",
                               weekly_top_1_upvotes=30, weekly_top_2_5_avg_upvotes=6,
                               weekly_top_6_10_avg_upvotes=3, weekly_top_10_posts=[{"id": "post"}])
         store.apply_weekly_rolling_average([result])
@@ -163,8 +166,8 @@ class SubredditSyncTests(unittest.TestCase):
         self.assertEqual((result.weekly_top_1_upvotes, result.weekly_top_2_5_avg_upvotes,
                           result.weekly_top_6_10_avg_upvotes), (90, 12, 9))
         self.assertEqual(len(history.values), 3)
-        self.assertEqual(rolling_weekly_metrics((0, None, 0), [(90, 12, 9)]), (90, 12, 9))
-        self.assertEqual(rolling_weekly_metrics((None, None, None), []), (None, None, None))
+        self.assertEqual(rolling_weekly_metrics([("2026-09-01T00:00:00Z", (90, 12, 9))], now=parse_utc("2026-09-15T00:00:00Z")), (90, 12, 9))
+        self.assertEqual(rolling_weekly_metrics([], now=utc_now()), (None, None, None))
 
     def test_weekly_history_rerun_is_idempotent(self):
         from scraper.subreddit_sync import WEEKLY_HISTORY_HEADERS
@@ -181,6 +184,28 @@ class SubredditSyncTests(unittest.TestCase):
         store.apply_weekly_rolling_average([second])
         self.assertEqual(first.weekly_top_1_upvotes, second.weekly_top_1_upvotes)
         self.assertEqual(len(history.values), 3)
+
+    def test_early_week_raw_sample_is_saved_but_not_published_until_midweek(self):
+        from scraper.subreddit_sync import WEEKLY_HISTORY_HEADERS
+        history = FakeWorksheet(values=[WEEKLY_HISTORY_HEADERS,
+            ["target", "2026-09-04T00:00:00Z", "100", "40", "20"],
+            ["target", "2026-09-11T00:00:00Z", "200", "60", "30"],
+            ["target", "2026-09-18T00:00:00Z", "300", "80", "40"],
+            ["target", "2026-09-25T00:00:00Z", "400", "100", "50"]])
+        history.append_rows = lambda rows, **kwargs: history.values.extend(rows)
+        store = object.__new__(GoogleSheetStore)
+        store.workbook = SimpleNamespace(worksheet=lambda _: history)
+        early = ScrapeResult(subreddit="target", source_row=2, scraped_at_utc="2026-09-29T12:00:00Z",
+                             weekly_top_1_upvotes=1, weekly_top_2_5_avg_upvotes=1, weekly_top_6_10_avg_upvotes=1)
+        store.apply_weekly_rolling_average([early])
+        self.assertEqual(history.values[-1][2:], [1, 1, 1])
+        self.assertEqual((early.weekly_top_1_upvotes, early.weekly_top_2_5_avg_upvotes, early.weekly_top_6_10_avg_upvotes), (250, 70, 35))
+        mature = ScrapeResult(subreddit="target", source_row=2, scraped_at_utc="2026-09-30T12:00:00Z",
+                              weekly_top_1_upvotes=500, weekly_top_2_5_avg_upvotes=120, weekly_top_6_10_avg_upvotes=60)
+        store.apply_weekly_rolling_average([mature])
+        self.assertEqual((mature.weekly_top_1_upvotes, mature.weekly_top_2_5_avg_upvotes, mature.weekly_top_6_10_avg_upvotes), (350, 90, 45))
+        source = __import__("pathlib").Path(__file__).resolve().parents[1].joinpath("subreddit_sync.py").read_text()
+        self.assertNotIn("baseline_report = backfill", source)
 
     def test_blank_history_sheet_initializes_headers(self):
         from scraper.subreddit_sync import WEEKLY_HISTORY_HEADERS

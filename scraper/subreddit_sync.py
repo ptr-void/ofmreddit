@@ -68,7 +68,7 @@ OBSERVED_HISTORY_HEADERS = [
     "Subreddit", "Scraped At UTC", "Min Post Karma", "Min Comment Karma",
     "Min Total Karma", "Min Account Age", "Observed Accounts",
 ]
-WEEKLY_ROLLING_SAMPLES = 3
+OBSERVED_ROLLING_SAMPLES = 3
 OBSERVED_METRIC_FIELDS = (
     "min_post_karma", "min_comment_karma", "min_combined_karma", "min_account_age_days",
 )
@@ -110,25 +110,50 @@ def average_int(values: Sequence[int]) -> int:
     return round(sum(values) / len(values)) if values else 0
 
 
-def rolling_weekly_metrics(current: Sequence[int | None], history: Sequence[Sequence[int | None]], samples: int = WEEKLY_ROLLING_SAMPLES) -> tuple[int | None, ...]:
-    """Mean of the latest positive observations per metric; missing/zero samples retain history.
+def rolling_weekly_metrics(history: Sequence[tuple[str | datetime, Sequence[int | None]]],
+                           *, now: datetime) -> tuple[int | None, ...]:
+    """Equal-weight four-week mean; current week joins from Wednesday UTC.
 
-    These are smoothed performance indicators, not the current raw Reddit score.
-    No available positive observation remains unknown rather than inventing a score.
+    Choose one latest positive reading per metric/week. Multiple daily samples
+    never count as multiple weeks. Missing groups keep the four completed weeks;
+    no observations outside that calendar window are imported as a fallback.
     """
-    window = list(history) + [current]
+    now = now.astimezone(UTC)
+    current_week = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=now.weekday())
+    midweek = current_week + timedelta(days=2)
+    recorded = {}
+    for raw_stamp, values in history:
+        if isinstance(raw_stamp, str) and not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|\+00:00)", raw_stamp):
+            continue
+        stamp = raw_stamp if isinstance(raw_stamp, datetime) else parse_utc(raw_stamp)
+        if stamp and stamp.tzinfo is not None:
+            stamp = stamp.astimezone(UTC)
+        else:
+            continue
+        if not stamp or stamp > now or stamp < current_week - timedelta(weeks=4):
+            continue
+        recorded[stamp] = values
     means = []
     for index in range(3):
-        observed = [int(row[index]) for row in window
-                    if index < len(row) and row[index] is not None and int(row[index]) > 0]
-        means.append(average_int(observed[-max(1, samples):]) if observed else None)
+        weekly = {}
+        for stamp, values in sorted(recorded.items()):
+            value = values[index] if index < len(values) else None
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                continue
+            week = stamp.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=stamp.weekday())
+            if week == current_week and stamp < midweek:
+                continue
+            weekly[week] = value
+        end = current_week if current_week in weekly else current_week - timedelta(weeks=1)
+        values = [value for week, value in weekly.items() if end - timedelta(weeks=3) <= week <= end]
+        means.append(average_int(values) if values else None)
     return tuple(means)
 
 
 def rolling_observed_minimums(
     current: Sequence[int | None],
     history: Sequence[Sequence[int | None]],
-    samples: int = WEEKLY_ROLLING_SAMPLES,
+    samples: int = OBSERVED_ROLLING_SAMPLES,
 ) -> tuple[int | None, ...]:
     """Average each available sampled-minimum metric across recent successful scrapes."""
     window = list(history[-(samples - 1):]) + [current] if samples > 1 else [current]
@@ -699,7 +724,7 @@ class GoogleSheetStore:
             self.sheet1.add_cols(required_columns - current_columns)
 
     def apply_weekly_rolling_average(self, results: Sequence[ScrapeResult]) -> None:
-        """Persist raw weekly samples and display a three-scrape rolling mean."""
+        """Persist raw readings and publish an equal-weight four-calendar-week average."""
         valid = [result for result in results if result.status == "success" and result.source_row >= 2]
         if not valid:
             return
@@ -723,25 +748,20 @@ class GoogleSheetStore:
                 continue
             row = list(row) + [""] * max(0, 5 - len(row))
             key = normalize_subreddit(row[0])
-            try:
-                sample = tuple(int(value) if str(value).strip() else None for value in row[2:5])
-            except ValueError:
-                continue
+            sample = tuple(int(value) if re.fullmatch(r"\d+", str(value).strip()) else None for value in row[2:5])
             previous.setdefault(key, []).append((row[1], sample))
         additions = []
         for result in valid:
             key = normalize_subreddit(result.subreddit)
             raw = (result.weekly_top_1_upvotes, result.weekly_top_2_5_avg_upvotes, result.weekly_top_6_10_avg_upvotes)
-            recorded = sorted((item for item in previous.get(key, []) if item[0] <= result.scraped_at_utc), key=lambda item: item[0])
-            # Re-runs of the same scrape must not weight one observation twice.
-            if any(stamp == result.scraped_at_utc for stamp, _ in recorded):
-                samples = [sample for stamp, sample in recorded if stamp <= result.scraped_at_utc]
-                mean = rolling_weekly_metrics((None, None, None), samples)
-            else:
-                mean = rolling_weekly_metrics(raw, [sample for _, sample in recorded])
-                if any(value is not None for value in raw):
-                    additions.append([result.subreddit, result.scraped_at_utc, *[value if value is not None else "" for value in raw]])
-                    previous.setdefault(key, []).append((result.scraped_at_utc, raw))
+            recorded = {stamp: sample for stamp, sample in previous.get(key, [])}
+            # Raw observations are stored even early in the week, but do not enter
+            # the published mean until Wednesday. Rerun timestamps count once.
+            if result.scraped_at_utc not in recorded and any(value is not None for value in raw):
+                additions.append([result.subreddit, result.scraped_at_utc, *[value if value is not None else "" for value in raw]])
+                recorded[result.scraped_at_utc] = raw
+                previous.setdefault(key, []).append((result.scraped_at_utc, raw))
+            mean = rolling_weekly_metrics(list(recorded.items()), now=parse_utc(result.scraped_at_utc) or utc_now())
             result.weekly_top_1_upvotes, result.weekly_top_2_5_avg_upvotes, result.weekly_top_6_10_avg_upvotes = mean
         if additions:
             history_sheet.append_rows(additions, value_input_option="RAW")
@@ -1325,23 +1345,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         sheet_store.apply_weekly_rolling_average(results)
         sheet_store.write_results(results)
         LOG.info("Google Sheets batch update completed")
-        baseline_names = [result.subreddit for result in results if result.status == "success"
-                          and result.source_row >= 2 and any(value is None for value in (
-                              result.weekly_top_1_upvotes, result.weekly_top_2_5_avg_upvotes,
-                              result.weekly_top_6_10_avg_upvotes))]
-        if baseline_names:
-            try:
-                try:
-                    from scraper.weekly_baselines import backfill
-                except ModuleNotFoundError:
-                    from weekly_baselines import backfill
-                baseline_report = backfill(sheet_store, analyzer, names=baseline_names, apply=True,
-                                           max_subreddits=len(baseline_names))
-                if baseline_report["errors"]:
-                    LOG.warning("Some dated historical baselines were deferred; inspect the baseline report")
-            except Exception as exc:
-                # Optional historical context must not interrupt current weekly progress or chaining.
-                LOG.warning("Historical weekly baseline backfill deferred: %s", exc)
     else:
         LOG.info("Google Sheets dry-run: no values changed")
 

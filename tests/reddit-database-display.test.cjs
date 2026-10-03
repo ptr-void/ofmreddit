@@ -79,71 +79,37 @@ test("review text reflects the 400-upvote policy and explains the limits of Redd
   assert.doesNotMatch(review, /at least 100 upvotes/)
   assert.match(review, /flag alone does not verify/)
   const page = fs.readFileSync(path.join(__dirname, "../app/reddit-database/page.tsx"), "utf8")
-  assert.match(page, /latest three positive readings/)
+  assert.match(page, /four-week rolling averages/)
 })
 
-const { needsWeeklyHistory, restoreWeeklyAverages } = context.exports
+const { hasWeeklyMetrics, applyFourWeekAverages } = context.exports
 const weeklyHeaders = ['Subreddit', 'Hot 1 (Weekly)', 'Hot 2-5 Avg (Weekly)', 'Hot 6-10 Avg (Weekly)']
 const historyHeaders = ['Subreddit', 'Scraped At UTC', 'Hot 1', 'Hot 2-5 Avg', 'Hot 6-10 Avg']
-test('missing weekly stats recover independent latest-three-positive means without overwriting published values', () => {
-  const rows = [['r/Example/', '0', '', '99'], ['no_history', '', '0', '']]
-  const before = JSON.stringify(rows)
-  const history = [
-    ['example', '2026-09-01T00:00:00Z', '100', '40', '20'],
-    ['example', '2026-09-03T00:00:00Z', '400', '0', '30'],
-    ['example', '2026-09-02T00:00:00+00:00', '200', '60'],
-    ['EXAMPLE', '2026-09-04T00:00:00Z', '600', '80'],
-    ['example', '2026-09-04T00:00:00Z', '600', '80'],
-    ['example', '2026-09-05T00:00:00Z', '0', ''],
-    ['example', '2099-09-01T00:00:00Z', '9999', '9999', '9999'],
-    ['example', 'not-a-date', '9999', '9999', '9999'],
-  ]
-  assert.equal(needsWeeklyHistory(weeklyHeaders, rows), true)
-  const result = restoreWeeklyAverages(weeklyHeaders, rows, historyHeaders, history, Date.parse('2026-10-01T00:00:00Z'))
-  assert.equal(result[0][1], '400'); assert.equal(result[0][2], '60'); assert.equal(result[0][3], '99')
-  assert.equal(JSON.stringify(result[1]), JSON.stringify(rows[1]))
-  assert.equal(JSON.stringify(rows), before)
-  assert.equal(needsWeeklyHistory(weeklyHeaders, [['example', '100', '60', '20']]), false)
-  assert.equal(needsWeeklyHistory(['Subreddit', 'Members'], [['example', '0']]), false)
-})
-test('history validates headers, supports partial metric observations and matches Python rounding', () => {
-  const history = [ ['example','2026-09-01T00:00:00Z','2','3','invalid'],
-    ['example','2026-09-02T00:00:00Z','3','4','0'] ]
-  const result = restoreWeeklyAverages(weeklyHeaders, [['example','','','']], historyHeaders, history)
-  assert.equal(result[0][1], '2'); assert.equal(result[0][2], '4'); assert.equal(result[0][3], '')
-  assert.throws(() => restoreWeeklyAverages(weeklyHeaders, [], ['wrong'], []), /headers/)
-  assert.equal(formatDatabaseMetric('Hot 1 (Weekly)', '0.0'), '—')
-  for (const direction of ['asc','desc']) assert.equal(compareDatabaseValues('—', '10', direction), 1)
+const cases = JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/four-week-metrics.json'),'utf8'))
+for (const fixture of cases) test(`four-week parity: ${fixture.name}`,()=>{
+  const rows = [['r/Example/', '', '', '']]
+  const history = fixture.samples.map(([stamp,values])=>['example',stamp,...values.map(value=>value===null?'':String(value))])
+  const result = applyFourWeekAverages(weeklyHeaders,rows,historyHeaders,history,Date.parse(fixture.now))
+  assert.deepEqual(Array.from(result[0].slice(1)),fixture.expected.map(value=>value===null?'':String(value)))
+  assert.equal(JSON.stringify(rows),JSON.stringify([['r/Example/','','','']]))
 })
 
-const baselineHeaders = ['Subreddit','Metric','Window Start UTC','Window End UTC','Observed At UTC','Score','Post Count','Post IDs JSON']
-const { applyHistoricalWeeklyBaselines, weeklyBaselineLabel } = context.exports
-const baselineRow = (metric='Hot 1 (Weekly)', value='1234') => ['example',metric,'2026-06-14T00:00:00Z','2026-06-21T00:00:00Z','2026-10-02T00:00:00Z',value,'10',JSON.stringify(Array.from({length:10},(_,i)=>`p${i}`))]
-test('historical baselines fill only unresolved weekly stats and carry explicit date provenance',()=>{
-  const rows=[['r/Example/','0','99',''], ['NoHistory','','','']]
-  const before=JSON.stringify(rows)
-  const result=applyHistoricalWeeklyBaselines(weeklyHeaders,rows,baselineHeaders,[baselineRow(),baselineRow('Hot 2-5 Avg (Weekly)','50'),baselineRow('Hot 6-10 Avg (Weekly)','20')],Date.parse('2026-10-03T00:00:00Z'))
-  assert.equal(result.rows[0][1],'1234');assert.equal(result.rows[0][2],'99');assert.equal(result.rows[0][3],'20')
-  assert.equal(result.baselines.example['hot 1 (weekly)'].end,'2026-06-21T00:00:00Z')
-  assert.equal(result.baselines.example['hot 2-5 avg (weekly)'],undefined)
-  assert.equal(weeklyBaselineLabel(result.baselines.example['hot 1 (weekly)']),'Historical · Jun 14–21, 2026')
-  assert.equal(formatDatabaseMetric('Hot 1 (Weekly)',result.rows[0][1]),'1,234')
-  assert.equal(JSON.stringify(rows),before)
+test('rolling means replace published three-scrape values, while absent history retains the published score',()=>{
+  const history=cases[1].samples.map(([stamp,values])=>['example',stamp,...values.map(String)])
+  const rows=[['example','9999','9999','9999'],['no_history','50','','']]
+  const result=applyFourWeekAverages(weeklyHeaders,rows,historyHeaders,history,Date.parse(cases[1].now))
+  assert.deepEqual(Array.from(result[0].slice(1)),['350','90','45'])
+  assert.equal(JSON.stringify(result[1]),JSON.stringify(rows[1]))
+  assert.equal(hasWeeklyMetrics(weeklyHeaders),true);assert.equal(hasWeeklyMetrics(['Subreddit','Members']),false)
+  assert.throws(()=>applyFourWeekAverages(weeklyHeaders,[],['wrong'],[]),/headers/)
 })
-test('invalid, future, current-week and unsupported historical rank groups are rejected',()=>{
-  const now=Date.parse('2026-10-03T00:00:00Z')
-  for(const [index,value] of [[2,'bad'],[4,'2099-01-01T00:00:00Z'],[5,'0'],[6,'0'],[7,'[]'],[7,'["p","p"]']]) {
-    const row=baselineRow();row[index]=value
-    const result=applyHistoricalWeeklyBaselines(weeklyHeaders,[['example','','','']],baselineHeaders,[row],now)
-    assert.equal(result.rows[0][1],'');assert.equal(Object.keys(result.baselines).length,0)
-  }
-  const recent=baselineRow();recent[2]='2026-09-25T00:00:00Z';recent[3]='2026-10-02T00:00:00Z'
-  assert.equal(applyHistoricalWeeklyBaselines(weeklyHeaders,[['example','','','']],baselineHeaders,[recent],now).rows[0][1],'')
-  assert.throws(()=>applyHistoricalWeeklyBaselines(weeklyHeaders,[],['wrong'],[],now),/headers/)
-})
-test('historical cells show their period and measurement date separately from current weekly figures',()=>{
+
+test('invalid history cells are independently ignored and arbitrary old dates never show on the table',()=>{
+  const result=applyFourWeekAverages(weeklyHeaders,[['example','','','']],historyHeaders,
+    [['example','2026-09-25T00:00:00Z','2','bad','4'],['example','bad','9999','9999','9999']],Date.parse('2026-09-30T00:00:00Z'))
+  assert.deepEqual(Array.from(result[0].slice(1)),['2','','4'])
   const table=fs.readFileSync(path.join(__dirname,'../components/reddit-database/database-table.tsx'),'utf8')
-  assert.match(table,/weeklyBaselineLabel/);assert.match(table,/Scores measured/)
-  assert.match(table,/not current weekly activity or archived scores/)
-  assert.match(table,/baselineLabel/)
+  assert.doesNotMatch(table,/weeklyBaselineLabel|baselineLabel|Scores measured|Historical ·/)
+  assert.match(table,/four UTC calendar weeks/)
+  assert.equal(databaseColumnLabel('Hot 1 (Weekly)'),'Top 1 (4-week avg)')
 })

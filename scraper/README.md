@@ -219,12 +219,16 @@ production row deletion is part of this feature.
 
 ### Weekly performance smoothing
 
-Weekly columns display the mean of the latest three positive samples per metric.
-Empty listings, missing ranks, and zero-score refreshes do not displace positive history.
-This is deliberately a smoothed performance indicator, not the current raw score.
-Without any positive history the metric remains unknown (website: Awaiting data).
-Raw samples remain in Weekly Metrics History; retries of the same timestamp are idempotent.
-Old zero cells recover as each row is refreshed. No minimum eligibility score is fabricated.
+Weekly columns show equal-weight averages of four UTC calendar weeks, not four
+scrape runs. Each week contributes its latest positive raw reading per rank
+group. New-week observations join from Wednesday 00:00 UTC; until then the
+previous four completed weeks stay selected. Missing/zero groups keep their
+prior window and the sheet writer retains the last published mean if none exists.
+Incomplete four-week history uses only recorded eligible weeks, not invented
+zeros. Raw readings remain in `Weekly Metrics History`, with idempotent timestamps.
+The website uses the same rules and no longer reads historical post-period
+baselines or shows their dates. No additional historical backfill requests run
+inside the sync. The existing scheduled cycle continues collecting observations.
 
 To restore legacy blank/zero weekly cells immediately, without a new scrape:
 
