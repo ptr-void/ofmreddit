@@ -15,10 +15,12 @@ export function VisitTracker() {
 
     const trackVisit = async () => {
       try {
+        const token = localStorage.getItem("token")
         await fetch("/api/track-visit", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
           body: JSON.stringify({ pagePath: pathname }),
           // We use keepalive so the request finishes even if the user navigates away

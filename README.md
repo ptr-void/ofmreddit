@@ -166,6 +166,32 @@ is not read by the website or generated automatically by the sync. Historical
 post-period estimates and per-cell date badges are removed. `—` remains for
 metrics with neither recorded eligible history nor a published positive value.
 
+### Account-linked website visits
+
+The admin Website Visits table shows Telegram handles and email for visits made
+with a verified signed-in token. Tracking resolves the user ID server-side and
+joins the existing user account; guest visits and old rows remain unidentified.
+It never backfills identity from IP addresses. These are page visits, not a count
+of successful caption generations. Account details are returned only to admins.
+
+For an existing database, prepare the additive identity column/index before deployment:
+
+```powershell
+node scripts/migrate-visit-identity.cjs # read-only plan
+node scripts/migrate-visit-identity.cjs --apply # save schema backup, add nullable user_id + index, verify
+```
+
+Fresh visit tables include the column. The setup endpoint requires admin auth.
+Until migration, tracking and admin analytics retain their legacy behavior and
+the admin table displays a setup notice. No live request performs schema writes.
+For rollback, revert application code while retaining the nullable column/index
+so newly linked history is not lost. Do not drop it or reconstruct old visitors.
+
+The Gemini project's API quota is managed separately in Google AI Studio. The
+site does not impose a 20-generation per-user caption cap. Enabling a paid API
+tier can increase the provider quota but changes billing; it is not enabled by
+this visit-logging feature or by an application code update.
+
 ### Caption timeout handling
 
 Caption failures distinguish provider `CONTENT_BLOCKED` feedback (HTTP 422),

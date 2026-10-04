@@ -13,6 +13,9 @@ type Visit = {
   ip_address: string
   user_agent: string
   visited_at: string
+  user_id: number | null
+  email: string | null
+  telegram_username: string | null
 }
 
 type TopPage = {
@@ -29,6 +32,7 @@ type AnalyticsData = {
   totalVisits: number
   visitsToday: number
   uniqueVisitorsToday: number
+  accountTrackingEnabled?: boolean
   recentVisits: Visit[]
   topPages: TopPage[]
   visitsByDay: VisitDay[]
@@ -164,12 +168,21 @@ export function VisitsTab() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4">
           <h3 className="text-lg font-medium">Recent Activity</h3>
+          <p className="text-xs text-muted-foreground">
+            Telegram handles identify visits made while signed in. Guest and older visits have no account link.
+          </p>
+          {data.accountTrackingEnabled === false && (
+            <p role="status" className="text-sm text-amber-700 dark:text-amber-400">
+              Account-linked tracking is not enabled yet. Apply the visit-identity database migration to start recording it.
+            </p>
+          )}
           <Card>
             <CardContent className="p-0">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Page Path</TableHead>
+                    <TableHead>Visitor / Telegram</TableHead>
                     <TableHead>IP</TableHead>
                     <TableHead>Device</TableHead>
                     <TableHead className="text-right">Time</TableHead>
@@ -178,7 +191,7 @@ export function VisitsTab() {
                 <TableBody>
                   {data.recentVisits.length === 0 ? (
                      <TableRow>
-                       <TableCell colSpan={4} className="text-center py-4 text-muted-foreground">
+                       <TableCell colSpan={5} className="text-center py-4 text-muted-foreground">
                          No recent visits
                        </TableCell>
                      </TableRow>
@@ -186,6 +199,18 @@ export function VisitsTab() {
                     data.recentVisits.map((visit) => (
                       <TableRow key={visit.id}>
                         <TableCell className="font-mono text-xs">{visit.page_path}</TableCell>
+                        <TableCell className="text-xs">
+                          {visit.user_id ? (
+                            <>
+                              <div className="font-medium">
+                                {visit.telegram_username?.trim()
+                                  ? `@${visit.telegram_username.trim().replace(/^@+/, "")}`
+                                  : visit.email ? "Telegram not linked" : "Account unavailable"}
+                              </div>
+                              {visit.email && <div className="text-muted-foreground">{visit.email}</div>}
+                            </>
+                          ) : <span className="text-muted-foreground">Guest / historical visit</span>}
+                        </TableCell>
                         <TableCell className="text-xs text-muted-foreground">{visit.ip_address}</TableCell>
                         <TableCell className="text-xs">{formatUserAgent(visit.user_agent)}</TableCell>
                         <TableCell className="text-right text-xs">

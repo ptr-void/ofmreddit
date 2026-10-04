@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { verifyAdminToken } from "@/lib/auth"
 import { query } from "@/lib/db"
+import { visitIdentityEnabled } from "@/lib/visit-identity"
 
 export async function GET(request: NextRequest) {
   try {
@@ -32,11 +33,15 @@ export async function GET(request: NextRequest) {
     `)
     const uniqueVisitorsToday = uniqueVisitorsTodayRes[0]?.count || 0
 
-    // Get recent visits (last 50)
+    const accountTrackingEnabled = await visitIdentityEnabled()
+    // Only this admin endpoint exposes account details; historical rows remain
+    // NULL, with no attempt to match guests to accounts via shared IP addresses.
     const recentVisits = await query(`
-      SELECT id, page_path, ip_address, user_agent, visited_at 
-      FROM website_visits 
-      ORDER BY visited_at DESC 
+      SELECT v.id, v.page_path, v.ip_address, v.user_agent, v.visited_at,
+        ${accountTrackingEnabled ? "v.user_id, u.email, u.telegram_username" : "NULL AS user_id, NULL AS email, NULL AS telegram_username"}
+      FROM website_visits v
+      ${accountTrackingEnabled ? "LEFT JOIN users u ON u.id = v.user_id" : ""}
+      ORDER BY v.visited_at DESC, v.id DESC
       LIMIT 50
     `)
 
@@ -61,12 +66,13 @@ export async function GET(request: NextRequest) {
       totalVisits,
       visitsToday,
       uniqueVisitorsToday,
+      accountTrackingEnabled,
       recentVisits,
       topPages,
       visitsByDay
-    })
+    }, { headers: { "Cache-Control": "private, no-store" } })
   } catch (error: any) {
     console.error("Error fetching analytics:", error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: "Failed to load website visit logs." }, { status: 500 })
   }
 }
