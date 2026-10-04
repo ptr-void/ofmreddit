@@ -13,6 +13,10 @@ export function AiBotStatus({ isGenerating, message, showSuccess = false }: AiBo
   const [isSuccess, setIsSuccess] = useState(false)
 
   useEffect(() => {
+    if (!showSuccess) {
+      setIsSuccess(false)
+      return
+    }
     if (showSuccess) {
       setIsSuccess(true)
       const timer = setTimeout(() => {

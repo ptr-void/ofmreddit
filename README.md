@@ -168,6 +168,15 @@ metrics with neither recorded eligible history nor a published positive value.
 
 ### Caption timeout handling
 
+Caption failures distinguish provider `CONTENT_BLOCKED` feedback (HTTP 422),
+incomplete generations and invalid caption output from retryable transport/quota
+errors. Prompt feedback and candidate safety metadata are checked before parsing
+or showing generated text. Blocked/partial text is never returned to the UI;
+content blocks are not retried, and inputs stay unchanged. Provider safety
+settings are unchanged. The website shows one accessible error alert rather than
+duplicating it inside the form. API generation is not a guarantee of identical
+Gem responses, even with the same saved prompt and knowledge files.
+
 Caption generation retains the configured model, admin prompt and all documents.
 The route allows 180 seconds on Vercel, including a bounded 120-second
 generation/retry window. Each attempt (including reading its response body) has a

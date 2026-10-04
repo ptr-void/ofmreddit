@@ -23,8 +23,13 @@ const requestedThinking = process.env.CAPTION_GEMINI_THINKING_LEVEL
 const THINKING_LEVEL = requestedThinking === "medium" || requestedThinking === "high" ? requestedThinking : "low"
 
 interface GeminiResponse {
+  promptFeedback?: {
+    blockReason?: string
+    safetyRatings?: Array<{ category?: string; blocked?: boolean }>
+  }
   candidates?: Array<{
     finishReason?: string
+    safetyRatings?: Array<{ category?: string; blocked?: boolean }>
     content?: { parts?: Array<{ thought?: boolean; text?: string }> }
   }>
 }
@@ -360,8 +365,25 @@ export async function POST(request: NextRequest) {
     }
 
     const candidate = data.candidates?.[0]
+    const promptBlock = data.promptFeedback?.blockReason
+    const finishReason = candidate?.finishReason
+    const blockedCategories = [...(data.promptFeedback?.safetyRatings || []), ...(candidate?.safetyRatings || [])]
+      .filter(rating => rating.blocked && rating.category).map(rating => rating.category!)
+    const contentBlockReasons = ["SAFETY", "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "IMAGE_SAFETY", "IMAGE_PROHIBITED_CONTENT", "ESCALATION", "PUP_LIMITED_DISABLED"]
+    if (promptBlock && promptBlock !== "BLOCK_REASON_UNSPECIFIED" ||
+        finishReason && contentBlockReasons.includes(finishReason) || blockedCategories.length) {
+      const providerReason = promptBlock && promptBlock !== "BLOCK_REASON_UNSPECIFIED" ? promptBlock : finishReason || "SAFETY"
+      // Return metadata only, never blocked/partial generated text or the user's keywords.
+      console.warn("Caption Gemini content blocked", { model: GEMINI_MODEL, providerReason, blockedCategories, attempts })
+      return NextResponse.json({
+        error: "Gemini blocked this caption request under its content policy. This is not a timeout or a busy-service error. Sexual content involving minors or ambiguous ages is not supported; all subjects must be adults.",
+        code: "CONTENT_BLOCKED", model: GEMINI_MODEL, retryable: false,
+        providerReason, blockedCategories: [...new Set(blockedCategories)],
+      }, { status: 422 })
+    }
     if (candidate?.finishReason && candidate.finishReason !== "STOP") {
-      return NextResponse.json({ error: "The AI did not finish generating captions. Please try again." }, { status: 502 })
+      return NextResponse.json({ error: "Gemini stopped before completing the caption response.",
+        code: "GENERATION_INCOMPLETE", model: GEMINI_MODEL, retryable: false, providerReason: candidate.finishReason }, { status: 502 })
     }
     const rawResponse = (candidate?.content?.parts || [])
       .filter((part: { thought?: boolean }) => !part.thought)
@@ -371,7 +393,10 @@ export async function POST(request: NextRequest) {
     const captions = extractCaptions(rawResponse, requestData.posts[0].id)
     if (captions.length !== expectedCount) {
       console.error("Caption response did not match expected result count", { expectedCount, received: captions.length })
-      return NextResponse.json({ error: "AI Generation Failed" }, { status: 502 })
+      return NextResponse.json({
+        error: `Gemini did not return the required ${expectedCount}-caption format. This can happen when the model returns an explanation or declines a request instead of captions.`,
+        code: "INVALID_CAPTION_OUTPUT", model: GEMINI_MODEL, retryable: false,
+      }, { status: 502 })
     }
 
     return NextResponse.json({

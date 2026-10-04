@@ -2,7 +2,7 @@ const assert = require('node:assert/strict')
 const { test } = require('node:test')
 const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm'), ts = require('typescript')
 const source = fs.readFileSync(path.join(__dirname, '../app/api/caption-generator/route.ts'), 'utf8')
-function fixture({ authenticated = true, brokenDocument = false, output, finishReason, thought, model, statuses = [], retryAfter, fetchError, fetchErrors = [], jsonErrors = [], thinking, expireTotal = false, providerError } = {}) {
+function fixture({ authenticated = true, brokenDocument = false, output, finishReason, thought, model, statuses = [], retryAfter, fetchError, fetchErrors = [], jsonErrors = [], thinking, expireTotal = false, providerError, providerResponse } = {}) {
   const calls = [], documents = [1,2,3].map(id => ({id,filename:`knowledge-${id}.docx`,cloudinary_url:`https://files.test/${id}`,file_type:'docx',file_size:20}))
   const dependencies = {
     'next/server': {NextResponse:{json:(body,init={})=>({body,status:init.status||200})}},
@@ -21,7 +21,7 @@ function fixture({ authenticated = true, brokenDocument = false, output, finishR
       const attemptError=fetchErrors.shift();if(attemptError)throw attemptError
       const status = statuses.shift() || 200
       if (status !== 200) return {ok:false,status,headers:{get:()=>retryAfter||null},body:{cancel:async()=>{}},json:async()=>providerError||{}}
-      return {ok:true,status,headers:{get:()=>null},json:async()=>{const error=jsonErrors.shift();if(error)throw error;return ({candidates:[{finishReason,content:{parts:[...(thought ? [{thought:true,text:thought}] : []),{text:output ?? JSON.stringify({caption_results:Array.from({length:5},(_,i)=>({option:`Option ${i+1}`,text:`Fitness caption ${i+1}`}))})}]}}]})}}
+      return {ok:true,status,headers:{get:()=>null},json:async()=>{const error=jsonErrors.shift();if(error)throw error;return providerResponse ?? ({candidates:[{finishReason,content:{parts:[...(thought ? [{thought:true,text:thought}] : []),{text:output ?? JSON.stringify({caption_results:Array.from({length:5},(_,i)=>({option:`Option ${i+1}`,text:`Fitness caption ${i+1}`}))})}]}}]})}}
     }}
   vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true}}).outputText,context)
   return {route:context.exports,calls,deadlines}
@@ -39,6 +39,7 @@ test('caption request includes the saved admin instructions and all three extrac
   assert.equal(payload.generationConfig.thinkingConfig.thinkingLevel,'low')
   assert.equal(payload.generationConfig.temperature,undefined)
   assert.equal(payload.generationConfig.responseSchema,undefined)
+  assert.equal(payload.safetySettings,undefined)
   assert.equal(payload.generationConfig.thinkingConfig.thinkingBudget,undefined)
   const parts=payload.contents[0].parts.map(part=>part.text).join('\n')
   for (let id=1;id<=3;id++) assert.match(parts,new RegExp(`EXTRACTED:FILE-${id}`))
@@ -203,4 +204,58 @@ test('daily request quota exhaustion is reported once, never treated as a ten-se
   const page=fs.readFileSync(path.join(__dirname,'../app/caption-generator/page.tsx'),'utf8')
   assert.ok(page.indexOf('errorData.code === "DAILY_QUOTA_EXHAUSTED"')<page.indexOf('if (errorData.retryable'))
   assert.match(page,/short retry will not help/)
+})
+
+test('NSFW labels are not banned or rewritten by local keyword processing',async()=>{
+  const {route,calls}=fixture()
+  const req=new Request('http://fixture.test',{method:'POST',headers:{authorization:'Bearer fixture','content-type':'application/json'},body:JSON.stringify({mode:'keywords',physicalFeatures:'adult age 25, fitness, nsfw',degenScale:1})})
+  assert.equal((await route.POST(req)).status,200)
+  const payload=JSON.parse(calls.find(call=>call.url.includes('generativelanguage.googleapis.com')).options.body)
+  const input=JSON.parse(payload.contents[0].parts.at(-1).text.replace(/<\/?request_data>/g,''))
+  assert.deepEqual(input.posts[0].niche_features,['adult age 25','fitness','nsfw'])
+  assert.equal(payload.safetySettings,undefined)
+})
+
+test('prompt safety feedback with no candidates becomes a content error, not a busy-service error',async()=>{
+  for (const blockReason of ['SAFETY','PROHIBITED_CONTENT','BLOCKLIST','OTHER']) {
+    const f=fixture({providerResponse:{promptFeedback:{blockReason,safetyRatings:[{category:'HARM_CATEGORY_SEXUALLY_EXPLICIT',blocked:true}]}}})
+    const response=await f.route.POST(request())
+    assert.equal(response.status,422);assert.equal(response.body.code,'CONTENT_BLOCKED')
+    assert.equal(response.body.providerReason,blockReason);assert.equal(response.body.retryable,false)
+    assert.equal(response.body.blockedCategories[0],'HARM_CATEGORY_SEXUALLY_EXPLICIT')
+    assert.equal(response.body.captions,undefined);assert.equal(response.body.rawOutput,undefined)
+    assert.equal(response.body.retryAfterSeconds,undefined)
+    assert.equal(f.calls.filter(c=>c.url.includes('generativelanguage.googleapis.com')).length,1)
+  }
+})
+
+test('blocked candidates never expose partial text, even when it contains valid caption XML',async()=>{
+  for (const finishReason of ['SAFETY','PROHIBITED_CONTENT','BLOCKLIST','SPII','ESCALATION','PUP_LIMITED_DISABLED']) {
+    const f=fixture({finishReason,output:xml()});const response=await f.route.POST(request())
+    assert.equal(response.status,422);assert.equal(response.body.code,'CONTENT_BLOCKED')
+    assert.equal(response.body.providerReason,finishReason);assert.equal(response.body.rawOutput,undefined)
+    assert.equal(response.body.captions,undefined);assert.equal(response.body.retryable,false)
+  }
+  const f=fixture({providerResponse:{candidates:[{finishReason:'STOP',safetyRatings:[{category:'HARM_CATEGORY_SEXUALLY_EXPLICIT',blocked:true}],content:{parts:[{text:xml()}]}}]}})
+  assert.equal((await f.route.POST(request())).body.code,'CONTENT_BLOCKED')
+})
+
+test('unstructured replies and truncated sets have explicit errors without inventing a content-block diagnosis',async()=>{
+  for (const output of ['A model explanation instead of captions.','<error>Input was rejected.</error>',xml('post_001',4)]) {
+    const response=await fixture({output,finishReason:'STOP'}).route.POST(request())
+    assert.equal(response.status,502);assert.equal(response.body.code,'INVALID_CAPTION_OUTPUT')
+    assert.equal(response.body.retryable,false);assert.equal(response.body.rawOutput,undefined)
+  }
+  const response=await fixture({finishReason:'MAX_TOKENS',output:xml()}).route.POST(request())
+  assert.equal(response.body.code,'GENERATION_INCOMPLETE');assert.equal(response.body.providerReason,'MAX_TOKENS')
+})
+
+test('blocked and invalid-output UI preserves input without duplicate alerts or outage retries',()=>{
+  const page=fs.readFileSync(path.join(__dirname,'../app/caption-generator/page.tsx'),'utf8')
+  assert.ok(page.indexOf('errorData.code === "CONTENT_BLOCKED"') < page.indexOf('if (errorData.retryable'))
+  assert.match(page,/role="alert"/);assert.doesNotMatch(page,/error=\{error\}/)
+  assert.match(page,/errorData.code === "INVALID_CAPTION_OUTPUT"/)
+  assert.doesNotMatch(page,/Try adjusting your inputs and generating again/)
+  const status=fs.readFileSync(path.join(__dirname,'../components/caption-generator/ai-bot-status.tsx'),'utf8')
+  assert.match(status,/if \(!showSuccess\)\s*\{\s*setIsSuccess\(false\)/)
 })

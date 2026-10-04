@@ -181,6 +181,16 @@ export default function CaptionGeneratorPage() {
           retryable: [429, 502, 503, 504].includes(response.status),
         }))
         const message = errorData.error || `HTTP ${response.status}`
+        if (errorData.code === "CONTENT_BLOCKED") {
+          setError(message)
+          setAiMessage("Gemini blocked this request. Your inputs are kept; repeating the same request is not an outage fix.")
+          return
+        }
+        if (errorData.code === "INVALID_CAPTION_OUTPUT" || errorData.code === "GENERATION_INCOMPLETE") {
+          setError(message)
+          setAiMessage("Gemini returned no complete caption set. Your inputs are unchanged.")
+          return
+        }
         if (errorData.code === "DAILY_QUOTA_EXHAUSTED") {
           const retryAt = errorData.retryAvailableAt ? new Date(errorData.retryAvailableAt) : null
           setError(`${message}${retryAt && Number.isFinite(retryAt.getTime()) ? ` Google's reported retry time: ${retryAt.toLocaleString()}.` : ""}`)
@@ -211,7 +221,7 @@ export default function CaptionGeneratorPage() {
       })
     } catch (error: any) {
       setError(error.message || "Failed to generate captions. Please try again.")
-      setAiMessage("Oops, something went wrong. Try adjusting your inputs and generating again!")
+      setAiMessage("Caption generation failed. Your inputs are unchanged; see the error above.")
     } finally {
       setIsGenerating(false)
     }
@@ -297,7 +307,7 @@ export default function CaptionGeneratorPage() {
 
         <div className="lg:border-r lg:border-border overflow-y-auto">
           <div className="p-4 md:p-6">
-            {error && <div className="mb-4 p-4 bg-red-100 text-red-700 rounded-lg text-sm">{error}</div>}
+            {error && <div role="alert" className="mb-4 p-4 bg-red-100 text-red-700 rounded-lg text-sm">{error}</div>}
 
             <AiBotStatus isGenerating={isGenerating} message={aiMessage} showSuccess={showSuccess} />
 
@@ -305,7 +315,6 @@ export default function CaptionGeneratorPage() {
               key={selectedPostId}
               onGenerate={handleGenerateCaptions}
               isGenerating={isGenerating}
-              error={error}
             />
           </div>
         </div>
