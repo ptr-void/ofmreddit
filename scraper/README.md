@@ -15,6 +15,12 @@
 - Weekly top 10 post details and the 1 / 2-5 / 6-10 upvote summaries
 - CTA title evidence for `?`, `do`, `or`, `would`, `how`, and `what` after a one-hour survival window
 
+The database's `Verification` column requires explicit mandatory-verification
+wording (for example, verified-only posting). An optional OC verification guide,
+verified flair, or a mention of verified creators is not a requirement. Negative
+statements are excluded before looking for a mandate. This is a rule-text
+heuristic, not a guarantee of the subreddit's unpublished moderation settings.
+
 The minimum karma and age fields are **observed successful-poster minima**, not a direct read of hidden AutoModerator rules.
 The website labels them **Observed Minimums**; the displayed values are a three-successful-scrape rolling average, and a high sampled value is not a verified posting threshold. Raw observations are kept in a separate `Observed Metrics History` worksheet; the average builds from the next successful runs and excludes a metric when that run has no sample for it.
 Subscriber totals are distinct from Reddit's weekly visitor metric.

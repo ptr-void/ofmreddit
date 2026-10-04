@@ -310,6 +310,51 @@ class SubredditSyncTests(unittest.TestCase):
         ]))
         self.assertFalse(detect_verification_requirement(["Be respectful and follow Reddit rules."]))
 
+    def test_optional_verification_does_not_become_a_posting_requirement(self):
+        optional = [
+            "OC verification.",
+            "Want to be verified? Follow the verification instructions to receive a flair.",
+            "Verified creators receive a special flair.",
+            "Verification guide: contact the moderators for instructions.",
+            "Verification is optional, but recommended.",
+            "You do not have to be verified to post.",
+            "You don't need to get verified to post.",
+            "We don't require verification. Verified flair is available on request.",
+            "We don't require creator verification.",
+            "We never require verification.",
+            "You don't need to complete our verification process.",
+            "No need to get verified to post here.",
+            "Verification is not mandatory.",
+            "Is verification required? See the guide.",
+            "Unverified posts are allowed.",
+        ]
+        for text in optional:
+            with self.subTest(text=text):
+                self.assertFalse(detect_verification_requirement([text]))
+        self.assertFalse(detect_verification_requirement(optional))
+
+    def test_explicit_verification_mandates_remain_required(self):
+        required = [
+            "Verification required.",
+            "Creator verification is mandatory.",
+            "We require verification before posting.",
+            "All creators must be verified before posting.",
+            "You need to verify before submitting a post.",
+            "You have to complete our verification process.",
+            "Only verified creators may post.",
+            "Verified posters only.",
+            "Get verified to post here.",
+            "No unverified posts.",
+            "Unverified submissions will be removed.",
+        ]
+        for text in required:
+            with self.subTest(text=text):
+                self.assertTrue(detect_verification_requirement([text]))
+        self.assertTrue(detect_verification_requirement([
+            "Optional verified flair is available.",
+            "All creators must complete verification before posting.",
+        ]))
+
     def test_bot_bouncer_detection_does_not_treat_other_bots_as_botbouncer(self):
         self.assertTrue(detect_bot_bouncer(["AutoModerator", "Bot-Bouncer"]))
         self.assertFalse(detect_bot_bouncer(["AutoModerator", "SafestBot"]))
@@ -512,6 +557,24 @@ class SubredditSyncTests(unittest.TestCase):
         self.assertIn("D2", sheet1_ranges)
         self.assertIn("F2", sheet1_ranges)
         self.assertIn("Q2", sheet1_ranges)
+
+    def test_sheet1_writer_replaces_false_optional_verification_yes_with_no(self):
+        store = object.__new__(GoogleSheetStore)
+        store.sheet1 = FakeWorksheet(col_count=17, values=[
+            ["Subreddit", "Link", "Verification", "Total Members", "Niche"],
+            ["PerfectPussy", "https://reddit.com/r/PerfectPussy", "Yes", "123", "general"],
+        ])
+        store._sheet1_values = store.sheet1.values
+        store._sheet1_headers = list(store.sheet1.values[0])
+        result = ScrapeResult(subreddit="PerfectPussy", source_row=2,
+            scraped_at_utc="2026-10-05T00:00:00Z",
+            requires_verification=detect_verification_requirement([
+                "OC verification.", "Want to be verified? Follow the guide to receive a flair.",
+            ]))
+        store.write_results([result])
+        verification = [item for batch, _ in store.sheet1.batch_updates for item in batch if item["range"] == "C2"]
+        self.assertEqual(len(verification), 1)
+        self.assertEqual(verification[0]["values"], [["No"]])
 
     def test_states_and_headers_use_only_the_consolidated_sheet1_table(self):
         store = object.__new__(GoogleSheetStore)

@@ -56,11 +56,22 @@ NUMERIC_SHEET_HEADERS = {
 CTA_PATTERN = re.compile(r"\?|\b(?:do|or|would|how|what)\b", re.IGNORECASE)
 VERIFICATION_PATTERN = re.compile(r"\b(?:verification|verify|verified|unverified)\b", re.IGNORECASE)
 NO_VERIFICATION_PATTERNS = (
-    re.compile(r"\bno\s+verification\s+(?:is\s+)?required\b", re.IGNORECASE),
-    re.compile(r"\bverification\s+is\s+not\s+required\b", re.IGNORECASE),
-    re.compile(r"\b(?:do\s+not|don['’]t)\s+need\s+to\s+verify\b", re.IGNORECASE),
-    re.compile(r"\bno\s+need\s+to\s+verify\b", re.IGNORECASE),
+    re.compile(r"\bno\s+verification\s+(?:is\s+)?(?:required|needed|necessary)\b", re.IGNORECASE),
+    re.compile(r"\bverification\s+(?:is\s+)?(?:not\s+(?:required|needed|necessary|mandatory)|optional)\b", re.IGNORECASE),
+    re.compile(r"\b(?:do\s+not|don['’]t|does\s+not|doesn['’]t|never)\s+require\s+(?:(?:creator|oc|account)\s+)?verification\b", re.IGNORECASE),
+    re.compile(r"\b(?:do\s+not|don['’]t)\s+(?:need|have)\s+to\s+(?:verify|(?:be|get|become)\s+verified|(?:complete|submit|provide|pass|undergo)\s+(?:(?:our|the|your|creator|oc)\s+)*verification)\b", re.IGNORECASE),
+    re.compile(r"\bno\s+need\s+to\s+(?:verify|(?:be|get|become)\s+verified|(?:complete|submit|provide|pass|undergo)\s+(?:(?:our|the|your|creator|oc)\s+)*verification)\b", re.IGNORECASE),
 )
+REQUIRED_VERIFICATION_PATTERNS = tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
+    r"\b(?:verification|verified\s+(?:status|flair))\s+(?:(?:is|now|strictly|always)\s+)*(?:required|mandatory|compulsory)\b",
+    r"\b(?:require|required|mandatory|compulsory)\s+(?:(?:creator|oc|account)\s+)?verification\b",
+    r"\b(?:must|have\s+to|need\s+to|required\s+to)\s+(?:(?:first|also)\s+)?(?:verify|(?:be|get|become)\s+verified|(?:complete|submit|provide|pass|undergo)\s+(?:(?:our|the|your|creator|oc)\s+)*verification)\b",
+    r"\bonly\s+verified\s+(?:(?:creators|users|members|accounts|posters|submitters)\s+)?(?:can|may|are\s+allowed\s+to)\s+(?:post|submit)\b",
+    r"\bverified\s+(?:creators|users|members|accounts|posters|submitters)\s+only\b",
+    r"\b(?:verify|(?:be|get)\s+verified)\s+(?:before\s+(?:you\s+)?(?:post|posting|submit|submitting)|to\s+(?:post|submit))\b",
+    r"\bno\s+unverified\s+(?:posts|posters|creators|users|submissions)\b",
+    r"\bunverified\s+(?:posts|posters|creators|users|submissions)\s+(?:are\s+|will\s+be\s+)?(?:not\s+allowed|removed|prohibited|banned)\b",
+))
 BOT_BOUNCER_NAME = "botbouncer"
 CYCLE_METADATA_KEY = "ofmreddit_scraper_cycle_v1"
 WEEKLY_HISTORY_HEADERS = ["Subreddit", "Scraped At UTC", "Hot 1", "Hot 2-5 Avg", "Hot 6-10 Avg"]
@@ -204,15 +215,21 @@ def detect_cta_titles(
 
 
 def detect_verification_requirement(texts: Iterable[str]) -> bool:
+    """Detect a stated mandate, not an optional verification/flair offer.
+
+    Verification guides, OC flair and mentions of verified creators do not
+    establish a posting requirement. Inspect clauses independently so a
+    negated/optional statement is not read as a mandatory rule.
+    """
     for text in texts:
-        clean = re.sub(r"\s+", " ", str(text or "")).strip()
-        if not clean or not VERIFICATION_PATTERN.search(clean):
-            continue
-        without_negatives = clean
-        for pattern in NO_VERIFICATION_PATTERNS:
-            without_negatives = pattern.sub("", without_negatives)
-        if VERIFICATION_PATTERN.search(without_negatives):
-            return True
+        for clause in re.split(r"(?<=[.!?;])\s+|[\r\n]+", str(text or "")):
+            clean = re.sub(r"\s+", " ", clause).strip()
+            if not clean or clean.endswith("?") or not VERIFICATION_PATTERN.search(clean):
+                continue
+            for pattern in NO_VERIFICATION_PATTERNS:
+                clean = pattern.sub("", clean)
+            if any(pattern.search(clean) for pattern in REQUIRED_VERIFICATION_PATTERNS):
+                return True
     return False
 
 
