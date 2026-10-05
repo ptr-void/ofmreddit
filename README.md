@@ -192,6 +192,29 @@ site does not impose a 20-generation per-user caption cap. Enabling a paid API
 tier can increase the provider quota but changes billing; it is not enabled by
 this visit-logging feature or by an application code update.
 
+### Caption generator user-access switch
+
+Admin **Site Controls → Caption Generator User Access** pauses caption generation
+and caption image analysis for non-admin users. Admins remain able to test, and
+those tests still consume the normal provider quota. Current database admin status
+is checked server-side, not a browser role flag. Direct API calls and already-open
+tabs are covered; no knowledge downloads or provider calls start for blocked users.
+Requests already admitted before a pause may finish. This is not a quota increase.
+
+Prepare the additive default-on column before using the control:
+
+```powershell
+node scripts/migrate-caption-access.cjs # read-only plan
+node scripts/migrate-caption-access.cjs --apply # schema backup + additive column + readback
+```
+
+Before migration, existing user access is preserved and the admin switch is disabled
+with a setup notice. Settings are persisted in `site_controls`, independently of
+subscription controls. Caption pages recheck on focus and every 30 seconds, while
+each generation/image-analysis request checks immediately. Inputs are retained
+while paused. For rollback, turn access on first and revert the application code;
+retain the additive column. Older app versions do not enforce this switch.
+
 ### Caption timeout handling
 
 Caption failures distinguish provider `CONTENT_BLOCKED` feedback (HTTP 422),

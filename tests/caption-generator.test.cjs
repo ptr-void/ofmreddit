@@ -2,11 +2,12 @@ const assert = require('node:assert/strict')
 const { test } = require('node:test')
 const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm'), ts = require('typescript')
 const source = fs.readFileSync(path.join(__dirname, '../app/api/caption-generator/route.ts'), 'utf8')
-function fixture({ authenticated = true, brokenDocument = false, output, finishReason, thought, model, statuses = [], retryAfter, fetchError, fetchErrors = [], jsonErrors = [], thinking, expireTotal = false, providerError, providerResponse } = {}) {
+function fixture({ authenticated = true, allowed = true, brokenDocument = false, output, finishReason, thought, model, statuses = [], retryAfter, fetchError, fetchErrors = [], jsonErrors = [], thinking, expireTotal = false, providerError, providerResponse } = {}) {
   const calls = [], documents = [1,2,3].map(id => ({id,filename:`knowledge-${id}.docx`,cloudinary_url:`https://files.test/${id}`,file_type:'docx',file_size:20}))
   const dependencies = {
     'next/server': {NextResponse:{json:(body,init={})=>({body,status:init.status||200})}},
     '@/lib/auth': {verifyToken:()=>authenticated ? {userId:1}:null},
+    '@/lib/caption-access': {captionAccessForUser:async()=>({allowed,enabled:allowed,isAdmin:false}),CAPTION_PAUSED_MESSAGE:'Caption generation is temporarily paused by the admin. Your inputs are unchanged.'},
     '@/lib/db': {queryOne:async()=>({id:1,prompt_text:'ADMIN_PROMPT: produce five captions'}),query:async()=>documents},
     '@xmldom/xmldom': require('@xmldom/xmldom'),
     'node:timers/promises': {setTimeout:async()=>{}},
@@ -27,6 +28,12 @@ function fixture({ authenticated = true, brokenDocument = false, output, finishR
   return {route:context.exports,calls,deadlines}
 }
 const request=()=>new Request('http://fixture.test/api/caption-generator',{method:'POST',headers:{authorization:'Bearer fixture','content-type':'application/json'},body:JSON.stringify({posts:[{id:'post_001',gender:'female',niche_features:['fitness'],degen_scale:0,interactive_mode:'OFF',visual_context:'gym selfie',content_type:'Picture'}]})})
+
+test('paused user requests stop before knowledge downloads or Gemini calls',async()=>{
+  const {route,calls}=fixture({allowed:false});const response=await route.POST(request())
+  assert.equal(response.status,403);assert.equal(response.body.code,'CAPTION_ACCESS_PAUSED')
+  assert.equal(response.body.retryable,false);assert.equal(calls.length,0)
+})
 
 test('caption request includes the saved admin instructions and all three extracted documents',async()=>{
   const {route,calls}=fixture();const response=await route.POST(request())

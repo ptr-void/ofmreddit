@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { verifyToken } from "@/lib/auth"
 import { query } from "@/lib/db"
+import { captionAccessForUser, CAPTION_PAUSED_MESSAGE } from "@/lib/caption-access"
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,6 +13,9 @@ export async function POST(request: NextRequest) {
     const payload = verifyToken(token)
     if (!payload) {
       return NextResponse.json({ error: "Invalid token" }, { status: 401 })
+    }
+    if (!Number.isSafeInteger(payload.userId) || payload.userId <= 0 || !(await captionAccessForUser(payload.userId)).allowed) {
+      return NextResponse.json({ error: CAPTION_PAUSED_MESSAGE, code: "CAPTION_ACCESS_PAUSED", retryable: false }, { status: 403 })
     }
 
     const body = await request.json()

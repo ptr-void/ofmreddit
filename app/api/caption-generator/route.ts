@@ -9,6 +9,7 @@ import { query, queryOne } from "@/lib/db"
 import mammoth from "mammoth"
 import { DOMParser } from "@xmldom/xmldom"
 import { setTimeout as delay } from "node:timers/promises"
+import { captionAccessForUser, CAPTION_PAUSED_MESSAGE } from "@/lib/caption-access"
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY
 const GEMINI_MODEL = process.env.CAPTION_GEMINI_MODEL || "gemini-3.8-flash"
@@ -210,15 +211,33 @@ async function loadKnowledgeParts(documents: KnowledgeDocument[]): Promise<Gemin
     : [part])
 }
 
+export async function GET(request: NextRequest) {
+  try {
+    const token = /^Bearer\s+(.+)$/i.exec(request.headers.get("authorization") || "")?.[1]
+    const account = token ? verifyToken(token) : null
+    if (!account || !Number.isSafeInteger(account.userId) || account.userId <= 0) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+    const access = await captionAccessForUser(account.userId)
+    return NextResponse.json({ enabled: access.enabled, allowed: access.allowed, isAdmin: access.isAdmin },
+      { headers: { "Cache-Control": "private, no-store" } })
+  } catch {
+    return NextResponse.json({ error: "Failed to check caption access." }, { status: 503 })
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
+    const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "")
+    const account = token ? verifyToken(token) : null
+    if (!account || !Number.isSafeInteger(account.userId) || account.userId <= 0) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+    if (!(await captionAccessForUser(account.userId)).allowed) {
+      return NextResponse.json({ error: CAPTION_PAUSED_MESSAGE, code: "CAPTION_ACCESS_PAUSED", retryable: false }, { status: 403 })
+    }
     if (!GEMINI_API_KEY) {
       return NextResponse.json({ error: "Server configuration error: missing AI API key." }, { status: 500 })
-    }
-
-    const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "")
-    if (!token || !verifyToken(token)) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
     const rawBody = await request.json()

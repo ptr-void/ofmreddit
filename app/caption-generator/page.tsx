@@ -48,6 +48,36 @@ export default function CaptionGeneratorPage() {
     "Let's get creative! Choose the mode below and let's get going.",
   )
   const [showSuccess, setShowSuccess] = useState(false)
+  const [access, setAccess] = useState<{ enabled: boolean; allowed: boolean; isAdmin: boolean } | null>(null)
+  const [accessError, setAccessError] = useState("")
+
+  useEffect(() => {
+    let active = true
+    const check = async () => {
+      const token = localStorage.getItem("token")
+      if (!token) return
+      try {
+        const response = await fetch("/api/caption-generator", { cache: "no-store", headers: { Authorization: `Bearer ${token}` } })
+        if (!response.ok) throw new Error("Caption access could not be checked. Please refresh shortly.")
+        const data = await response.json()
+        if (active) {
+          setAccess(data)
+          setAccessError("")
+          if (data.allowed) {
+            setError(current => current === "Caption generation is temporarily paused by the admin. Your inputs are unchanged." ? null : current)
+            setAiMessage(current => current === "Caption generation is paused by the admin. Your inputs are kept."
+              ? "Caption access is restored. Your inputs are ready to use." : current)
+          }
+        }
+      } catch (error: any) {
+        if (active) { setAccess(null); setAccessError(error.message) }
+      }
+    }
+    void check()
+    const interval = setInterval(check, 30_000)
+    window.addEventListener("focus", check)
+    return () => { active = false; clearInterval(interval); window.removeEventListener("focus", check) }
+  }, [])
 
   const selectedPost = posts.find((p) => p.id === selectedPostId)
 
@@ -160,6 +190,7 @@ export default function CaptionGeneratorPage() {
   const handleGenerateCaptions = async (formData: FormData) => {
     const token = localStorage.getItem("token")
     if (!token) return
+    if (!access?.allowed) return
 
     setIsGenerating(true)
     setError(null)
@@ -181,6 +212,12 @@ export default function CaptionGeneratorPage() {
           retryable: [429, 502, 503, 504].includes(response.status),
         }))
         const message = errorData.error || `HTTP ${response.status}`
+        if (errorData.code === "CAPTION_ACCESS_PAUSED") {
+          setAccess({ enabled: false, allowed: false, isAdmin: false })
+          setError(message)
+          setAiMessage("Caption generation is paused by the admin. Your inputs are kept.")
+          return
+        }
         if (errorData.code === "CONTENT_BLOCKED") {
           setError(message)
           setAiMessage("Gemini blocked this request. Your inputs are kept; repeating the same request is not an outage fix.")
@@ -308,6 +345,11 @@ export default function CaptionGeneratorPage() {
         <div className="lg:border-r lg:border-border overflow-y-auto">
           <div className="p-4 md:p-6">
             {error && <div role="alert" className="mb-4 p-4 bg-red-100 text-red-700 rounded-lg text-sm">{error}</div>}
+            <div role="status" className="mb-4 text-sm">
+              {accessError || (!access ? "Checking caption access..." : !access.allowed
+                ? "Caption generation is temporarily paused by the admin. Your inputs are kept."
+                : !access.enabled && access.isAdmin ? "Admin testing mode — user access is paused. Your tests still use API credits." : "")}
+            </div>
 
             <AiBotStatus isGenerating={isGenerating} message={aiMessage} showSuccess={showSuccess} />
 
@@ -315,6 +357,7 @@ export default function CaptionGeneratorPage() {
               key={selectedPostId}
               onGenerate={handleGenerateCaptions}
               isGenerating={isGenerating}
+              accessDisabled={!access?.allowed}
             />
           </div>
         </div>

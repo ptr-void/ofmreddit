@@ -5,6 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button"
 import s from "@/styles/scraper.module.css"
 import a from "@/styles/admin.module.css"
+import { CaptionAccessControl } from "@/components/admin/caption-access-control"
 
 type SiteControls = {
   show_sub: number
@@ -109,6 +110,7 @@ export function SiteControlsTab() {
 
   return (
     <div className="space-y-6">
+      <CaptionAccessControl />
       <div className="rounded-xl border border-border bg-card p-4">
         <div className="flex items-center justify-between gap-4">
           <div>

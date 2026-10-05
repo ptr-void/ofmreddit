@@ -17,6 +17,7 @@ import { Upload, ChevronDown, ChevronUp, Loader2 } from "lucide-react"
 type CaptionFormProps = {
   onGenerate: (data: FormData) => void
   isGenerating: boolean
+  accessDisabled?: boolean
   error?: string | null
 }
 
@@ -39,7 +40,7 @@ const loadSavedCreatorFeatures = () => {
   return { physicalFeatures: "", gender: "female" as const }
 }
 
-export function CaptionForm({ onGenerate, isGenerating, error }: CaptionFormProps) {
+export function CaptionForm({ onGenerate, isGenerating, error, accessDisabled = false }: CaptionFormProps) {
   const savedFeatures = loadSavedCreatorFeatures()
 
   const [formData, setFormData] = useState<FormData>({
@@ -109,6 +110,7 @@ export function CaptionForm({ onGenerate, isGenerating, error }: CaptionFormProp
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    if (accessDisabled) return
     if (Object.keys(formErrors).length > 0) {
       console.log("Validation failed:", formErrors)
       return
@@ -180,6 +182,7 @@ export function CaptionForm({ onGenerate, isGenerating, error }: CaptionFormProp
   }
 
   const analyzeImage = async (file: File) => {
+    if (accessDisabled) return
     setIsAnalyzing(true)
     setAnalysisStatus("analyzing")
 
@@ -1239,7 +1242,7 @@ export function CaptionForm({ onGenerate, isGenerating, error }: CaptionFormProp
 
         <Button
           type="submit"
-          disabled={isGenerating || isAnalyzing || Object.keys(formErrors).length > 0}
+          disabled={accessDisabled || isGenerating || isAnalyzing || Object.keys(formErrors).length > 0}
           className="w-full bg-[var(--primary)] hover:bg-[var(--primary)]/90 h-12 text-base font-semibold disabled:opacity-50 mb-10"
         >
           {isGenerating ? "Generating..." : isAnalyzing ? "Analyzing Image..." : "Generate Captions"}
