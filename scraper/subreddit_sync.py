@@ -178,6 +178,39 @@ def rolling_observed_minimums(
     return tuple(result)
 
 
+def retained_weekly_metrics(history, *, now, published=(None, None, None)):
+    """Keep published positive values when the four-week window is empty.
+
+    A missing published value can be recovered from its latest genuine saved
+    observation. No synthetic timestamp or zero is promoted into a new reading.
+    """
+    means = rolling_weekly_metrics(history, now=now)
+    current_week = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=now.weekday())
+    midweek = current_week + timedelta(days=2)
+    result = []
+    for index, mean in enumerate(means):
+        if mean is not None:
+            result.append(mean)
+            continue
+        value = published[index] if index < len(published) else None
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+            result.append(value)
+            continue
+        candidates = []
+        for raw_stamp, values in history:
+            if isinstance(raw_stamp, str) and not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|\+00:00)", raw_stamp):
+                continue
+            stamp = raw_stamp if isinstance(raw_stamp, datetime) else parse_utc(raw_stamp)
+            value = values[index] if index < len(values) else None
+            if stamp and stamp.tzinfo and current_week <= stamp < midweek:
+                continue
+            if (stamp and stamp.tzinfo and stamp <= now and isinstance(value, int)
+                and not isinstance(value, bool) and value > 0):
+                candidates.append((stamp, value))
+        result.append(max(candidates)[1] if candidates else None)
+    return tuple(result)
+
+
 def parse_subscriber_count(value: Any) -> int | None:
     """Missing or malformed API counts are unknown, not an empty community."""
     if isinstance(value, bool):
@@ -767,6 +800,18 @@ class GoogleSheetStore:
             key = normalize_subreddit(row[0])
             sample = tuple(int(value) if re.fullmatch(r"\d+", str(value).strip()) else None for value in row[2:5])
             previous.setdefault(key, []).append((row[1], sample))
+        source_headers, source_matrix = self._load_sheet1()
+        source_lookup = {header.strip().lower(): index for index, header in enumerate(source_headers)}
+        name_index = source_lookup.get("subreddit", 0)
+        published = {}
+        for row in source_matrix[1:]:
+            name = normalize_subreddit(row[name_index] if name_index < len(row) else "")
+            cells = []
+            for header in ("hot 1 (weekly)", "hot 2-5 avg (weekly)", "hot 6-10 avg (weekly)"):
+                column = source_lookup.get(header, -1)
+                raw_value = str(row[column]).replace(",", "").strip() if 0 <= column < len(row) else ""
+                cells.append(int(raw_value) if re.fullmatch(r"\d+", raw_value) else None)
+            published[name] = tuple(cells)
         additions = []
         for result in valid:
             key = normalize_subreddit(result.subreddit)
@@ -778,7 +823,7 @@ class GoogleSheetStore:
                 additions.append([result.subreddit, result.scraped_at_utc, *[value if value is not None else "" for value in raw]])
                 recorded[result.scraped_at_utc] = raw
                 previous.setdefault(key, []).append((result.scraped_at_utc, raw))
-            mean = rolling_weekly_metrics(list(recorded.items()), now=parse_utc(result.scraped_at_utc) or utc_now())
+            mean = retained_weekly_metrics(list(recorded.items()), now=parse_utc(result.scraped_at_utc) or utc_now(), published=published.get(key, ()))
             result.weekly_top_1_upvotes, result.weekly_top_2_5_avg_upvotes, result.weekly_top_6_10_avg_upvotes = mean
         if additions:
             history_sheet.append_rows(additions, value_input_option="RAW")
@@ -899,7 +944,7 @@ class GoogleSheetStore:
                     ("Hot 1 (Weekly)", "Hot 2-5 Avg (Weekly)", "Hot 6-10 Avg (Weekly)"),
                     ("weekly_top_1_upvotes", "weekly_top_2_5_avg_upvotes", "weekly_top_6_10_avg_upvotes"),
                 ):
-                    if getattr(result, field) is None:
+                    if getattr(result, field) is None or getattr(result, field) <= 0:
                         managed.pop(header, None)
                 managed.pop("Subreddit", None)
             for target_row in target_rows:
@@ -1025,6 +1070,8 @@ class MySQLStore:
                     if not result.weekly_top_10_posts and field_name == "weekly_top_10_posts":
                         continue
                     value = self._db_value(field_name, getattr(result, field_name))
+                    if field_name in {"weekly_top_1_upvotes", "weekly_top_2_5_avg_upvotes", "weekly_top_6_10_avg_upvotes"} and (value is None or value <= 0):
+                        continue
                     if value is not None:
                         available.append((column, value))
 

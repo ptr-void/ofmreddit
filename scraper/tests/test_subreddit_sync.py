@@ -95,6 +95,8 @@ class SubredditSyncTests(unittest.TestCase):
         history.append_rows = lambda rows, **kwargs: history.values.extend(rows)
         store = object.__new__(GoogleSheetStore)
         store.workbook = SimpleNamespace(worksheet=lambda _: history)
+        store._sheet1_values = None
+        store.sheet1 = FakeWorksheet(values=[['Subreddit'], ['target']])
         result = ScrapeResult(
             subreddit="target", source_row=2, scraped_at_utc="2026-09-15T00:00:00Z",
             min_post_karma=210, min_comment_karma=80, min_combined_karma=300,
@@ -116,6 +118,8 @@ class SubredditSyncTests(unittest.TestCase):
         history.append_rows = lambda rows, **kwargs: history.values.extend(rows)
         store = object.__new__(GoogleSheetStore)
         store.workbook = SimpleNamespace(worksheet=lambda _: history)
+        store._sheet1_values = None
+        store.sheet1 = FakeWorksheet(values=[['Subreddit'], ['target']])
         result = ScrapeResult(subreddit="target", source_row=2, scraped_at_utc="2026-09-08T00:00:00Z")
         store.apply_observed_minimum_rolling_average([result])
         self.assertIsNone(result.min_post_karma)
@@ -145,6 +149,8 @@ class SubredditSyncTests(unittest.TestCase):
         history.append_rows = lambda rows, **kwargs: history.values.extend(rows)
         store = object.__new__(GoogleSheetStore)
         store.workbook = SimpleNamespace(worksheet=lambda _: history)
+        store._sheet1_values = None
+        store.sheet1 = FakeWorksheet(values=[['Subreddit'], ['target']])
         result = ScrapeResult(subreddit="target", source_row=2, scraped_at_utc="2026-09-16T00:00:00Z",
                               weekly_top_1_upvotes=30, weekly_top_2_5_avg_upvotes=6,
                               weekly_top_6_10_avg_upvotes=3, weekly_top_10_posts=[{"id": "post"}])
@@ -161,6 +167,8 @@ class SubredditSyncTests(unittest.TestCase):
         history.append_rows = lambda rows, **kwargs: history.values.extend(rows)
         store = object.__new__(GoogleSheetStore)
         store.workbook = SimpleNamespace(worksheet=lambda _: history)
+        store._sheet1_values = None
+        store.sheet1 = FakeWorksheet(values=[['Subreddit'], ['target']])
         result = ScrapeResult(subreddit="target", source_row=2, scraped_at_utc="2026-09-15T00:00:00Z")
         store.apply_weekly_rolling_average([result])
         self.assertEqual((result.weekly_top_1_upvotes, result.weekly_top_2_5_avg_upvotes,
@@ -176,6 +184,8 @@ class SubredditSyncTests(unittest.TestCase):
         history.append_rows = lambda rows, **kwargs: history.values.extend(rows)
         store = object.__new__(GoogleSheetStore)
         store.workbook = SimpleNamespace(worksheet=lambda _: history)
+        store._sheet1_values = None
+        store.sheet1 = FakeWorksheet(values=[['Subreddit'], ['target']])
         def scrape():
             return ScrapeResult(subreddit="target", source_row=2, scraped_at_utc="2026-09-15T00:00:00Z",
                                 weekly_top_1_upvotes=30, weekly_top_2_5_avg_upvotes=6, weekly_top_6_10_avg_upvotes=3)
@@ -195,6 +205,8 @@ class SubredditSyncTests(unittest.TestCase):
         history.append_rows = lambda rows, **kwargs: history.values.extend(rows)
         store = object.__new__(GoogleSheetStore)
         store.workbook = SimpleNamespace(worksheet=lambda _: history)
+        store._sheet1_values = None
+        store.sheet1 = FakeWorksheet(values=[['Subreddit'], ['target']])
         early = ScrapeResult(subreddit="target", source_row=2, scraped_at_utc="2026-09-29T12:00:00Z",
                              weekly_top_1_upvotes=1, weekly_top_2_5_avg_upvotes=1, weekly_top_6_10_avg_upvotes=1)
         store.apply_weekly_rolling_average([early])
@@ -213,6 +225,8 @@ class SubredditSyncTests(unittest.TestCase):
         history.append_rows = lambda rows, **kwargs: history.values.extend(rows)
         store = object.__new__(GoogleSheetStore)
         store.workbook = SimpleNamespace(worksheet=lambda _: history)
+        store._sheet1_values = None
+        store.sheet1 = FakeWorksheet(values=[['Subreddit'], ['target']])
         result = ScrapeResult(subreddit="target", source_row=2, scraped_at_utc="2026-09-25T00:00:00Z",
                               weekly_top_1_upvotes=25, weekly_top_10_posts=[{"id": "post"}])
         store.apply_weekly_rolling_average([result])

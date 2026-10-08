@@ -101,6 +101,44 @@ export function applyFourWeekAverages(
   })
 }
 
+/** Repair a missing published metric from its latest genuine saved reading.
+ * This is retention, not a new observation or an invented current-week score.
+ */
+export function retainLastKnownWeeklyValues(
+  headers: string[], rows: string[][], historyHeaders: string[], historyRows: string[][], now = Date.now(),
+): string[][] {
+  if (historyHeaders.length !== HISTORY_HEADERS.length || historyHeaders.some((h, i) => h.trim().toLowerCase() !== HISTORY_HEADERS[i])) {
+    throw new Error("Weekly Metrics History headers do not match the expected format")
+  }
+  const normalized = headers.map(header => header.trim().toLowerCase())
+  const nameIndex = normalized.findIndex(header => /^(subreddit|subreddit name|link)$/.test(header))
+  const columns = WEEKLY_HEADERS.map(header => normalized.indexOf(header))
+  const latest = new Map<string, { time: number; value: string }[]>()
+  const currentWeek = weekStart(now), midweek = currentWeek + 2 * 86400_000
+  for (const row of historyRows) {
+    const time = Date.parse(row[1] || "")
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|\+00:00)$/.test(row[1] || "") || !Number.isFinite(time) || time > now) continue
+    if (weekStart(time) === currentWeek && time < midweek) continue
+    const key = subredditKey(row[0] || "")
+    if (!key) continue
+    const values = latest.get(key) || []
+    for (let index = 0; index < 3; index++) {
+      const raw = String(row[index + 2] || "").trim()
+      if (/^\d+$/.test(raw) && Number.isSafeInteger(Number(raw)) && Number(raw) > 0 && (!values[index] || time > values[index].time)) {
+        values[index] = { time, value: raw }
+      }
+    }
+    latest.set(key, values)
+  }
+  return rows.map(row => {
+    const next = [...row], saved = latest.get(subredditKey(row[nameIndex] || ""))
+    columns.forEach((column, index) => {
+      if (column >= 0 && !(Number(String(row[column] || "").replace(/,/g, "")) > 0) && saved?.[index]) next[column] = saved[index].value
+    })
+    return next
+  })
+}
+
 export type RowHealth = { status: "stale" | "unverified"; lastAttemptAt: string }
 
 export function sourceRowHealth(headers: string[], rows: string[][]): Record<string, RowHealth> {

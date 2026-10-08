@@ -7,6 +7,8 @@ import DatabaseTable from "@/components/reddit-database/database-table"
 import SubmitSubredditModal from "@/components/reddit-database/submit-subreddit-modal"
 import s from "@/styles/scraper.module.css"
 import type { RowHealth } from "@/lib/reddit-database-display"
+import { filterDatabaseFlags, type BooleanFilter } from "@/lib/reddit-database-filters"
+import { SearchableNicheFilter } from "@/components/searchable-niche-filter"
 
 type SheetData = {
   title: string
@@ -75,6 +77,9 @@ export default function RedditDatabasePage() {
   const [error, setError] = useState<string | null>(null)
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(false)
   const [selectedNiche, setSelectedNiche] = useState("all")
+  const [ctaFilter, setCtaFilter] = useState<BooleanFilter>("all")
+  const [verificationFilter, setVerificationFilter] = useState<BooleanFilter>("all")
+  const [botBouncerFilter, setBotBouncerFilter] = useState<BooleanFilter>("all")
   const [search, setSearch] = useState("")
   const [maxTotalKarma, setMaxTotalKarma] = useState("")
   const [freshAccountOnly, setFreshAccountOnly] = useState(false)
@@ -87,6 +92,9 @@ export default function RedditDatabasePage() {
     setLoading(true)
     if (resetFilters) {
       setSelectedNiche("all")
+      setCtaFilter("all")
+      setVerificationFilter("all")
+      setBotBouncerFilter("all")
       setSortState({ columnIndex: -1, direction: null })
       setSearch("")
       setMaxTotalKarma("")
@@ -154,7 +162,7 @@ export default function RedditDatabasePage() {
     const headers = sheetData.headers
     const totalKarmaIndex = metricIndex(headers, "min total karma")
     const accountAgeIndex = metricIndex(headers, "min account age")
-    let rows = sheetData.rows
+    let rows = filterDatabaseFlags(headers, sheetData.rows, { cta: ctaFilter, verification: verificationFilter, botBouncer: botBouncerFilter })
     if (selectedNiche !== "all" && nicheColumnIndex >= 0) {
       rows = rows.filter((row) => splitNiches(row[nicheColumnIndex] || "").includes(selectedNiche))
     }
@@ -192,7 +200,7 @@ export default function RedditDatabasePage() {
       }
     }
     return rows
-  }, [sheetData, selectedNiche, nicheColumnIndex, search, maxTotalKarma, freshAccountOnly, performanceSort])
+  }, [sheetData, selectedNiche, nicheColumnIndex, search, maxTotalKarma, freshAccountOnly, performanceSort, ctaFilter, verificationFilter, botBouncerFilter])
 
   const handleSort = (columnIndex: number) => {
     const firstDirection = renderHeaders[columnIndex]?.trim().toLowerCase().startsWith("hot ") ? "desc" : "asc"
@@ -273,14 +281,23 @@ export default function RedditDatabasePage() {
                 </div>
                 <div className="flex w-40 flex-col gap-1">
                   <label htmlFor="nicheFilter" className="text-xs font-semibold text-muted-foreground">Filter Niche</label>
-                  <Select value={selectedNiche} onValueChange={setSelectedNiche}>
-                    <SelectTrigger id="nicheFilter" className={s.csvinput}><SelectValue placeholder="All niches" /></SelectTrigger>
+                  <SearchableNicheFilter options={nicheOptions} value={selectedNiche} onChange={setSelectedNiche} className={s.csvinput} />
+                </div>
+                {[
+                  { id: "ctaFilter", label: "CTA captions", value: ctaFilter, set: setCtaFilter },
+                  { id: "verificationFilter", label: "Verification", value: verificationFilter, set: setVerificationFilter },
+                  { id: "botBouncerFilter", label: "Bot Bouncer", value: botBouncerFilter, set: setBotBouncerFilter },
+                ].map(filter => <div key={filter.id} className="flex w-40 flex-col gap-1">
+                  <label htmlFor={filter.id} className="text-xs font-semibold text-muted-foreground">{filter.label}</label>
+                  <Select value={filter.value} onValueChange={value => filter.set(value as BooleanFilter)}>
+                    <SelectTrigger id={filter.id} className={s.csvinput}><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All niches</SelectItem>
-                      {nicheOptions.map((niche) => <SelectItem key={niche} value={niche}>{niche}</SelectItem>)}
+                      <SelectItem value="all">Any</SelectItem>
+                      <SelectItem value="yes">On / Yes</SelectItem>
+                      <SelectItem value="no">Off / No</SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
+                </div>)}
                 <div className="flex w-44 flex-col gap-1">
                   <label htmlFor="karmaCeiling" className="text-xs font-semibold text-muted-foreground">Min Total Karma &lt;</label>
                   <input
@@ -367,7 +384,7 @@ export default function RedditDatabasePage() {
               Performance stats show four-week rolling averages, with one reading per week.
               The current week joins from Wednesday (UTC), not at the start of the week.
               Missing readings retain the last published average. While history builds, available weeks are used.
-              “—” means no usable reading has been recorded; old-period estimates are not substituted.
+              Empty or zero new readings keep the last saved positive value; it may be older than the current four-week window.
             </p>
             {freePreview && (
               <div className="rounded-lg border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-foreground">

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { createWorkbookReader, parseSpreadsheetUrl } from "@/lib/google-sheets-reader"
-import { sourceRowHealth, hasWeeklyMetrics, applyFourWeekAverages } from "@/lib/reddit-database-display"
+import { sourceRowHealth, hasWeeklyMetrics, applyFourWeekAverages, retainLastKnownWeeklyValues } from "@/lib/reddit-database-display"
 import { verifyToken } from "@/lib/auth"
 import { getActiveTierForUser } from "@/lib/limits"
 
@@ -66,6 +66,7 @@ export async function GET(req: Request) {
       try {
         const history = await reader.readByName("Weekly Metrics History", "A:E")
         sourceSheet.rows = applyFourWeekAverages(sourceSheet.headers, sourceSheet.rows, history.headers, history.rows)
+        sourceSheet.rows = retainLastKnownWeeklyValues(sourceSheet.headers, sourceSheet.rows, history.headers, history.rows)
       } catch (error) {
         // Missing history must not take the main database offline or invent a metric.
         console.warn("Weekly history fallback unavailable:", error instanceof Error ? error.message : "Unknown error")

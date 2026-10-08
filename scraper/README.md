@@ -229,12 +229,28 @@ Weekly columns show equal-weight averages of four UTC calendar weeks, not four
 scrape runs. Each week contributes its latest positive raw reading per rank
 group. New-week observations join from Wednesday 00:00 UTC; until then the
 previous four completed weeks stay selected. Missing/zero groups keep their
-prior window and the sheet writer retains the last published mean if none exists.
+prior window and the sheet writer retains the last published positive value if none exists.
 Incomplete four-week history uses only recorded eligible weeks, not invented
 zeros. Raw readings remain in `Weekly Metrics History`, with idempotent timestamps.
 The website uses the same rules and no longer reads historical post-period
 baselines or shows their dates. No additional historical backfill requests run
 inside the sync. The existing scheduled cycle continues collecting observations.
+When a published value is missing, its latest genuine saved positive observation
+can be recovered even outside the recent calendar window. A carried-forward
+score is never stored as a fresh raw observation. Sheet and MySQL writers both
+skip zero/missing weekly values; sampled karma still permits genuine zero values.
+
+For the user's last-known-data policy, repair lost legacy cells with:
+
+```powershell
+python -m scraper.restore_last_known_weekly
+python -m scraper.restore_last_known_weekly --apply
+```
+
+This first uses saved weekly history, then validated existing legacy baselines.
+It does not scrape old posts again or create current-week history from those
+baselines. Backups include native target-cell metadata; formulas/validations
+are protected, source changes are rechecked, and unrelated fields are verified.
 
 To restore legacy blank/zero weekly cells immediately, without a new scrape:
 

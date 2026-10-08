@@ -113,3 +113,13 @@ test('invalid history cells are independently ignored and arbitrary old dates ne
   assert.match(table,/four UTC calendar weeks/)
   assert.equal(databaseColumnLabel('Hot 1 (Weekly)'),'Top 1 (4-week avg)')
 })
+
+test('last-known retention restores lost values but never replaces existing scores with old, zero or future readings',()=>{
+  const { retainLastKnownWeeklyValues }=context.exports
+  const rows=[['example','500','0','']]
+  const history=[['example','2026-06-01T00:00:00Z','100','30','12'],
+    ['example','2026-06-02T00:00:00Z','120','40','0'],['example','2027-01-01T00:00:00Z','9999','9999','9999']]
+  const next=retainLastKnownWeeklyValues(weeklyHeaders,rows,historyHeaders,history,Date.parse('2026-10-08T00:00:00Z'))
+  assert.deepEqual(Array.from(next[0]),['example','500','40','12'])
+  assert.deepEqual(rows,[['example','500','0','']])
+})

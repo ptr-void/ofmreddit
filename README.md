@@ -161,10 +161,25 @@ Free previews do not read or expose it. Fewer than four recorded weeks use the
 available eligible weeks while history builds; no extra weeks or scores are
 fabricated. If no eligible reading exists, the last published sheet value stays.
 
-The former `Weekly Metric Baselines` worksheet is preserved for audit only: it
-is not read by the website or generated automatically by the sync. Historical
-post-period estimates and per-cell date badges are removed. `—` remains for
-metrics with neither recorded eligible history nor a published positive value.
+If a recent window is empty, published positive values are retained. A lost
+published value can also be recovered from its latest genuine saved reading,
+even outside the current four-week window. Retained values are not appended to
+raw history with a fresh timestamp. The table explains this carry-forward policy
+without adding per-cell date badges.
+
+`python -m scraper.restore_last_known_weekly` plans a one-time repair of legacy
+blank/zero cells using saved weekly observations, then validated records from
+the existing `Weekly Metric Baselines` audit worksheet. Add `--apply` to back up
+the source, inspect native cell constraints, revalidate, write only the planned
+cells and verify readback. Baseline scores retain their original provenance;
+they are never inserted as new current-week readings. The website and scheduled
+sync do not automatically regenerate older-post baselines.
+
+The database supports combined Yes/No/Any filters for CTA captions, verification
+and Bot Bouncer alongside niche, karma/account-age filters and performance order.
+Niche menus support text search/type-to-open and mouse/touchpad scrolling. The
+shared multi-select works inside submission dialogs, checker and admin review,
+keeps hidden selections, and retains the eight-tag limit.
 
 ### Account-linked website visits
 
