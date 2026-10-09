@@ -41,14 +41,14 @@ const WEEK_MS = 7 * 86400_000
 const weekStart = (time: number) => {
   const date = new Date(time)
   return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
-    - ((date.getUTCDay() + 6) % 7) * 86400_000
+    - date.getUTCDay() * 86400_000
 }
 
 export function hasWeeklyMetrics(headers: string[]): boolean {
   return headers.some(header => WEEKLY_HEADERS.includes(header.trim().toLowerCase()))
 }
 
-/** One latest positive reading per UTC calendar week, not four scrape runs.
+/** One latest positive reading per Sunday–Saturday UTC week, not four scrape runs.
  * Current-week readings join from Wednesday; until then the previous four
  * completed weeks stay selected. Missing groups retain their own prior window.
  */
@@ -64,7 +64,7 @@ export function applyFourWeekAverages(
   if (nameIndex < 0) nameIndex = normalized.indexOf("link")
   if (nameIndex < 0) return rows
   const columns = WEEKLY_HEADERS.map(header => normalized.indexOf(header))
-  const currentWeek = weekStart(now), midweek = currentWeek + 2 * 86400_000
+  const currentWeek = weekStart(now), midweek = currentWeek + 3 * 86400_000
   const samples = new Map<string, Map<number, (number | null)[]>>()
   for (const row of historyRows) {
     const name = subredditKey(row[0] || ""), timestamp = row[1] || ""
@@ -124,7 +124,7 @@ export function retainLastKnownWeeklyValues(
   const nameIndex = normalized.findIndex(header => /^(subreddit|subreddit name|link)$/.test(header))
   const columns = WEEKLY_HEADERS.map(header => normalized.indexOf(header))
   const latest = new Map<string, { time: number; value: string }[]>()
-  const currentWeek = weekStart(now), midweek = currentWeek + 2 * 86400_000
+  const currentWeek = weekStart(now), midweek = currentWeek + 3 * 86400_000
   for (const row of historyRows) {
     const time = Date.parse(row[1] || "")
     if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|\+00:00)$/.test(row[1] || "") || !Number.isFinite(time) || time > now) continue

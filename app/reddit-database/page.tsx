@@ -383,7 +383,7 @@ export default function RedditDatabasePage() {
               {renderHeaders.length.toLocaleString()} columns
             </div>
             <p className="px-1 text-xs text-muted-foreground">
-              Performance stats show four-week rolling averages, with one reading per week.
+              Performance stats show four-week rolling averages, with one reading per Sunday–Saturday week (UTC).
               The current week joins from Wednesday (UTC), not at the start of the week.
               Missing readings retain the last published average. While history builds, available weeks are used.
               Empty or zero new readings keep the last saved positive value; it may be older than the current four-week window.

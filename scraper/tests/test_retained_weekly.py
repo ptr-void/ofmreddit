@@ -1,11 +1,17 @@
 import unittest
-from scraper.subreddit_sync import retained_weekly_metrics, parse_utc, GoogleSheetStore, MySQLStore, ScrapeResult, SHEET1_REQUIRED_HEADERS, column_letters
+from scraper.subreddit_sync import retained_weekly_metrics, weekly_calendar_start, parse_utc, GoogleSheetStore, MySQLStore, ScrapeResult, SHEET1_REQUIRED_HEADERS, column_letters
 from scraper.tests.test_subreddit_sync import FakeWorksheet
 from types import SimpleNamespace
 from scraper.restore_last_known_weekly import restore_plan
 from scraper.weekly_baselines import HEADERS
 
 class RetainedWeeklyTests(unittest.TestCase):
+    def test_calendar_buckets_match_user_sunday_to_saturday_dates(self):
+        self.assertEqual(weekly_calendar_start(parse_utc('2026-10-24T23:59:59Z')),parse_utc('2026-10-18T00:00:00Z'))
+        self.assertEqual(weekly_calendar_start(parse_utc('2026-10-25T00:00:00Z')),parse_utc('2026-10-25T00:00:00Z'))
+    def test_new_sunday_reading_does_not_replace_previous_saved_score(self):
+        samples=[('2026-10-24T23:59:59Z',(440,44,22)),('2026-10-25T00:00:00Z',(1,1,1))]
+        self.assertEqual(retained_weekly_metrics(samples,now=parse_utc('2026-10-25T12:00:00Z')),(440,44,22))
     def test_empty_or_zero_current_readings_keep_published_values(self):
         now=parse_utc('2026-10-08T12:00:00Z')
         samples=[('2026-10-08T11:00:00Z',(0, None, 0))]

@@ -124,6 +124,17 @@ test('last-known retention restores lost values but never replaces existing scor
   assert.deepEqual(rows,[['example','500','0','']])
 })
 
+test('last-known retention rejects Sunday-to-Tuesday readings in the new Sunday-based week',()=>{
+  const {retainLastKnownWeeklyValues}=context.exports
+  const rows=[['example','','','']]
+  const history=[['example','2026-10-24T23:59:59Z','440','44','22'],
+    ['example','2026-10-25T00:00:00Z','1','1','1']]
+  const result=retainLastKnownWeeklyValues(weeklyHeaders,rows,historyHeaders,history,Date.parse('2026-10-25T12:00:00Z'))
+  assert.deepEqual(Array.from(result[0].slice(1)),['440','44','22'])
+  const page=fs.readFileSync(path.join(__dirname,'../app/reddit-database/page.tsx'),'utf8')
+  assert.match(page,/Sunday–Saturday week \(UTC\)/)
+})
+
 test('default alphabetical ordering uses normalized community names and never mutates source rows',()=>{
   const {sortDatabaseRowsByName}=context.exports
   const rows=[['https://www.reddit.com/r/Zebra/'],['r/apple'],['Banana'],['https://www.reddit.com/r/1819gw/']]

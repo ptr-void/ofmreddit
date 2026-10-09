@@ -238,7 +238,7 @@ production row deletion is part of this feature.
 
 ### Weekly performance smoothing
 
-Weekly columns show equal-weight averages of four UTC calendar weeks, not four
+Weekly columns show equal-weight averages of four Sunday–Saturday UTC calendar weeks, not four
 scrape runs. Each week contributes its latest positive raw reading per rank
 group. New-week observations join from Wednesday 00:00 UTC; until then the
 previous four completed weeks stay selected. Missing/zero groups keep their

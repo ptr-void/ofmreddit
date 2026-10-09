@@ -121,17 +121,23 @@ def average_int(values: Sequence[int]) -> int:
     return round(sum(values) / len(values)) if values else 0
 
 
+def weekly_calendar_start(stamp: datetime) -> datetime:
+    """Sunday 00:00 UTC; seven-day buckets end the following Saturday."""
+    stamp = stamp.astimezone(UTC)
+    return stamp.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=(stamp.weekday() + 1) % 7)
+
+
 def rolling_weekly_metrics(history: Sequence[tuple[str | datetime, Sequence[int | None]]],
                            *, now: datetime) -> tuple[int | None, ...]:
-    """Equal-weight four-week mean; current week joins from Wednesday UTC.
+    """Equal-weight Sunday–Saturday mean; current week joins Wednesday UTC.
 
     Choose one latest positive reading per metric/week. Multiple daily samples
     never count as multiple weeks. Missing groups keep the four completed weeks;
     no observations outside that calendar window are imported as a fallback.
     """
     now = now.astimezone(UTC)
-    current_week = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=now.weekday())
-    midweek = current_week + timedelta(days=2)
+    current_week = weekly_calendar_start(now)
+    midweek = current_week + timedelta(days=3)
     recorded = {}
     for raw_stamp, values in history:
         if isinstance(raw_stamp, str) and not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|\+00:00)", raw_stamp):
@@ -151,7 +157,7 @@ def rolling_weekly_metrics(history: Sequence[tuple[str | datetime, Sequence[int 
             value = values[index] if index < len(values) else None
             if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
                 continue
-            week = stamp.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=stamp.weekday())
+            week = weekly_calendar_start(stamp)
             if week == current_week and stamp < midweek:
                 continue
             weekly[week] = value
@@ -184,9 +190,10 @@ def retained_weekly_metrics(history, *, now, published=(None, None, None)):
     A missing published value can be recovered from its latest genuine saved
     observation. No synthetic timestamp or zero is promoted into a new reading.
     """
+    now = now.astimezone(UTC)
     means = rolling_weekly_metrics(history, now=now)
-    current_week = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=now.weekday())
-    midweek = current_week + timedelta(days=2)
+    current_week = weekly_calendar_start(now)
+    midweek = current_week + timedelta(days=3)
     result = []
     for index, mean in enumerate(means):
         if mean is not None:

@@ -148,11 +148,17 @@ Migration reference: https://ai.google.dev/gemini-api/docs/generate-content/late
 ### Four-week performance averages
 
 Top 1, Top 2–5 and Top 6–10 display equal-weight averages of four UTC calendar
-weeks, **not four scrape runs**. Each week contributes its latest positive raw
+weeks (Sunday–Saturday), **not four scrape runs**. Each week contributes its latest positive raw
 reading for that rank group. Current-week samples enter the displayed average
 only from Wednesday 00:00 UTC; before that, the previous four completed weeks
 remain selected. Each group handles missing readings independently. Missing or
 zero refreshes retain the last published average rather than forcing it to zero.
+
+For example, the four week buckets ending October 24, 2026 begin September 27,
+October 4, October 11 and October 18. On Sunday October 25 the new week bucket
+starts; once an eligible Wednesday-or-later reading is recorded, the window
+uses October 4–31 and drops September 27–October 3. Early-week readings stay
+in raw history without prematurely replacing the previous displayed average.
 
 The existing sync records raw readings in `Weekly Metrics History`; both the
 worker and website use the same calendar-window rules. The paid database view
