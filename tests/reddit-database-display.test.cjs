@@ -123,3 +123,15 @@ test('last-known retention restores lost values but never replaces existing scor
   assert.deepEqual(Array.from(next[0]),['example','500','40','12'])
   assert.deepEqual(rows,[['example','500','0','']])
 })
+
+test('default alphabetical ordering uses normalized community names and never mutates source rows',()=>{
+  const {sortDatabaseRowsByName}=context.exports
+  const rows=[['https://www.reddit.com/r/Zebra/'],['r/apple'],['Banana'],['https://www.reddit.com/r/1819gw/']]
+  const before=JSON.stringify(rows)
+  assert.deepEqual(Array.from(sortDatabaseRowsByName(['Subreddit Name'],rows),r=>r[0]),[rows[3][0],rows[1][0],rows[2][0],rows[0][0]])
+  assert.equal(JSON.stringify(rows),before)
+  assert.equal(sortDatabaseRowsByName(['Unknown'],rows),rows)
+  const page=fs.readFileSync(path.join(__dirname,'../app/reddit-database/page.tsx'),'utf8')
+  assert.match(page,/Alphabetical \(A–Z\)/)
+  assert.match(page,/rows = sortDatabaseRowsByName\(headers, rows\)/)
+})

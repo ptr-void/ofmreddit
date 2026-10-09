@@ -155,7 +155,7 @@ class MaintenanceTests(unittest.TestCase):
         worker.analyzer = SimpleNamespace(_call=lambda fn, label: fn(),
             reddit=SimpleNamespace(subreddits=SimpleNamespace(search=search)))
         with patch('scraper.subreddit_maintenance.utc_now', return_value=NOW), patch.dict('os.environ',
-                {'DISCOVERY_MIN_TOP1_UPVOTES': '400', 'DISCOVERY_QUERIES_PER_DAY': '3', 'DISCOVERY_SEARCH_LIMIT': '50'}):
+                {'DISCOVERY_MIN_TOP1_UPVOTES': '400', 'DISCOVERY_QUERIES_PER_DAY': '3', 'DISCOVERY_SEARCH_LIMIT': '50', 'DISCOVERY_RELATED_SEEDS_PER_DAY': '0'}):
             worker.discover(10)
         self.assertEqual(len(calls), 3)
         self.assertEqual([limit for _, limit in calls], [50, 50, 50])

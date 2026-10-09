@@ -60,8 +60,10 @@ jobs:
       SYNC_CYCLE_REST_HOURS: 24
       DISCOVERY_MIN_MEMBERS: 100000
       DISCOVERY_MIN_TOP1_UPVOTES: 400
-      DISCOVERY_QUERIES_PER_DAY: 3
-      DISCOVERY_SEARCH_LIMIT: 50
+      DISCOVERY_QUERIES_PER_DAY: 6
+      DISCOVERY_SEARCH_LIMIT: 75
+      DISCOVERY_RELATED_SEEDS_PER_DAY: 5
+      DISCOVERY_MAX_CANDIDATE_CHECKS: 120
       PYTHONUNBUFFERED: "1"
 
     steps:
@@ -117,7 +119,7 @@ jobs:
         if: env.RUN_DRY == 'false' && env.SYNC_ENABLED == 'true'
         # Maintenance errors stay visible but must not interrupt the main pass chain.
         continue-on-error: true
-        run: python scraper/subreddit_maintenance.py --apply --max-checks 20 --discovery-limit 10
+        run: python scraper/subreddit_maintenance.py --apply --max-checks 20 --discovery-limit 25
 
       - name: Report deferred maintenance
         if: always() && steps.maintenance.outcome == 'failure'

@@ -45,6 +45,8 @@ function displaySubredditName(value: string) {
   return value
     .replace(/^https?:\/\/(?:www\.)?reddit\.com\/r\//i, "")
     .replace(/^r\//i, "")
+    .replace(/[?#].*$/, "")
+    .replace(/\/(?:hot|new|top|rising|controversial)(?:\/.*)?$/i, "")
     .replace(/\/+$/, "")
 }
 

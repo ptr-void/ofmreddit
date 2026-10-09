@@ -101,6 +101,16 @@ export function applyFourWeekAverages(
   })
 }
 
+/** Default order follows visible community names, never source-sheet row order. */
+export function sortDatabaseRowsByName(headers: string[], rows: string[][]): string[][] {
+  const index = headers.findIndex(header => /^(subreddit|subreddit name)$/i.test(header.trim()))
+  const nameIndex = index >= 0 ? index : headers.findIndex(header => header.trim().toLowerCase() === "link")
+  if (nameIndex < 0) return rows
+  return [...rows].sort((a, b) => subredditKey(a[nameIndex] || "").localeCompare(
+    subredditKey(b[nameIndex] || ""), "en", { sensitivity: "base", numeric: true },
+  ))
+}
+
 /** Repair a missing published metric from its latest genuine saved reading.
  * This is retention, not a new observation or an invented current-week score.
  */

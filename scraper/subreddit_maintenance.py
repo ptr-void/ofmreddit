@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import re
+from itertools import zip_longest
 
 try:
     from scraper.subreddit_sync import (
@@ -55,6 +56,14 @@ def discovery_niche(value):
         return str(payload.get('query') or '').strip().lower()
     except (TypeError, ValueError, AttributeError):
         return ''
+
+
+def related_community_names(text):
+    """Only extract explicit r/name links; do not invent related communities."""
+    return sorted({normalize_subreddit(name) for name in re.findall(
+        r'(?<![A-Za-z0-9_])/?r/([A-Za-z0-9_]{2,21})(?![A-Za-z0-9_])',
+        str(text or ''), re.IGNORECASE,
+    )})
 
 
 @dataclass
@@ -392,43 +401,95 @@ class Maintenance:
                     value = row[lookup['niche']] if len(row) > lookup['niche'] else ''
                     niches.update(tag.strip().lower() for tag in value.split(',') if tag.strip())
         queries = sorted(niches) or ['nsfw']
-        position = int(control['discovery_cursor']) % len(queries)
-        query_count = min(len(queries), max(1, min(10, int(os.getenv('DISCOVERY_QUERIES_PER_DAY', '3')))))
+        cursor = int(control['discovery_cursor'])
+        position = cursor % len(queries)
+        query_count = min(len(queries), max(1, min(10, int(os.getenv('DISCOVERY_QUERIES_PER_DAY', '6')))))
         selected_queries = [queries[(position + offset) % len(queries)] for offset in range(query_count)]
-        search_limit = max(1, min(100, int(os.getenv('DISCOVERY_SEARCH_LIMIT', '50'))))
+        search_limit = max(1, min(100, int(os.getenv('DISCOVERY_SEARCH_LIMIT', '75'))))
+        seed_count = max(0, min(10, int(os.getenv('DISCOVERY_RELATED_SEEDS_PER_DAY', '5'))))
+        check_limit = max(1, min(300, int(os.getenv('DISCOVERY_MAX_CANDIDATE_CHECKS', '120'))))
         known = set(rows)
         known.update(normalize_subreddit(r['subreddit_name']) for r in self.sql('SELECT subreddit_name FROM master_subreddits'))
-        known.update(r['subreddit_name'] for r in self.sql('SELECT subreddit_name FROM subreddit_maintenance'))
-        def search_candidates():
-            for query in selected_queries:
+        known.update(normalize_subreddit(r['subreddit_name']) for r in self.sql('SELECT subreddit_name FROM subreddit_maintenance'))
+        pools, successful_sources = [], 0
+        for query in selected_queries:
+            try:
                 candidates = self.analyzer._call(
                     lambda: list(self.analyzer.reddit.subreddits.search(query, limit=search_limit, params={'include_over_18': 'on'})),
                     'Discovery search',
                 )
-                for candidate in candidates:
-                    yield query, candidate
+                pools.append([(query, sub, 'niche_search', '') for sub in candidates])
+                successful_sources += 1
+            except Exception as exc:
+                self.report['errors'].append(f'Discovery search {query}: {type(exc).__name__}')
+        status_column = lookup.get('sync status', -1)
+        seeds = sorted(name for name, matches in rows.items() if NAME.fullmatch(name) and any(
+            status_column < 0 or len(row) <= status_column or row[status_column].strip().lower() != 'archived'
+            for _, row in matches))
+        seed_count = min(seed_count, len(seeds))
+        seed_start = (cursor // query_count * seed_count) % len(seeds) if seeds else 0
+        selected_seeds = [seeds[(seed_start + offset) % len(seeds)] for offset in range(seed_count)]
+        widgets_available = True
+        for seed in selected_seeds:
+            try:
+                sub = self.analyzer.reddit.subreddit(seed)
+                self.analyzer._call(sub._fetch, f'r/{seed} related-community sidebar')
+                if normalize_subreddit(str(sub.display_name)) != seed:
+                    raise ValueError('Seed identity mismatch')
+                names = related_community_names(getattr(sub, 'description', ''))
+                pools.append([('', self.analyzer.reddit.subreddit(name), 'sidebar_link', seed)
+                              for name in names if name not in known][:50])
+                successful_sources += 1
+                try:
+                    if not widgets_available:
+                        continue
+                    widgets = self.analyzer._call(lambda: list(sub.widgets.sidebar), f'r/{seed} related-community widgets')
+                    linked = [item for widget in widgets if getattr(widget, 'kind', '') == 'community-list'
+                              for item in widget]
+                    pools.append([('', item, 'related_widget', seed) for item in linked][:50])
+                except Exception as exc:
+                    if type(exc).__name__ == 'InsufficientScope':
+                        widgets_available = False
+                        self.report['discovery_widgets_status'] = 'unavailable_scope'
+                        self.report.setdefault('discovery_warnings', []).append(
+                            'Related-community widgets need an additional Reddit token scope; sidebar links remain enabled.')
+                    else:
+                        self.report['errors'].append(f'Discovery widgets r/{seed}: {type(exc).__name__}')
+            except Exception as exc:
+                self.report['errors'].append(f'Discovery sidebar r/{seed}: {type(exc).__name__}')
         minimum = int(os.getenv('DISCOVERY_MIN_MEMBERS', '100000'))
         max_age = int(os.getenv('DISCOVERY_MAX_POST_AGE_DAYS', '30'))
         minimum_top1 = int(os.getenv('DISCOVERY_MIN_TOP1_UPVOTES', '400'))
-        for query, sub in search_candidates():
+        checked, seen = 0, set()
+        # Interleave sources so the first niche cannot consume the entire daily budget.
+        candidates = (item for batch in zip_longest(*pools) for item in batch if item is not None)
+        for query, sub, source, seed in candidates:
             name = normalize_subreddit(str(sub.display_name))
-            if name in known or not NAME.fullmatch(name):
+            if name in known or name in seen or not NAME.fullmatch(name):
                 continue
+            if checked >= check_limit:
+                break
+            seen.add(name)
+            checked += 1
             try:
                 # Explicit metadata fetch rather than trusting a search listing's cached fields.
                 self.analyzer._call(sub._fetch, f'r/{name} discovery metadata')
+                if normalize_subreddit(str(sub.display_name)) != name:
+                    continue
                 metadata = {'name': name, 'over18': bool(sub.over18), 'subreddit_type': sub.subreddit_type,
                             'subscribers': parse_subscriber_count(getattr(sub, 'subscribers', None)), 'query': query,
                             'title': getattr(sub, 'title', ''),
-                            'public_description': getattr(sub, 'public_description', '')}
-                if not metadata['over18'] or metadata['subreddit_type'] != 'public' or (metadata['subscribers'] or 0) < minimum:
+                            'public_description': getattr(sub, 'public_description', ''),
+                            'source': source, 'seed_subreddit': seed}
+                if not metadata['over18'] or metadata['subreddit_type'] != 'public' or (metadata['subscribers'] or 0) < minimum or discovery_excluded(metadata):
                     continue
                 posts = self.analyzer._call(lambda: list(sub.new(limit=5)), f'r/{name} discovery activity')
                 surviving = [float(p.created_utc) for p in posts if not getattr(p, 'removed_by_category', None)]
                 metadata['latest_post_utc'] = max(surviving) if surviving else None
                 weekly_top = self.analyzer._call(
                     lambda: list(sub.top(time_filter='week', limit=1)), f'r/{name} discovery weekly top')
-                metadata['top1_weekly'] = max((int(getattr(p, 'score', 0) or 0) for p in weekly_top), default=0)
+                metadata['top1_weekly'] = max((int(getattr(p, 'score', 0) or 0) for p in weekly_top
+                                             if not getattr(p, 'removed_by_category', None)), default=0)
                 if not candidate_eligible(metadata, now, minimum, max_age, minimum_top1):
                     continue
                 if self.apply:
@@ -443,21 +504,30 @@ class Maintenance:
                 if len(self.report['discovered']) >= limit:
                     break
             except Exception as exc:
-                self.report['errors'].append(f'Discovery r/{name}: {type(exc).__name__}')
-        if self.apply:
-            self.sql('UPDATE subreddit_maintenance_control SET last_discovery_at=UTC_TIMESTAMP(), discovery_cursor=%s WHERE id=1', (position + query_count,))
+                status = getattr(getattr(exc, 'response', None), 'status_code', None)
+                if status in (403, 404):
+                    self.report.setdefault('discovery_skipped', []).append({'name': name, 'reason': 'unavailable', 'http_status': status})
+                else:
+                    self.report['errors'].append(f'Discovery r/{name}: {type(exc).__name__}')
+        if self.apply and successful_sources:
+            self.sql('UPDATE subreddit_maintenance_control SET last_discovery_at=UTC_TIMESTAMP(), discovery_cursor=%s WHERE id=1', (cursor + query_count,))
         self.report['discovery_queries'] = selected_queries
         self.report['discovery_min_top1'] = minimum_top1
+        self.report['discovery_related_seeds'] = selected_seeds
+        self.report['discovery_checked_candidates'] = checked
+        self.report['discovery_candidate_check_limit'] = check_limit
+        self.report['discovery_queue_limit'] = limit
+        self.report['discovery_successful_sources'] = successful_sources
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apply', action='store_true')
     parser.add_argument('--max-checks', type=int, default=20)
-    parser.add_argument('--discovery-limit', type=int, default=10)
+    parser.add_argument('--discovery-limit', type=int, default=25)
     args = parser.parse_args()
-    if not 0 <= args.max_checks <= 100 or not 0 <= args.discovery_limit <= 20:
-        parser.error('Use 0..100 availability checks and 0..20 discoveries')
+    if not 0 <= args.max_checks <= 100 or not 0 <= args.discovery_limit <= 50:
+        parser.error('Use 0..100 availability checks and 0..50 discoveries')
     import mysql.connector
     connection = mysql.connector.connect(**connection_config())
     maintenance = None

@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import DatabaseTable from "@/components/reddit-database/database-table"
 import SubmitSubredditModal from "@/components/reddit-database/submit-subreddit-modal"
 import s from "@/styles/scraper.module.css"
-import type { RowHealth } from "@/lib/reddit-database-display"
+import { sortDatabaseRowsByName, type RowHealth } from "@/lib/reddit-database-display"
 import { filterDatabaseFlags, type BooleanFilter } from "@/lib/reddit-database-filters"
 import { SearchableNicheFilter } from "@/components/searchable-niche-filter"
 
@@ -186,7 +186,7 @@ export default function RedditDatabasePage() {
       const query = search.toLowerCase()
       rows = rows.filter((row) => row.some((cell) => String(cell || "").toLowerCase().includes(query)))
     }
-    if (performanceSort) {
+    if (performanceSort && performanceSort !== "none") {
       const sortIndex = metricIndex(headers, performanceSort)
       if (sortIndex >= 0) {
         const direction = performanceSort.startsWith("hot ") ? -1 : 1
@@ -198,6 +198,8 @@ export default function RedditDatabasePage() {
           return direction * (left - right)
         })
       }
+    } else {
+      rows = sortDatabaseRowsByName(headers, rows)
     }
     return rows
   }, [sheetData, selectedNiche, nicheColumnIndex, search, maxTotalKarma, freshAccountOnly, performanceSort, ctaFilter, verificationFilter, botBouncerFilter])
@@ -334,9 +336,9 @@ export default function RedditDatabasePage() {
                       setSortState({ columnIndex: -1, direction: null })
                     }}
                   >
-                    <SelectTrigger id="performanceSort" className={s.csvinput}><SelectValue placeholder="Default order" /></SelectTrigger>
+                    <SelectTrigger id="performanceSort" className={s.csvinput}><SelectValue placeholder="Alphabetical (A–Z)" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">Default order</SelectItem>
+                      <SelectItem value="none">Alphabetical (A–Z)</SelectItem>
                       <SelectItem value="min account age">Freshest observed accounts</SelectItem>
                       <SelectItem value="min total karma">Lowest observed total karma</SelectItem>
                       <SelectItem value="hot 1 (weekly)">Top 1 (4-week average)</SelectItem>
@@ -385,6 +387,7 @@ export default function RedditDatabasePage() {
               The current week joins from Wednesday (UTC), not at the start of the week.
               Missing readings retain the last published average. While history builds, available weeks are used.
               Empty or zero new readings keep the last saved positive value; it may be older than the current four-week window.
+              Missing weeks are not counted as zero. A low number is not a missing-data indicator, and averaging does not guarantee a high or fixed score.
             </p>
             {freePreview && (
               <div className="rounded-lg border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-foreground">

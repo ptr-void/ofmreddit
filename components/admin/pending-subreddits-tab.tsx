@@ -78,6 +78,7 @@ export function PendingSubredditsTab() {
     </div>
     <p className="text-sm text-muted-foreground">
       Discoveries and user submissions stay here until approved. Automatic discovery requires at least 100,000 members, a post within 30 days, and a weekly top post with at least 400 upvotes. Candidates must be marked 18+ by Reddit; this flag alone does not verify their content or suitability. The niche is suggested from the discovery query.
+      Discovery uses niche searches and explicit sidebar/related-community links. Linked suggestions need their niche assigned during review.
     </p>
     {!subreddits.length ? <p className="text-sm text-muted-foreground">No pending candidates.</p> : <div className="overflow-x-auto rounded-md border">
       <Table>
@@ -90,7 +91,11 @@ export function PendingSubredditsTab() {
             <TableCell><a className="text-blue-500" href={`https://www.reddit.com/r/${encodeURIComponent(sub.subreddit_name)}/`} target="_blank" rel="noreferrer">{sub.subreddit_name}</a></TableCell>
             <TableCell>{sub.subscribers == null ? "Unknown" : Number(sub.subscribers).toLocaleString("en-US")}</TableCell>
             <TableCell>{found?.top1_weekly == null ? "—" : Number(found.top1_weekly).toLocaleString("en-US")}</TableCell>
-            <TableCell>{found ? `Discovery / ${found.latest_post_utc ? new Date(found.latest_post_utc * 1000).toLocaleDateString() : "Unknown"}` : "User submission"}</TableCell>
+            <TableCell>{found ? <>
+              {found.source === "sidebar_link" ? "Sidebar link" : found.source === "related_widget" ? "Related community" : "Niche search"}
+              {` / ${found.latest_post_utc ? new Date(found.latest_post_utc * 1000).toLocaleDateString() : "Unknown"}`}
+              {found.seed_subreddit && <div className="text-xs text-muted-foreground">Linked from r/{found.seed_subreddit}</div>}
+            </> : "User submission"}</TableCell>
             <TableCell className="max-w-xs text-sm">{sub.submitted_by || (found ? "Automatic discovery" : "Unknown user")}</TableCell>
             <TableCell className="min-w-56">
               <NicheTagSelect

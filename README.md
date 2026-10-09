@@ -181,6 +181,19 @@ Niche menus support text search/type-to-open and mouse/touchpad scrolling. The
 shared multi-select works inside submission dialogs, checker and admin review,
 keeps hidden selections, and retains the eight-tag limit.
 
+The default database order is alphabetical by normalized community name, not
+the source sheet's row position. Explicit performance/header sorting overrides
+that default; choosing Alphabetical (A–Z) restores it. Low scores are not missing
+values: history may currently contain fewer than four distinct recorded weeks,
+and the rolling mean uses only those available weeks, never zero padding.
+
+Daily discovery now searches six niches (up to 75 search results each), plus
+sidebar links/accessible Related Communities widgets from five rotating active communities.
+It validates up to 120 unknown candidates and queues at most 25 qualifying
+suggestions for admin review. Duplicates and existing/rejected/archived entries
+remain excluded; the 100,000-member/activity/400-upvote requirements remain.
+See `scraper/README.md` for configuration and source evidence details.
+
 ### Account-linked website visits
 
 The admin Website Visits table shows Telegram handles and email for visits made

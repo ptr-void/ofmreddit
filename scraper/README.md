@@ -175,9 +175,22 @@ attribution table; it does not rewrite existing users or subreddit rows.
 
 ### Discovery and admission
 
-* Once per 24 hours, rotate through existing manually entered niche vocabulary.
-  Search up to 50 results per niche across three niches; queue at most ten eligible new communities.
-  Configure with `DISCOVERY_QUERIES_PER_DAY`, `DISCOVERY_SEARCH_LIMIT`, and `--discovery-limit`.
+* Once per 24 hours, rotate through six existing niche queries, searching up to
+  75 results each. Also rotate through five active stored communities and follow
+  explicit `r/name` sidebar links and accessible Related Communities widgets. Archived seeds
+  are skipped. This second route does not require a matching niche keyword.
+* Queue at most 25 eligible new communities per day, not a guaranteed 25 results.
+  Interleave source lists, deduplicate before API validation, and check at most
+  120 previously unknown candidates. Existing member/activity/400-upvote filters
+  and manual approval still apply. Configure with `DISCOVERY_QUERIES_PER_DAY`,
+  `DISCOVERY_SEARCH_LIMIT`, `DISCOVERY_RELATED_SEEDS_PER_DAY`,
+  `DISCOVERY_MAX_CANDIDATE_CHECKS`, and `--discovery-limit` (0..50).
+  A failed source does not block the others; an all-source failure leaves the
+  daily checkpoint unchanged for retry. No daily allowance reset is performed.
+  If the Reddit token lacks widget permission, record a scope warning once and
+  skip further widget requests that day; niche searches/sidebar links continue.
+* Candidate evidence records its source and seed subreddit. Related-community
+  suggestions do not inherit the seed's niche; assign their niche in review.
 * Default eligibility: public, adult-designated, weekly top-1 score at least 400,
   at least 100,000 members and a surviving recent post within 30 days. Override with `DISCOVERY_MIN_MEMBERS`
   and `DISCOVERY_MAX_POST_AGE_DAYS`, `DISCOVERY_MIN_TOP1_UPVOTES`. Pending automatic suggestions
