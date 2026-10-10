@@ -3,6 +3,7 @@ import { createWorkbookReader, parseSpreadsheetUrl } from "@/lib/google-sheets-r
 import { sourceRowHealth, hasWeeklyMetrics, applyFourWeekAverages, retainLastKnownWeeklyValues } from "@/lib/reddit-database-display"
 import { verifyToken } from "@/lib/auth"
 import { getActiveTierForUser } from "@/lib/limits"
+import { getBanDetectionCounts } from "@/lib/subreddit-ban-counts"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -112,8 +113,13 @@ export async function GET(req: Request) {
       )
     }
 
+    let banCounts = null
+    try { banCounts = await getBanDetectionCounts() } catch (error) {
+      // A statistics outage must not hide the database or present a false zero.
+      console.warn("Ban detection counts unavailable:", error instanceof Error ? error.name : "Unknown error")
+    }
     return NextResponse.json(
-      { mainSheet, rowHealth: freePreview ? {} : rowHealth, freePreview, maskedColumnIndices },
+      { mainSheet, rowHealth: freePreview ? {} : rowHealth, freePreview, maskedColumnIndices, banCounts },
       { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } },
     )
   } catch (error) {

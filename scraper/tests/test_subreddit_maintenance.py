@@ -73,6 +73,71 @@ class MaintenanceTests(unittest.TestCase):
     def test_banned_is_evidence_even_if_name_is_indexed(self):
         result = probe_subreddit(analyzer_error(404, 'banned', ['example']), 'example')
         self.assertEqual(result.outcome, 'dead')
+        self.assertTrue(result.is_banned)
+
+    def test_only_explicit_reddit_reason_sets_ban_flag(self):
+        for status, reason in [(404, ''), (404, 'private'), (403, 'banned'), (429, ''), (503, '')]:
+            self.assertFalse(probe_subreddit(analyzer_error(status, reason), 'example').is_banned)
+
+    def ledger_worker(self, apply=True):
+        worker = Maintenance(None, None, None, apply=apply)
+        ledger = []
+        def sql(statement, params=()):
+            if statement.startswith('SELECT action'):
+                return [{'action': ledger[-1]}] if ledger else []
+            if statement.startswith('INSERT INTO subreddit_maintenance_events'):
+                ledger.append(params[1])
+            return []
+        worker.sql = Mock(side_effect=sql)
+        return worker, ledger
+
+    def test_ban_count_is_once_per_episode_not_every_probe_or_after_uncertainty(self):
+        worker, ledger = self.ledger_worker()
+        ban = Probe('dead', 'Explicit Reddit ban', is_banned=True)
+        worker.record_ban_observation('example', ban)
+        worker.record_ban_observation('example', ban)
+        worker.record_ban_observation('example', Probe('uncertain', '429'))
+        worker.record_ban_observation('example', ban)
+        self.assertEqual(ledger, ['banned_detected'])
+        worker.record_ban_observation('example', Probe('alive', 'Live metadata'))
+        worker.record_ban_observation('example', Probe('alive', 'Live metadata'))
+        worker.record_ban_observation('example', ban)
+        self.assertEqual(ledger, ['banned_detected', 'ban_recovered', 'banned_detected'])
+
+    def test_generic_missing_or_private_are_not_ban_events_and_dry_run_never_writes(self):
+        worker, ledger = self.ledger_worker()
+        for probe in [Probe('dead', '404 and absent exact lookup'), Probe('uncertain', 'private'), Probe('alive', 'Matching metadata')]:
+            worker.record_ban_observation('example', probe)
+        self.assertEqual(ledger, [])
+        dry, _ = self.ledger_worker(apply=False)
+        dry.record_ban_observation('example', Probe('dead', 'banned', is_banned=True))
+        dry.sql.assert_not_called()
+
+    def test_cleanup_records_first_explicit_detection_before_archive_is_eligible(self):
+        worker, ledger = self.ledger_worker()
+        worker.table = Mock(return_value=(['Subreddit', 'Sync Status'], {'sync status': 1}, {'example': [(2, ['example', 'error'])]}))
+        def probe(_, name):
+            return Probe('alive', 'Canary') if name == 'redditdev' else Probe('dead', 'banned', is_banned=True)
+        with patch('scraper.subreddit_maintenance.probe_subreddit', side_effect=probe), patch('scraper.subreddit_maintenance.utc_now', return_value=NOW):
+            worker.cleanup(20)
+        self.assertEqual(ledger, ['banned_detected'])
+        self.assertFalse(worker.report['checks'][0]['eligible'])
+        self.assertEqual(worker.report['checks'][0]['dead_checks'], 1)
+
+    def test_successful_normal_scrape_records_recovery_without_extra_reddit_probe(self):
+        worker, ledger = self.ledger_worker()
+        ledger.append('banned_detected')
+        original = worker.sql.side_effect
+        def sql(statement, params=()):
+            if statement.startswith('SELECT e.subreddit_name'):
+                return [{'subreddit_name': 'example'}]
+            return original(statement, params)
+        worker.sql.side_effect = sql
+        worker.table = Mock(return_value=(['Subreddit', 'Sync Status'], {'sync status': 1}, {'example': [(2, ['example', 'success'])]}))
+        with patch('scraper.subreddit_maintenance.probe_subreddit', return_value=Probe('alive', 'Canary')) as probe:
+            worker.cleanup(20)
+        self.assertEqual(ledger, ['banned_detected', 'ban_recovered'])
+        self.assertEqual(probe.call_count, 1)
 
     def test_generic_404_requires_independent_absent_name_lookup(self):
         self.assertEqual(probe_subreddit(analyzer_error(404, matches=['Example']), 'example').outcome, 'uncertain')

@@ -277,3 +277,21 @@ fields/checkpoints are preserved; archived rows are skipped. Backups and readbac
 reports are saved under ignored `output/`. For rollback, rematch each audited
 subreddit/header, require its current value to equal the reported `after`, then
 restore only that cell's `before`; never restore an entire old grid.
+
+### Ban detection statistics
+
+An explicit `404 reason=banned` availability probe records `banned_detected` in
+`subreddit_maintenance_events` immediately, independently of the delayed archival
+threshold. The existing single-worker MySQL lock makes the read/event write
+idempotent. Repeated ban probes and uncertain replies leave that episode open;
+matching live metadata (including a successful regular scrape) records
+`ban_recovered`. A completed `restore` also closes the episode. A later confirmed
+ban can start a new episode, but the website counts unique names in each period.
+
+Only active/errored or archived database rows checked by maintenance are included,
+not failed discovery/user-submission candidates. Generic missing communities may
+still follow the existing archival rules but never count as explicit bans.
+The website displays today since UTC midnight and the rolling last seven days.
+No observations are backdated and dry-run probes never write tracking events.
+This uses the existing maintenance-event schema and normal scheduled worker;
+no manual scraper run or new migration is needed after deployment.

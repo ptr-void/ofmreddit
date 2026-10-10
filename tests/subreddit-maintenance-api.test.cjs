@@ -6,6 +6,7 @@ const vm = require('node:vm')
 const ts = require('typescript')
 
 function load(relative, dependencies, env = {}) {
+  dependencies = { "@/lib/subreddit-ban-counts": { getBanDetectionCounts: async () => ({ today: 2, last7Days: 5, timezone: "UTC" }) }, ...dependencies }
   const code = ts.transpileModule(fs.readFileSync(path.join(__dirname, '..', relative), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
   }).outputText
@@ -41,11 +42,38 @@ test('the website follows Sheet rows without merging approved DB-only records', 
   }, { SUBREDDIT_SHEET_URL: 'fixture' })
   const response = await route.GET(new Request('https://example.test/api/reddit-database', { headers: { authorization: 'Bearer fixture' } }))
   assert.equal(response.status, 200)
+  assert.equal(response.body.banCounts.today, 2)
+  assert.equal(response.body.banCounts.last7Days, 5)
   assert.equal(response.body.mainSheet.rows.length, 2)
   assert.equal(response.body.mainSheet.rows[0][1], '100')
   assert.equal(response.body.mainSheet.rows[1][0], 'https://www.reddit.com/r/DB_Archived/')
   const source = fs.readFileSync(path.join(__dirname, '../app/api/reddit-database/route.ts'), 'utf8')
   assert.doesNotMatch(source, /FROM master_subreddits/)
+})
+
+test('ban statistics outages do not hide the table or invent zero counts; auth gates the whole response', async () => {
+  let reads = 0
+  const dependencies = {
+    'next/server': next,
+    '@/lib/auth': { verifyToken: token => token === 'fixture' ? { userId: 7 } : null },
+    '@/lib/limits': { getActiveTierForUser: async () => ({ id: 1 }) },
+    '@/lib/reddit-database-display': display,
+    '@/lib/subreddit-ban-counts': { getBanDetectionCounts: async () => { throw Error('Statistics outage') } },
+    '@/lib/google-sheets-reader': {
+      parseSpreadsheetUrl: () => ({ spreadsheetId: 'fixture', gid: '0' }),
+      createWorkbookReader: async () => { reads++; return { readByGid: async () => ({
+        title: 'Sheet1', headers: ['Subreddit', 'Total Members'], rows: [['example', '500']],
+      }) } },
+    },
+  }
+  const route = load('app/api/reddit-database/route.ts', dependencies, { SUBREDDIT_SHEET_URL: 'fixture' })
+  assert.equal((await route.GET(new Request('https://example.test'))).status, 401)
+  assert.equal(reads, 0)
+  const response = await route.GET(new Request('https://example.test', { headers: { authorization: 'Bearer fixture' } }))
+  assert.equal(response.status, 200)
+  assert.equal(response.body.banCounts, null)
+  assert.equal(response.body.mainSheet.rows.length, 1)
+  assert.equal(response.body.freePreview, true)
 })
 
 test('paid views restore weekly history before display; free previews never read it', async () => {

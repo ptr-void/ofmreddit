@@ -286,3 +286,52 @@ It checks the model, all three knowledge documents, retained inputs and low
 thinking metadata. Reports/screenshots are saved under ignored `output/`; tokens
 and caption text are not included in the JSON report. API mocks alone do not
 count as passing this browser test.
+
+### Bulk subreddit submissions and ban detection counts
+
+**Subreddit Database → Add Subreddits** accepts up to 100 unique names per paste.
+Use plain names, `r/name`, or Reddit links, separated by new lines, commas, spaces
+or semicolons. Duplicate names are ignored regardless of case/link format. The
+selected preset niche tags apply to the whole list. The browser submits small
+five-name batches and displays each name's result and overall progress. New names
+stay in the existing admin review queue; they are not published automatically.
+
+Successful/existing names are removed from the retry list. Invalid, rejected,
+archived, unavailable and unprocessed names stay visible with individual messages.
+A failed later batch never discards earlier results. A rate-limited batch pauses
+the remaining list. Requests are authenticated, Reddit identities and adult flags
+are verified using OAuth, and every queued name/submitter attribution is saved in
+one transaction. Retries do not reset rewards or overwrite admin decisions or
+curated tags. Archived communities require the existing admin restore flow.
+
+The database page also shows **Banned detected today** (since midnight UTC) and
+**Banned detected (last 7 days)** (a rolling seven-day period). These count distinct
+database subreddit names first recorded with Reddit's explicit `404 reason=banned`
+response, not submission failures, private communities, generic missing pages,
+zero stats, archive actions or every retry. Daily maintenance records the first
+ban observation before the existing three-check archive threshold; repeat checks
+and uncertain responses do not start new ban episodes. Confirmed recovery or a
+completed restore lets a later real ban be recorded again. Even multiple episodes
+of the same name count once in a displayed period.
+
+Counts refresh with the table, including automatic refresh, and are visible to
+both paid users and Free previews without exposing subreddit identities. If the
+statistics query fails, cards say `Unavailable` rather than a false zero and the
+table stays accessible. Tracking uses the existing maintenance event table: no
+new schema migration or historical date invention. Old bans are not backdated;
+counts begin with the first tracking-enabled maintenance run after deployment.
+
+For rollback, revert these application/scraper changes together. Keep recorded
+events and submission attributions intact; no data cleanup or reverse migration
+is required.
+
+For an opt-in website regression check, run
+`node scripts/test-subreddit-database-website.cjs` with `DATABASE_WEBSITE_URL`,
+`DATABASE_TEST_TOKEN`, and `DATABASE_TEST_EXISTING_NAMES` (at least six existing
+names, comma-separated). The live check uses the actual table, counters, preset
+niches and bulk-submit route, submitting only existing names to avoid creating
+review items. `DATABASE_TEST_CLIENT_FIXTURES=true` additionally tests intercepted
+client-only cases for partial failures, retries, provider pauses, 100-name lists,
+size-limit preservation and unavailable counters. These cases are reported
+separately and are not claimed as live Reddit validation. Reports/screenshots are
+written under ignored `output/`; login tokens are never written to reports.

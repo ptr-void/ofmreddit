@@ -70,6 +70,7 @@ def related_community_names(text):
 class Probe:
     outcome: str  # alive, dead, or uncertain
     evidence: str
+    is_banned: bool = False  # Only Reddit's explicit 404 reason=banned.
 
 
 def probe_subreddit(analyzer, name):
@@ -89,7 +90,7 @@ def probe_subreddit(analyzer, name):
         except (ValueError, AttributeError):
             reason = ''
         if reason == 'banned':
-            return Probe('dead', 'Reddit about endpoint explicitly reports banned (404)')
+            return Probe('dead', 'Reddit about endpoint explicitly reports banned (404)', is_banned=True)
         if reason in {'private', 'quarantined', 'restricted'}:
             return Probe('uncertain', f'Reddit reports {reason}')
         try:
@@ -168,6 +169,22 @@ class Maintenance:
         self.report['actions'].append({'subreddit': name, 'action': action})
         self.sql('INSERT INTO subreddit_maintenance_events (subreddit_name, action, detail_json) VALUES (%s,%s,%s)',
                  (name, action, json_text(detail)))
+
+    def record_ban_observation(self, name, probe):
+        """One durable detection per ban episode; uncertainty is not recovery.
+
+        The worker's existing global DB lock serializes this check and event write.
+        The ledger survives retries, uncertainty and the delayed archive decision.
+        """
+        if not self.apply or (not probe.is_banned and probe.outcome != 'alive'):
+            return
+        previous = self.sql("SELECT action FROM subreddit_maintenance_events WHERE subreddit_name=%s "
+                            "AND action IN ('banned_detected','ban_recovered','restore') ORDER BY id DESC LIMIT 1", (name,))
+        last_action = previous[0]['action'] if previous else None
+        if probe.is_banned and last_action != 'banned_detected':
+            self.event(name, 'banned_detected', {'evidence': probe.evidence, 'source': 'database_maintenance'})
+        elif probe.outcome == 'alive' and last_action == 'banned_detected':
+            self.event(name, 'ban_recovered', {'evidence': probe.evidence})
 
     def reward_submitters(self, name):
         pending = self.sql(
@@ -320,6 +337,13 @@ class Maintenance:
             return
         _, lookup, rows = self.table()
         records = {item['subreddit_name']: item for item in self.sql('SELECT * FROM subreddit_maintenance')}
+        # A successful regular scrape is matching live metadata too. Fetch outstanding
+        # detections once, rather than running one extra DB query for every healthy row.
+        open_bans = {item['subreddit_name'] for item in self.sql(
+            "SELECT e.subreddit_name FROM subreddit_maintenance_events e JOIN ("
+            "SELECT subreddit_name, MAX(id) AS latest_id FROM subreddit_maintenance_events "
+            "WHERE action IN ('banned_detected','ban_recovered','restore') GROUP BY subreddit_name"
+            ") latest ON latest.latest_id=e.id WHERE e.action='banned_detected'")}
         now, targets = utc_now(), []
         for name, matches in rows.items():
             if not NAME.fullmatch(name):
@@ -327,6 +351,8 @@ class Maintenance:
             statuses = {row[lookup['sync status']].lower() if len(row) > lookup['sync status'] else '' for _, row in matches}
             record = records.get(name, {'subreddit_name': name, 'state': 'active'})
             if record.get('state') != 'archived' and 'error' not in statuses and 'archived' not in statuses:
+                if name in open_bans and 'success' in statuses:
+                    self.record_ban_observation(name, Probe('alive', 'Regular scraper returned matching live community metadata'))
                 if record.get('dead_checks') and 'success' in statuses and self.apply:
                     self.sql("UPDATE subreddit_maintenance SET state='active', dead_checks=0, first_dead_at=NULL, last_dead_at=NULL WHERE subreddit_name=%s", (name,))
                 continue
@@ -341,6 +367,7 @@ class Maintenance:
             self.report['checks'].append({'subreddit': name, **probe.__dict__, 'dead_checks': updated.get('dead_checks', 0), 'eligible': eligible})
             if not self.apply:
                 continue
+            self.record_ban_observation(name, probe)
             self.sql('INSERT INTO subreddit_maintenance (subreddit_name, state, dead_checks, first_dead_at, last_dead_at, last_checked_at, last_evidence) '
                      'VALUES (%s,%s,%s,%s,%s,%s,%s) ON DUPLICATE KEY UPDATE state=VALUES(state), dead_checks=VALUES(dead_checks), '
                      'first_dead_at=VALUES(first_dead_at), last_dead_at=VALUES(last_dead_at), last_checked_at=VALUES(last_checked_at), last_evidence=VALUES(last_evidence)',

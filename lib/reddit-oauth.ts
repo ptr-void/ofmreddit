@@ -14,6 +14,7 @@ export async function getRedditAccessToken(): Promise<string> {
       "User-Agent": userAgent,
     },
     body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken }).toString(),
+    signal: AbortSignal.timeout(10_000),
   })
   if (!response.ok) throw new Error(`Reddit authentication failed (${response.status})`)
   const data = await response.json()

@@ -9,6 +9,7 @@ import s from "@/styles/scraper.module.css"
 import { sortDatabaseRowsByName, type RowHealth } from "@/lib/reddit-database-display"
 import { filterDatabaseFlags, type BooleanFilter } from "@/lib/reddit-database-filters"
 import { SearchableNicheFilter } from "@/components/searchable-niche-filter"
+import type { BanDetectionCounts } from "@/lib/subreddit-ban-counts"
 
 type SheetData = {
   title: string
@@ -20,6 +21,7 @@ type ApiResponse = {
   mainSheet: SheetData
   rowHealth?: Record<string, RowHealth>
   freePreview?: boolean
+  banCounts?: BanDetectionCounts | null
 }
 type SortDirection = "asc" | "desc" | null
 type SortState = { columnIndex: number; direction: SortDirection }
@@ -73,6 +75,7 @@ export default function RedditDatabasePage() {
   const [sheetData, setSheetData] = useState<SheetData | null>(null)
   const [rowHealth, setRowHealth] = useState<Record<string, RowHealth>>({})
   const [freePreview, setFreePreview] = useState(false)
+  const [banCounts, setBanCounts] = useState<BanDetectionCounts | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(false)
@@ -116,13 +119,15 @@ export default function RedditDatabasePage() {
         } catch {}
         throw new Error(message)
       }
-      const { mainSheet, rowHealth: health, freePreview: preview }: ApiResponse = await response.json()
+      const { mainSheet, rowHealth: health, freePreview: preview, banCounts: counts }: ApiResponse = await response.json()
       setSheetData(mainSheet)
       setRowHealth(health ?? {})
       setFreePreview(Boolean(preview))
+      setBanCounts(counts ?? null)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "An unknown error occurred while fetching the sheet.")
       setSheetData(null)
+      setBanCounts(null)
     } finally {
       setLoading(false)
     }
@@ -241,7 +246,7 @@ export default function RedditDatabasePage() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Subreddit Database</h1>
             <SubmitSubredditModal>
-              <button type="button" className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">Add a Subreddit</button>
+              <button type="button" className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">Add Subreddits</button>
             </SubmitSubredditModal>
           </div>
           <p className="text-sm text-muted-foreground">
@@ -249,6 +254,24 @@ export default function RedditDatabasePage() {
             full pass, rests for 24 hours, then starts the next pass.
           </p>
         </div>
+
+        {sheetData && <section aria-label="Banned subreddit detections" className="space-y-2">
+          <div className="grid gap-3 sm:grid-cols-2">
+            {[{ label: "Banned detected today", value: banCounts?.today, period: "Since midnight UTC" },
+              { label: "Banned detected (last 7 days)", value: banCounts?.last7Days, period: "Last 7 days" }].map(card =>
+              <div key={card.label} className="rounded-xl border border-border bg-card px-4 py-3">
+                <p className="text-sm text-muted-foreground">{card.label}</p>
+                <p className="text-2xl font-semibold" data-testid={card.period === "Last 7 days" ? "banned-week" : "banned-day"}>
+                  {card.value === undefined ? "Unavailable" : card.value.toLocaleString()}
+                </p>
+                <p className="text-xs text-muted-foreground">{card.period}</p>
+              </div>)}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Unique database subreddits newly confirmed banned by Reddit. Repeat checks, private communities and generic missing pages do not count.
+            Counts start when detection tracking is enabled; older bans are not backdated.
+          </p>
+        </section>}
 
         {error && (
           <div className="flex items-start gap-3 rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">

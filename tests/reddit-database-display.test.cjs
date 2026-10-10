@@ -70,7 +70,7 @@ test("table uses opaque sticky headers and hover help without icon buttons", () 
   assert.match(table, /TooltipTrigger asChild/)
   const page = fs.readFileSync(path.join(__dirname, "../app/reddit-database/page.tsx"), "utf8")
   assert.match(page, /verificationPosition \+ 1/)
-  assert.match(page, />Add a Subreddit<\/button>/)
+  assert.match(page, />Add Subreddits<\/button>/)
 })
 
 test("review text reflects the 400-upvote policy and explains the limits of Reddit's 18+ flag", () => {
